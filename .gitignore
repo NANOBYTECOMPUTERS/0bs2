@@ -1,0 +1,76 @@
+# Local IDE state
+.vs/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# Build outputs
+x64/
+dist/
+Debug/
+Release/
+bin/
+obj/
+build/
+out/
+*.exe
+*.dll
+*.pdb
+*.exp
+*.lib
+*.a
+*.so
+*.dylib
+*.obj
+*.ilk
+*.idb
+*.iobj
+*.ipdb
+
+# NuGet / dependency restore outputs
+packages/
+*.nupkg
+
+# Generated packages and archives
+*.zip
+*.7z
+*.rar
+
+# Model and training artifacts
+*.onnx
+*.engine
+*.pt
+*.pth
+*.data
+training/data/
+training/**/data/
+training/models/
+training/**/models/
+training/logs/
+training/**/logs/
+
+# Python caches and local environments
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+env/
+
+# Generated docs
+docs/settings-reference/0BS-settings-reference.pdf
+
+# Nested dependencies that already have their own Git histories
+modules/serial/
+modules/razer-controls/
+
+# Large generated OpenCV build tree
+modules/opencv/build/
+
+# Large third-party generated docs / binary drops
+modules/glfw-3.4/docs/html/
+modules/glfw-3.4.bin.WIN64/docs/
+modules/glfw-3.4.bin.WIN64/lib-*/

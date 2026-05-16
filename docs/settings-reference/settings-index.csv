@@ -1,0 +1,212 @@
+category,tab,section,label,config_key,range_or_options,current_or_default,visibility,notes,source
+Slider,Capture,General Capture,Capture FPS,capture_fps,0-240,70,GUI,Limits capture loop FPS. 0 disables the cap path and the GUI warns at 0 or 61+.,overlay/draw_capture.cpp
+Activate/deactivate,Capture,General Capture,Circle mask,circle_mask,true/false,true,GUI,Applies the circular capture mask.,overlay/draw_capture.cpp
+Activate/deactivate,Capture,General Capture,Use CUDA Direct Capture,capture_use_cuda,true/false,n/a,CUDA GUI,CUDA/TensorRT builds only. Available with duplication_api capture.,overlay/draw_capture.cpp
+Activate/deactivate,Capture,Capture Preview,Show Preview Window,show_window,true/false,true,GUI,Shows the capture preview/debug frame inside the Capture tab.,overlay/draw_debug.cpp
+Slider,Capture,Capture Preview,Debug scale,preview_debug_scale,0.1x-2.0x,n/a,GUI,Preview-only scale slider. It is not saved to config.ini.,overlay/draw_debug.cpp
+Activate/deactivate,Capture,WinRT,Capture Borders,capture_borders,true/false,true,GUI,WinRT capture only. Disabled automatically on unsupported Windows builds.,overlay/draw_capture.cpp
+Activate/deactivate,Capture,WinRT,Capture Cursor,capture_cursor,true/false,true,GUI,WinRT capture only. Includes the cursor in captured frames.,overlay/draw_capture.cpp
+Slider,Capture,Virtual Camera,Virtual camera width,virtual_camera_width,128-3840,1920,GUI,Applies when capture_method is virtual_camera.,overlay/draw_capture.cpp
+Slider,Capture,Virtual Camera,Virtual camera heigth,virtual_camera_heigth,128-2160,1080,GUI,Spelling follows the existing config key. Applies when capture_method is virtual_camera.,overlay/draw_capture.cpp
+Activate/deactivate,Target,Targeting,Disable Headshot,disable_headshot,true/false,false,GUI,Prevents the head class from being selected as the aim target.,overlay/draw_target.cpp
+Activate/deactivate,Target,Targeting,Auto Aim,auto_aim,true/false,false,GUI,Allows target selection/movement logic to act automatically while held conditions are met.,overlay/draw_target.cpp
+Slider,Target,Offsets,Approximate Body Y Offset,body_y_offset,0.00-1.00,0.06,GUI,Vertical aim point used for body-class detections.,overlay/draw_target.cpp
+Slider,Target,Offsets,Approximate Head Y Offset,head_y_offset,0.00-1.00,0.38,GUI,Vertical aim point used for head-class detections.,overlay/draw_target.cpp
+Slider,Mouse,FOV,FOV X,fovX,10-120,120,GUI,Horizontal field of view for the mouse controller.,overlay/draw_mouse.cpp
+Slider,Mouse,FOV,FOV Y,fovY,10-120,120,GUI,Vertical field of view for the mouse controller.,overlay/draw_mouse.cpp
+Slider,Mouse,Pure PID Movement,Actuator Hz,pid_actuator_hz,30-2000,2000,GUI,PID update rate used by the mouse actuator.,overlay/draw_mouse.cpp
+Slider,Mouse,Pure PID Movement,Kp,pid_kp,0.0000-1.5000,0.0065,GUI,Proportional PID gain.,overlay/draw_mouse.cpp
+Slider,Mouse,Pure PID Movement,Ki,pid_ki,0.0000-0.5000,0.0003,GUI,Integral PID gain.,overlay/draw_mouse.cpp
+Slider,Mouse,Pure PID Movement,Kd,pid_kd,0.0000-0.2500,0.0001,GUI,Derivative PID gain.,overlay/draw_mouse.cpp
+Slider,Mouse,Pure PID Movement,Deadzone (px),pid_deadzone_px,0.000-10.000,1.500,GUI,Minimum error radius before movement is applied.,overlay/draw_mouse.cpp
+Slider,Mouse,Pure PID Movement,Max step (px/tick),pid_max_pixel_step,0.010-20.000,10.138,GUI,Maximum movement step per PID tick from the GUI. Runtime clamp allows up to 80.,overlay/draw_mouse.cpp
+Slider,Mouse,Pure PID Movement,Output scale,pid_output_scale,0.010-3.000,0.300,GUI,Base multiplier applied to PID output.,overlay/draw_mouse.cpp
+Slider,Mouse,Pure PID Movement,Min output scale,pid_min_output_scale,0.000-3.000,0.250,GUI,Lower bound for adaptive output scaling.,overlay/draw_mouse.cpp
+Slider,Mouse,Pure PID Movement,Max output scale,pid_max_output_scale,0.010-3.000,0.509,GUI,Upper bound for adaptive output scaling.,overlay/draw_mouse.cpp
+Slider,Mouse,Pure PID Movement,Size reference (px),pid_size_reference_px,1.0-240.0,48.000,GUI,Target size used as the neutral reference for size scaling.,overlay/draw_mouse.cpp
+Slider,Mouse,Pure PID Movement,Small target scale,pid_size_min_scale,0.010-1.000,0.200,GUI,Minimum scale when targets are smaller than the reference.,overlay/draw_mouse.cpp
+Slider,Mouse,Pure PID Movement,Large target scale,pid_size_max_scale,0.050-2.000,1.000,GUI,Maximum scale when targets are larger than the reference.,overlay/draw_mouse.cpp
+Slider,Mouse,Pure PID Movement,Precision radius / size,pid_precision_radius_scale,0.0000-0.1000,0.020,GUI,Target-size-relative radius where movement is considered precise enough.,overlay/draw_mouse.cpp
+Slider,Mouse,Pure PID Movement,Slowdown radius / size,pid_slowdown_radius_scale,0.010-1.000,0.300,GUI,Target-size-relative radius where scaling slows approach.,overlay/draw_mouse.cpp
+Slider,Mouse,Pure PID Movement,Overshoot brake,pid_overshoot_brake,0.010-1.000,0.350,GUI,Reduces movement after crossing past the target.,overlay/draw_mouse.cpp
+Slider,Mouse,Pure PID Movement,Divergence boost,pid_divergence_boost,0.000-2.000,0.350,GUI,Boosts output when the target error is growing.,overlay/draw_mouse.cpp
+Slider,Mouse,Pure PID Movement,Scale response,pid_scale_response,0.1-40.0,8.000,GUI,Responsiveness of adaptive output scale changes.,overlay/draw_mouse.cpp
+Slider,Mouse,Pure PID Movement,Max integral,pid_max_integral,0.0-10000.0,120.000,GUI,Caps integral accumulation.,overlay/draw_mouse.cpp
+Slider,Mouse,Pure PID Movement,Max derivative term,pid_max_derivative_term,0.000-5.000,0.020,GUI,Caps derivative contribution from a single axis.,overlay/draw_mouse.cpp
+Slider,Mouse,Pure PID Movement,Derivative filter (ms),pid_derivative_filter_tau_ms,0.0-250.0,18.000,GUI,Smoothing time constant for derivative filtering.,overlay/draw_mouse.cpp
+Slider,Mouse,Pure PID Movement,Target timeout (ms),pid_target_loss_timeout_ms,10.0-1000.0,90.000,GUI,Time without target observation before PID state resets.,overlay/draw_mouse.cpp
+Activate/deactivate,Mouse,Pure PID Movement,Feed-forward prediction,pid_feed_forward_enabled,true/false,true,GUI,Adds velocity-based prediction ahead of pure PID output.,overlay/draw_mouse.cpp
+Slider,Mouse,Pure PID Movement,Feed-forward gain,pid_feed_forward_gain,0.000-2.000,0.108,GUI,Strength of feed-forward movement.,overlay/draw_mouse.cpp
+Slider,Mouse,Pure PID Movement,Feed-forward lookahead (ms),pid_feed_forward_lookahead_ms,0.0-120.0,34.400,GUI,Prediction lookahead horizon.,overlay/draw_mouse.cpp
+Slider,Mouse,Pure PID Movement,Feed-forward max step (px/tick),pid_feed_forward_max_step,0.000-5.000,0.250,GUI,Caps feed-forward contribution per tick.,overlay/draw_mouse.cpp
+Slider,Mouse,Pure PID Movement,Feed-forward min speed (px/s),pid_feed_forward_min_speed,0.0-3000.0,10.000,GUI,Minimum target speed required before feed-forward contributes.,overlay/draw_mouse.cpp
+Slider,Mouse,Pure PID Movement,Feed-forward confidence floor,pid_feed_forward_confidence_floor,0.000-1.000,0.527,GUI,Minimum observation confidence for feed-forward contribution.,overlay/draw_mouse.cpp
+Activate/deactivate,Mouse,Pure PID Movement,Enable PID governor,pid_governor_enabled,true/false,true,GUI,Enables the ONNX PID governor when a compatible model can be loaded.,overlay/draw_mouse.cpp
+Slider,Mouse,Pure PID Movement,Governor blend,pid_governor_blend,0.00-1.00,0.001,GUI,Blend strength for governor-generated PID scales.,overlay/draw_mouse.cpp
+Slider,Mouse,Pure PID Movement,Governor max speed multiple,pid_governor_max_speed_multiple,1.00-5.00,5.000,GUI,Maximum speed multiplier allowed when governor output is active.,overlay/draw_mouse.cpp
+Slider,Mouse,Game Profile,Sensitivity,Games.<profile>.sens,0.0010-10.0000,profile/local,GUI,Editable for custom profiles. UNIFIED is shown read-only.,overlay/draw_mouse.cpp
+Slider,Mouse,Game Profile,Yaw,Games.<profile>.yaw,0.0010-0.1000,profile/local,GUI,Horizontal degree-to-count conversion for a custom profile.,overlay/draw_mouse.cpp
+Slider,Mouse,Game Profile,Pitch,Games.<profile>.pitch,0.0010-0.1000,profile/local,GUI,Vertical degree-to-count conversion for a custom profile.,overlay/draw_mouse.cpp
+Activate/deactivate,Mouse,Game Profile,FOV Scaled,Games.<profile>.fovScaled,true/false,profile/local,GUI,"When enabled, the profile also uses a Base FOV value.",overlay/draw_mouse.cpp
+Slider,Mouse,Game Profile,Base FOV,Games.<profile>.baseFOV,10.0-180.0,profile/local,GUI,Shown only when FOV Scaled is enabled on a custom profile.,overlay/draw_mouse.cpp
+Activate/deactivate,Mouse,Auto Shoot,Auto Shoot,auto_shoot,true/false,false,GUI,Enables automatic shooting behavior.,overlay/draw_mouse.cpp
+Slider,Mouse,Auto Shoot,bScope Multiplier,bScope_multiplier,0.5-2.0,1.0,GUI,Multiplier used by auto-shoot scope timing/behavior. Disabled in UI until Auto Shoot is on.,overlay/draw_mouse.cpp
+Activate/deactivate,Mouse,Input Method,Arduino 16-bit Mouse,arduino_16_bit_mouse,true/false,false,GUI,Arduino input only. Sends wider mouse movement values.,overlay/draw_mouse.cpp
+Activate/deactivate,Mouse,Input Method,Arduino Enable Keys,arduino_enable_keys,true/false,false,GUI,Arduino input only. Enables keyboard key output through Arduino.,overlay/draw_mouse.cpp
+Activate/deactivate,Neural,Neural Tracker,Enable neural association,neural_tracker_enabled,true/false,true,GUI,Enables learned association/tracking helper logic.,overlay/draw_neural.cpp
+Slider,Neural,Neural Tracker,Association blend,neural_tracker_blend,0.00-1.00,0.100,GUI,Blend strength between regular and neural association output.,overlay/draw_neural.cpp
+Slider,AI,Detection,Confidence Threshold,confidence_threshold,0.01-1.00,0.10,GUI,Minimum detector confidence accepted as a detection.,overlay/draw_ai.cpp
+Slider,AI,Detection,NMS Threshold,nms_threshold,0.00-1.00,0.50,GUI,Non-max suppression overlap threshold.,overlay/draw_ai.cpp
+Slider,AI,Detection,Max Detections,max_detections,1-100,100,GUI,Maximum detections retained after model output processing.,overlay/draw_ai.cpp
+Activate/deactivate,AI,Depth Inference,Enable Depth Inference,depth_inference_enabled,true/false,true,CUDA GUI / DML config-only,CUDA builds only. DML build shows a requires-CUDA message.,overlay/draw_depth.cpp
+Slider,AI,Depth Runtime,Depth FPS,depth_fps,0-120,100,CUDA GUI / DML config-only,CUDA builds only. 0 disables depth debug update throttling path.,overlay/draw_depth.cpp
+Slider,AI,Depth Runtime,Depth Mask FPS,depth_mask_fps,1-30,5,CUDA GUI / DML config-only,CUDA builds only. Mask update frequency.,overlay/draw_depth.cpp
+Activate/deactivate,AI,Depth Mask,Enable Depth Mask,depth_mask_enabled,true/false,false,CUDA GUI / DML config-only,CUDA builds only. Masks detections/capture based on estimated depth.,overlay/draw_depth.cpp
+Slider,AI,Depth Mask,Depth Mask Near %,depth_mask_near_percent,1-100,20,CUDA GUI / DML config-only,CUDA builds only. Percentile cutoff for the near-depth mask.,overlay/draw_depth.cpp
+Slider,AI,Depth Mask,Depth Mask Expand (px),depth_mask_expand,0-128,0,CUDA GUI / DML config-only,CUDA builds only. Expands the generated mask in pixels.,overlay/draw_depth.cpp
+Slider,AI,Depth Mask,Depth Mask Hold Frames,depth_mask_hold_frames,0-120,0,CUDA GUI / DML config-only,CUDA builds only. Reuses a recent mask for this many detector frames.,overlay/draw_depth.cpp
+Slider,AI,Depth Mask,Depth Mask Alpha,depth_mask_alpha,0-255,90,CUDA GUI / DML config-only,CUDA builds only. Visual alpha for the depth mask overlay.,overlay/draw_depth.cpp
+Activate/deactivate,AI,Depth Mask,Depth Mask Invert,depth_mask_invert,true/false,false,CUDA GUI / DML config-only,CUDA builds only. Flips near/far mask selection.,overlay/draw_depth.cpp
+Activate/deactivate,AI,Depth Mask,Depth Debug Overlay (Game),depth_debug_overlay_enabled,true/false,false,CUDA GUI / DML config-only,CUDA builds only. Shows depth debug output in the game overlay.,overlay/draw_depth.cpp
+Activate/deactivate,Buttons,Arrow Key Options,Enable arrows keys options,enable_arrows_settings,true/false,false,GUI,Allows arrow-key adjustment of target offsets.,overlay/draw_buttons.cpp
+Slider,Overlay,Visual,Overlay Opacity,overlay_opacity,220-255,225,GUI,Window opacity. The UI clamps to a readable minimum of 220.,overlay/draw_overlay.cpp
+Slider,Overlay,Visual,UI Fine Scale,overlay_ui_scale,0.85-1.35,1.00,GUI,Fine-grained scaling for the overlay UI.,overlay/draw_overlay.cpp
+Activate/deactivate,Overlay,Capture Privacy,Hide Overlays From Recording,overlay_exclude_from_capture,true/false,true,GUI,Applies capture exclusion so overlay windows are hidden from supported recording/capture paths.,overlay/draw_overlay.cpp
+Activate/deactivate,Game Overlay,General,Enable,game_overlay_enabled,true/false,false,GUI,Enables the separate game overlay renderer.,overlay/draw_game_overlay.cpp
+Slider,Game Overlay,General,Overlay Max FPS (0 = uncapped),game_overlay_max_fps,0-256,0,GUI,Caps game overlay render rate. 0 is uncapped.,overlay/draw_game_overlay.cpp
+Activate/deactivate,Game Overlay,General,Draw Detection Boxes,game_overlay_draw_boxes,true/false,true,GUI,Shows detection boxes in the game overlay.,overlay/draw_game_overlay.cpp
+Activate/deactivate,Game Overlay,General,Draw Future Positions,game_overlay_draw_future,true/false,true,GUI,Shows predicted future target points.,overlay/draw_game_overlay.cpp
+Activate/deactivate,Game Overlay,General,Draw Wind Debug Tail,game_overlay_draw_wind_tail,true/false,true,GUI,Shows the wind-mouse debug trail when wind motion is active.,overlay/draw_game_overlay.cpp
+Activate/deactivate,Game Overlay,General,Show Target Correction,game_overlay_show_target_correction,true/false,true,GUI,Shows correction indicators for target prediction/aim adjustment.,overlay/draw_game_overlay.cpp
+Slider,Game Overlay,Box Color,A,game_overlay_box_a,0-255,255,GUI,Detection box alpha.,overlay/draw_game_overlay.cpp
+Slider,Game Overlay,Box Color,R,game_overlay_box_r,0-255,0,GUI,Detection box red channel.,overlay/draw_game_overlay.cpp
+Slider,Game Overlay,Box Color,G,game_overlay_box_g,0-255,255,GUI,Detection box green channel.,overlay/draw_game_overlay.cpp
+Slider,Game Overlay,Box Color,B,game_overlay_box_b,0-255,0,GUI,Detection box blue channel.,overlay/draw_game_overlay.cpp
+Slider,Game Overlay,Box Color,Box Thickness,game_overlay_box_thickness,0.5-10.0,2.00,GUI,Detection box line thickness.,overlay/draw_game_overlay.cpp
+Activate/deactivate,Game Overlay,Capture Frame,Draw Capture Frame,game_overlay_draw_frame,true/false,true,GUI,Draws the capture frame rectangle.,overlay/draw_game_overlay.cpp
+Slider,Game Overlay,Capture Frame,A,game_overlay_frame_a,0-255,180,GUI,Capture frame alpha.,overlay/draw_game_overlay.cpp
+Slider,Game Overlay,Capture Frame,R,game_overlay_frame_r,0-255,255,GUI,Capture frame red channel.,overlay/draw_game_overlay.cpp
+Slider,Game Overlay,Capture Frame,G,game_overlay_frame_g,0-255,255,GUI,Capture frame green channel.,overlay/draw_game_overlay.cpp
+Slider,Game Overlay,Capture Frame,B,game_overlay_frame_b,0-255,255,GUI,Capture frame blue channel.,overlay/draw_game_overlay.cpp
+Slider,Game Overlay,Capture Frame,Frame Thickness,game_overlay_frame_thickness,0.5-10.0,1.50,GUI,Capture frame line thickness.,overlay/draw_game_overlay.cpp
+Slider,Game Overlay,Future Point Style,Point Radius,game_overlay_future_point_radius,1.0-20.0,5.00,GUI,Radius of future-position points.,overlay/draw_game_overlay.cpp
+Slider,Game Overlay,Future Point Style,Point Step Alpha Falloff,game_overlay_future_alpha_falloff,0.10-5.00,1.00,GUI,Controls how quickly future-point alpha fades along the path.,overlay/draw_game_overlay.cpp
+Activate/deactivate,Game Overlay,Icon Overlay,Enable Icon Overlay,game_overlay_icon_enabled,true/false,false,GUI,Enables drawing an icon relative to detections.,overlay/draw_game_overlay.cpp
+Slider,Game Overlay,Icon Overlay,Icon Width,game_overlay_icon_width,4-512,64,GUI,Icon width in pixels.,overlay/draw_game_overlay.cpp
+Slider,Game Overlay,Icon Overlay,Icon Height,game_overlay_icon_height,4-512,64,GUI,Icon height in pixels.,overlay/draw_game_overlay.cpp
+Slider,Game Overlay,Icon Overlay,Icon Offset X,game_overlay_icon_offset_x,-500.0-500.0,0.00,GUI,Horizontal icon offset from the selected anchor.,overlay/draw_game_overlay.cpp
+Slider,Game Overlay,Icon Overlay,Icon Offset Y,game_overlay_icon_offset_y,-500.0-500.0,0.00,GUI,Vertical icon offset from the selected anchor.,overlay/draw_game_overlay.cpp
+Activate/deactivate,Game Overlay,Aim Simulation,Enable Aim Simulation Window,aim_sim_enabled,true/false,false,GUI,Shows the aim simulation overlay window.,overlay/draw_game_overlay.cpp
+Slider,Game Overlay,Aim Simulation,Sim X,aim_sim_x,-3000-3000,24,GUI,Aim simulation window X position.,overlay/draw_game_overlay.cpp
+Slider,Game Overlay,Aim Simulation,Sim Y,aim_sim_y,-3000-3000,24,GUI,Aim simulation window Y position.,overlay/draw_game_overlay.cpp
+Slider,Game Overlay,Aim Simulation,Sim Width,aim_sim_width,220-1600,560,GUI,Aim simulation window width.,overlay/draw_game_overlay.cpp
+Slider,Game Overlay,Aim Simulation,Sim Height,aim_sim_height,180-1000,360,GUI,Aim simulation window height.,overlay/draw_game_overlay.cpp
+Slider,Game Overlay,Aim Simulation,Sim FPS Min,aim_sim_fps_min,15-360,90,GUI,Minimum simulated frame rate.,overlay/draw_game_overlay.cpp
+Slider,Game Overlay,Aim Simulation,Sim FPS Max,aim_sim_fps_max,15-360,120,GUI,Maximum simulated frame rate. The GUI keeps min and max ordered.,overlay/draw_game_overlay.cpp
+Slider,Game Overlay,Aim Simulation,FPS Jitter,aim_sim_fps_jitter,0.000-0.800,0.150,GUI,Randomized FPS variance for the simulation.,overlay/draw_game_overlay.cpp
+Slider,Game Overlay,Aim Simulation,Capture Delay (ms),aim_sim_capture_delay_ms,0.0-80.0,6.00,GUI,Simulated capture delay.,overlay/draw_game_overlay.cpp
+Activate/deactivate,Game Overlay,Aim Simulation,Use Live Inference Delay,aim_sim_use_live_inference,true/false,true,GUI,Uses live backend timing for inference delay instead of the manual value.,overlay/draw_game_overlay.cpp
+Slider,Game Overlay,Aim Simulation,Inference Delay (ms),aim_sim_inference_delay_ms,0.0-120.0,12.00,GUI,Manual simulated inference delay when not using live timing.,overlay/draw_game_overlay.cpp
+Slider,Game Overlay,Aim Simulation,Input Delay (ms),aim_sim_input_delay_ms,0.0-60.0,2.00,GUI,Simulated input delay.,overlay/draw_game_overlay.cpp
+Slider,Game Overlay,Aim Simulation,Extra Delay (ms),aim_sim_extra_delay_ms,0.0-60.0,2.00,GUI,Additional simulated processing delay.,overlay/draw_game_overlay.cpp
+Slider,Game Overlay,Aim Simulation,Target Max Speed,aim_sim_target_max_speed,20-2500,560.00,GUI,Maximum simulated target speed.,overlay/draw_game_overlay.cpp
+Slider,Game Overlay,Aim Simulation,Target Accel,aim_sim_target_accel,20-10000,1850.00,GUI,Simulated target acceleration.,overlay/draw_game_overlay.cpp
+Slider,Game Overlay,Aim Simulation,Target Stop Chance,aim_sim_target_stop_chance,0.00-0.95,0.25,GUI,Probability that the simulated target pauses during a retarget.,overlay/draw_game_overlay.cpp
+Activate/deactivate,Game Overlay,Aim Simulation,Show Delayed Observation,aim_sim_show_observed,true/false,true,GUI,Shows delayed target observation in the simulation.,overlay/draw_game_overlay.cpp
+Activate/deactivate,Game Overlay,Aim Simulation,Show Trajectory History,aim_sim_show_history,true/false,true,GUI,Shows historical target/aim trails.,overlay/draw_game_overlay.cpp
+Activate/deactivate,Game Overlay,Aim Simulation,Show Kalman Debug,aim_sim_show_kalman_debug,true/false,true,GUI,Shows Kalman-related debug visuals in the simulation.,overlay/draw_game_overlay.cpp
+Activate/deactivate,Debug,Screenshot Buttons,Verbose console output,verbose,true/false,false,GUI,Enables extra console logging.,overlay/draw_debug.cpp
+Activate/deactivate,Debug,Log File,Enable log file,debug_log_file_enabled,true/false,false,GUI,Writes logs to debug_log_file_path when enabled.,overlay/draw_debug.cpp
+Activate/deactivate,Debug,Neural Diagnostics,Log neural tracker associations,neural_tracker_log_enabled,true/false,false,GUI,Writes neural association diagnostics to neural_tracker_log_path.,overlay/draw_debug.cpp
+Activate/deactivate,Debug,Neural Diagnostics,Show neural tracker debug,neural_tracker_debug_enabled,true/false,false,GUI,Shows neural tracker debug output in the game overlay path.,overlay/draw_debug.cpp
+Combo,Capture,General Capture,Detection Resolution,detection_resolution,"160, 320, 640",320,GUI,Changes detector input resolution and restarts/reloads dependent paths.,overlay/draw_capture.cpp
+Combo,Capture,General Capture,Capture method,capture_method,"duplication_api, winrt, virtual_camera, udp_capture",duplication_api,GUI,Selects frame source.,overlay/draw_capture.cpp
+Combo,Capture,WinRT,Capture target (WinRT),capture_target,"monitor, window",monitor,GUI,WinRT only.,overlay/draw_capture.cpp
+Input text,Capture,WinRT,Window title contains,capture_window_title,text,,GUI,Used when WinRT target is window.,overlay/draw_capture.cpp
+Combo,Capture,Monitor Capture,Capture monitor,monitor_idx,monitor index,0,GUI,Monitor list is built from active displays.,overlay/draw_capture.cpp
+Combo,Capture,Virtual Camera,Virtual camera,virtual_camera_name,available cameras,None,GUI,Filtered list of DirectShow video input devices.,overlay/draw_capture.cpp
+Input text,Capture,UDP Capture,UDP IP,udp_ip,IPv4/string,0.0.0.0,GUI,Applied with the Apply UDP Settings button.,overlay/draw_capture.cpp
+Input int,Capture,UDP Capture,UDP Port,udp_port,1-65535,1234,GUI,Applied with the Apply UDP Settings button.,overlay/draw_capture.cpp
+Combo,Mouse,Game Profile,Active Game Profile,active_game,profile names,UNIFIED,GUI,Selects the active game profile.,overlay/draw_mouse.cpp
+Add/delete,Mouse,Manage Profiles,Game profile rows,Games.<profile>,"name = sens,yaw,pitch[,true,baseFOV]",profile/local,GUI,Custom profiles can be added/deleted; UNIFIED is read-only.,overlay/draw_mouse.cpp
+Combo,Mouse,Input Method,Mouse Input Method,input_method,"WIN32, GHUB, RAZER, ARDUINO, KMBOX_NET, KMBOX_A, MAKCU",RAZER,GUI,Changes active mouse backend.,overlay/draw_mouse.cpp
+Combo,Mouse,Input Method,Arduino Port,arduino_port,COM1-COM30,COM0,GUI,Arduino input only.,overlay/draw_mouse.cpp
+Combo,Mouse,Input Method,Arduino Baudrate,arduino_baudrate,9600-115200,115200,GUI,Arduino input only.,overlay/draw_mouse.cpp
+Input text,Mouse,Input Method,Kmbox Net IP,kmbox_net_ip,text,10.42.42.42,GUI,Saved with Save & Reconnect.,overlay/draw_mouse.cpp
+Input text,Mouse,Input Method,Kmbox Net Port,kmbox_net_port,text,1984,GUI,Saved with Save & Reconnect.,overlay/draw_mouse.cpp
+Input text,Mouse,Input Method,Kmbox Net UUID,kmbox_net_uuid,text,DEADC0DE,GUI,Saved with Save & Reconnect.,overlay/draw_mouse.cpp
+Input text,Mouse,Input Method,Kmbox A PIDVID,kmbox_a_pidvid,PPPPVVVV,,GUI,Saved with Save & Reconnect.,overlay/draw_mouse.cpp
+Combo,Mouse,Input Method,Makcu Port,makcu_port,"AUTO, COM1-COM30",AUTO,GUI,Makcu input only.,overlay/draw_mouse.cpp
+Combo,Mouse,Input Method,Makcu Baudrate,makcu_baudrate,115200-4000000,4000000,GUI,Makcu input only.,overlay/draw_mouse.cpp
+Input text,Neural,Neural Tracker,Association model,neural_tracker_model_path,path,training/models/neural_tracker.onnx,GUI,Path to the neural tracker ONNX file.,overlay/draw_neural.cpp
+Combo,AI,Model,Model,ai_model,models folder,sunxds_0.8.1.onnx,GUI,Selects detector model from available files.,overlay/draw_ai.cpp
+Combo,AI,Backend,Backend,backend,"TRT, DML",DML,CUDA GUI / DML config-only,CUDA builds only; DML build does not expose this combo.,overlay/draw_ai.cpp
+Combo/buttons,AI,Depth Inference,Depth model,depth_model_path,models/depth,depth_anything_v2.engine,CUDA GUI / DML config-only,CUDA builds only.,overlay/draw_depth.cpp
+Combo,AI,Depth Mask,Depth colormap,depth_colormap,0-21 OpenCV colormap index,18,CUDA GUI / DML config-only,CUDA builds only.,overlay/draw_depth.cpp
+Combo rows,Buttons,Button Bindings,Targeting Buttons,button_targeting,key list,RightMouseButton,GUI,Supports multiple bindings with + and -.,overlay/draw_buttons.cpp
+Combo rows,Buttons,Button Bindings,Shoot Buttons,button_shoot,key list,LeftMouseButton,GUI,Supports multiple bindings with + and -.,overlay/draw_buttons.cpp
+Combo rows,Buttons,Button Bindings,Zoom Buttons,button_zoom,key list,RightMouseButton,GUI,Supports multiple bindings with + and -.,overlay/draw_buttons.cpp
+Combo rows,Buttons,Button Bindings,Exit Buttons,button_exit,key list,F2,GUI,Supports multiple bindings with + and -.,overlay/draw_buttons.cpp
+Combo rows,Buttons,Button Bindings,Pause Buttons,button_pause,key list,F3,GUI,Supports multiple bindings with + and -.,overlay/draw_buttons.cpp
+Combo rows,Buttons,Button Bindings,Reload Config Buttons,button_reload_config,key list,F4,GUI,Supports multiple bindings with + and -.,overlay/draw_buttons.cpp
+Combo rows,Buttons,Button Bindings,Overlay Buttons,button_open_overlay,key list,Home,GUI,Supports multiple bindings with + and -.,overlay/draw_buttons.cpp
+Input text/browse,Game Overlay,Icon Overlay,Icon Path,game_overlay_icon_path,path,icon.png,GUI,Image path for icon overlay.,overlay/draw_game_overlay.cpp
+Input int,Game Overlay,Icon Overlay,Icon Class (-1 = all),game_overlay_icon_class,-1 or class id,-1,GUI,Restricts icon to one class when >= 0.,overlay/draw_game_overlay.cpp
+Combo,Game Overlay,Icon Overlay,Icon Anchor,game_overlay_icon_anchor,"center, top, bottom, head",center,GUI,Anchor point used for icon placement.,overlay/draw_game_overlay.cpp
+Combo rows,Debug,Screenshot Buttons,Screenshot buttons,screenshot_button,key list,None,GUI,Supports multiple bindings with + and -.,overlay/draw_debug.cpp
+Input int,Debug,Screenshot Buttons,Screenshot delay,screenshot_delay,step 50/500,500,GUI,Delay before screenshot capture.,overlay/draw_debug.cpp
+Input text,Debug,Log File,Log file path,debug_log_file_path,path,logs/0BS.log,GUI,Used when Enable log file is on.,overlay/draw_debug.cpp
+Input text,Debug,Neural Diagnostics,Neural tracker log,neural_tracker_log_path,path,training/logs/neural_tracker_association.csv,GUI,CSV path for neural association diagnostics.,overlay/draw_debug.cpp
+Config-only setting,,Mouse prediction,prediction_futurePositions,prediction_futurePositions,integer,20,Config only,"Number of future target positions to retain/use for prediction visualization. Saved in current config.ini, but no direct GUI control exists.",config/config.cpp
+Config-only setting,,Mouse prediction,draw_futurePositions,draw_futurePositions,true/false,true,Config only,Enables drawing future positions in preview/debug paths. Separate from game_overlay_draw_future.,config/config.cpp
+Config-only setting,,PID governor,pid_governor_model_path,pid_governor_model_path,path,training/models/pid_governor.onnx,Config only,Model path for the ONNX PID governor. Relative paths are resolved against current/exe parent locations.,config/config.cpp
+Config-only setting,,AI backend,backend,backend,DML or TRT,DML,DML config-only / CUDA GUI,Selects DirectML or TensorRT backend. GUI combo exists only in CUDA builds.,config/config.cpp
+Config-only setting,,AI backend,dml_device_id,dml_device_id,integer adapter id,0,Config only,DirectML adapter index used by ONNX Runtime DML. Not exposed in the GUI.,config/config.cpp
+Config-only setting,,System reserves,cpuCoreReserveCount,cpuCoreReserveCount,integer,4,Config only,CPU cores reserved away from worker assignment. Not exposed in the GUI.,config/config.cpp
+Config-only setting,,System reserves,systemMemoryReserveMB,systemMemoryReserveMB,MB,2048,Config only,System memory reserve used by runtime resource planning. Not exposed in the GUI.,config/config.cpp
+Config-only setting,,Custom classes,class_player,class_player,integer class id,0,Config only,Detector class id treated as player/body. Not exposed in the GUI.,config/config.cpp
+Config-only setting,,Custom classes,class_head,class_head,integer class id,1,Config only,Detector class id treated as head. Not exposed in the GUI.,config/config.cpp
+Config-only setting,,Debug,show_fps,show_fps,true/false,false,Config only,Legacy/debug FPS display flag. Saved in config.ini but not exposed in the current GUI.,config/config.cpp
+Config-only setting,,Game profiles,Games.UNIFIED,Games.UNIFIED,"sens,yaw,pitch[,true,baseFOV]","1.00,0.02,0.02",Config only,Default profile row used for degree-to-count conversion. UNIFIED is shown read-only in the GUI.,config/config.cpp
+Config-only setting,,Depth,depth_inference_enabled,depth_inference_enabled,true/false,true,DML config-only / CUDA GUI,Enables depth inference runtime. In the DML build this remains config-only; CUDA builds expose it in AI -> Depth.,config/config.cpp
+Config-only setting,,Depth,depth_model_path,depth_model_path,path,depth_anything_v2.engine,DML config-only / CUDA GUI,Depth model or engine path. In the DML build this remains config-only; CUDA builds expose it in AI -> Depth.,config/config.cpp
+Config-only setting,,Depth,depth_fps,depth_fps,0-120,100,DML config-only / CUDA GUI,Depth debug inference rate. In the DML build this remains config-only; CUDA builds expose it in AI -> Depth.,config/config.cpp
+Config-only setting,,Depth,depth_colormap,depth_colormap,0-21,18,DML config-only / CUDA GUI,OpenCV colormap index for depth debug view. In the DML build this remains config-only; CUDA builds expose it in AI -> Depth.,config/config.cpp
+Config-only setting,,Depth,depth_mask_enabled,depth_mask_enabled,true/false,false,DML config-only / CUDA GUI,Enables depth mask generation. In the DML build this remains config-only; CUDA builds expose it in AI -> Depth.,config/config.cpp
+Config-only setting,,Depth,depth_mask_fps,depth_mask_fps,"1-30 GUI, >=0 load clamp",5,DML config-only / CUDA GUI,Depth mask update frequency. In the DML build this remains config-only; CUDA builds expose it in AI -> Depth.,config/config.cpp
+Config-only setting,,Depth,depth_mask_near_percent,depth_mask_near_percent,1-100,20,DML config-only / CUDA GUI,Near-depth percentile threshold for mask generation. In the DML build this remains config-only; CUDA builds expose it in AI -> Depth.,config/config.cpp
+Config-only setting,,Depth,depth_mask_expand,depth_mask_expand,0-128 px,0,DML config-only / CUDA GUI,Expands the mask after generation. In the DML build this remains config-only; CUDA builds expose it in AI -> Depth.,config/config.cpp
+Config-only setting,,Depth,depth_mask_hold_frames,depth_mask_hold_frames,0-120,0,DML config-only / CUDA GUI,Frames to hold/reuse the last mask. In the DML build this remains config-only; CUDA builds expose it in AI -> Depth.,config/config.cpp
+Config-only setting,,Depth,depth_mask_alpha,depth_mask_alpha,0-255,90,DML config-only / CUDA GUI,Depth mask overlay alpha. In the DML build this remains config-only; CUDA builds expose it in AI -> Depth.,config/config.cpp
+Config-only setting,,Depth,depth_mask_invert,depth_mask_invert,true/false,false,DML config-only / CUDA GUI,Inverts near/far mask selection. In the DML build this remains config-only; CUDA builds expose it in AI -> Depth.,config/config.cpp
+Config-only setting,,Depth,depth_debug_overlay_enabled,depth_debug_overlay_enabled,true/false,false,DML config-only / CUDA GUI,Shows depth debug overlay in the game overlay. In the DML build this remains config-only; CUDA builds expose it in AI -> Depth.,config/config.cpp
+Config-only setting,,Advanced mouse,minSpeedMultiplier,minSpeedMultiplier,float,0.1,Loadable hidden key,Legacy minimum movement speed multiplier. Loadable from config.ini if added manually; saveConfig does not currently emit it.,config/config.cpp
+Config-only setting,,Advanced mouse,maxSpeedMultiplier,maxSpeedMultiplier,float,0.1,Loadable hidden key,Legacy maximum movement speed multiplier. Loadable from config.ini if added manually; saveConfig does not currently emit it.,config/config.cpp
+Config-only setting,,Advanced mouse,predictionInterval,predictionInterval,seconds,0.01,Loadable hidden key,Prediction sample interval used by legacy/auxiliary prediction logic. Loadable from config.ini if added manually; saveConfig does not currently emit it.,config/config.cpp
+Config-only setting,,Kalman,kalman_enabled,kalman_enabled,true/false,true,Config only,Enables Kalman filtering for target motion estimation. Loadable hidden key; no GUI control.,config/config.cpp
+Config-only setting,,Kalman,kalman_process_noise_position,kalman_process_noise_position,0.0001-5000,40.0,Config only,Position process noise. Higher values make the filter adapt faster to position changes. Loadable hidden key; no GUI control.,config/config.cpp
+Config-only setting,,Kalman,kalman_process_noise_velocity,kalman_process_noise_velocity,0.0001-50000,1800.0,Config only,Velocity process noise. Higher values make velocity estimates change faster. Loadable hidden key; no GUI control.,config/config.cpp
+Config-only setting,,Kalman,kalman_measurement_noise,kalman_measurement_noise,0.0001-5000,35.0,Config only,Measurement noise. Higher values trust detections less. Loadable hidden key; no GUI control.,config/config.cpp
+Config-only setting,,Kalman,kalman_velocity_damping,kalman_velocity_damping,0.0-3.0,0.08,Config only,Damps velocity estimates to reduce runaway prediction. Loadable hidden key; no GUI control.,config/config.cpp
+Config-only setting,,Kalman,kalman_max_velocity,kalman_max_velocity,100-60000,20000.0,Config only,Maximum allowed tracked velocity. Loadable hidden key; no GUI control.,config/config.cpp
+Config-only setting,,Kalman,kalman_warmup_frames,kalman_warmup_frames,0-20,2,Config only,Frames before Kalman output is considered warmed up. Loadable hidden key; no GUI control.,config/config.cpp
+Config-only setting,,Kalman,kalman_compensate_detection_delay,kalman_compensate_detection_delay,true/false,true,Config only,Accounts for detector latency in prediction. Loadable hidden key; no GUI control.,config/config.cpp
+Config-only setting,,Kalman,kalman_additional_prediction_ms,kalman_additional_prediction_ms,-80.0-120.0,0.0,Config only,Manual extra prediction offset in milliseconds. Loadable hidden key; no GUI control.,config/config.cpp
+Config-only setting,,Kalman,kalman_reset_timeout_sec,kalman_reset_timeout_sec,0.05-3.0,0.5,Config only,Time without stable observations before Kalman state resets. Loadable hidden key; no GUI control.,config/config.cpp
+Config-only setting,,Legacy snap,snapRadius,snapRadius,float,1.5,Config only,Legacy snap radius. Loadable hidden key; no GUI control.,config/config.cpp
+Config-only setting,,Legacy snap,nearRadius,nearRadius,float,25.0,Config only,Legacy near-target radius. Loadable hidden key; no GUI control.,config/config.cpp
+Config-only setting,,Legacy snap,speedCurveExponent,speedCurveExponent,float,3.0,Config only,Legacy speed curve exponent. Loadable hidden key; no GUI control.,config/config.cpp
+Config-only setting,,Legacy snap,snapBoostFactor,snapBoostFactor,float,1.15,Config only,Legacy snap boost multiplier. Loadable hidden key; no GUI control.,config/config.cpp
+Config-only setting,,Legacy recoil,easynorecoil,easynorecoil,true/false,false,Config only,Legacy recoil helper flag. Loadable hidden key; no GUI control and not emitted by saveConfig.,config/config.cpp
+Config-only setting,,Legacy recoil,easynorecoilstrength,easynorecoilstrength,float,0.0,Config only,Legacy recoil helper strength. Loadable hidden key; no GUI control and not emitted by saveConfig.,config/config.cpp
+Config-only setting,,Wind mouse,wind_mouse_enabled,wind_mouse_enabled,true/false,false,Config only,Enables wind-style motion noise in supported runtime/simulation paths. Loadable hidden key; no GUI control.,config/config.cpp
+Config-only setting,,Wind mouse,wind_G,wind_G,float,18.0,Config only,Wind mouse gravity parameter. Loadable hidden key; no GUI control.,config/config.cpp
+Config-only setting,,Wind mouse,wind_W,wind_W,float,15.0,Config only,Wind mouse wind parameter. Loadable hidden key; no GUI control.,config/config.cpp
+Config-only setting,,Wind mouse,wind_M,wind_M,float,10.0,Config only,Wind mouse max-step parameter. Loadable hidden key; no GUI control.,config/config.cpp
+Config-only setting,,Wind mouse,wind_D,wind_D,float,8.0,Config only,Wind mouse damping/distance parameter. Loadable hidden key; no GUI control.,config/config.cpp
+Config-only setting,,CUDA,export_enable_fp8,export_enable_fp8,true/false,false,CUDA config-only,Enables FP8 TensorRT export where supported. CUDA builds only; no GUI checkbox.,config/config.cpp
+Config-only setting,,CUDA,export_enable_fp16,export_enable_fp16,true/false,true,CUDA config-only,Enables FP16 TensorRT export where supported. CUDA builds only; no GUI checkbox.,config/config.cpp
+Config-only setting,,CUDA,use_cuda_graph,use_cuda_graph,true/false,false,CUDA config-only,Enables CUDA graph execution path. CUDA builds only; no GUI checkbox.,config/config.cpp
+Config-only setting,,CUDA,use_pinned_memory,use_pinned_memory,true/false,true,CUDA config-only,Uses pinned host memory for CUDA paths. CUDA builds only; no GUI checkbox.,config/config.cpp
+Config-only setting,,CUDA,gpuMemoryReserveMB,gpuMemoryReserveMB,MB,2048,CUDA config-only,GPU memory reserve for CUDA resource planning. CUDA builds only; no GUI control.,config/config.cpp
+Config-only setting,,CUDA,enableGpuExclusiveMode,enableGpuExclusiveMode,true/false,true,CUDA config-only,Attempts GPU exclusive mode at startup. CUDA builds only; no GUI checkbox.,config/config.cpp
