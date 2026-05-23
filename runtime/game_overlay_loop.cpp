@@ -202,6 +202,7 @@ static double aim_sim_vec_len(const AimSimVec2& v)
 static aim::AimKalmanSettings aim_sim_build_kalman_settings_from_config()
 {
     aim::AimKalmanSettings settings;
+    settings.runtimeLatencySweepEnabled = config.runtime_latency_sweep_enabled;
     settings.enabled = config.kalman_enabled;
     settings.process_noise_position = static_cast<double>(config.kalman_process_noise_position);
     settings.process_noise_velocity = static_cast<double>(config.kalman_process_noise_velocity);
@@ -209,19 +210,24 @@ static aim::AimKalmanSettings aim_sim_build_kalman_settings_from_config()
     settings.velocity_damping = static_cast<double>(config.kalman_velocity_damping);
     settings.max_velocity = static_cast<double>(config.kalman_max_velocity);
     settings.warmup_frames = config.kalman_warmup_frames;
+    settings.velocitySeedEnabled = config.kalman_velocity_seed_enabled;
+    settings.acquisitionFrames = config.kalman_acquisition_frames;
     return settings;
 }
 
 static bool aim_sim_kalman_settings_equal(const aim::AimKalmanSettings& a, const aim::AimKalmanSettings& b)
 {
     return
+        (a.runtimeLatencySweepEnabled == b.runtimeLatencySweepEnabled) &&
         (a.enabled == b.enabled) &&
         (std::abs(a.process_noise_position - b.process_noise_position) <= 1e-6) &&
         (std::abs(a.process_noise_velocity - b.process_noise_velocity) <= 1e-6) &&
         (std::abs(a.measurement_noise - b.measurement_noise) <= 1e-6) &&
         (std::abs(a.velocity_damping - b.velocity_damping) <= 1e-6) &&
         (std::abs(a.max_velocity - b.max_velocity) <= 1e-6) &&
-        (a.warmup_frames == b.warmup_frames);
+        (a.warmup_frames == b.warmup_frames) &&
+        (a.velocitySeedEnabled == b.velocitySeedEnabled) &&
+        (a.acquisitionFrames == b.acquisitionFrames);
 }
 
 static void aim_sim_sync_kalman_config(AimSimulationState& s)
@@ -1618,6 +1624,27 @@ void gameOverlayRenderLoop()
                     15.0f,
                     textCol
                 );
+
+                const float innerAimX = static_cast<float>(baseX) + static_cast<float>(t.innerAimX) * scaleX;
+                const float innerAimY = static_cast<float>(baseY) + static_cast<float>(t.innerAimY) * scaleY;
+                const float innerAimRadius =
+                    std::max(2.0f, t.innerAimRadius * ((scaleX + scaleY) * 0.5f));
+                const float cross = std::max(3.0f, 4.0f * ((scaleX + scaleY) * 0.5f));
+                const float consistencyScore = std::clamp(t.consistencyScore, 0.0f, 1.0f);
+                const uint32_t innerCol =
+                    consistencyScore > 0.72f
+                    ? ARGB(235, 90, 255, 140)
+                    : (consistencyScore > 0.42f
+                        ? ARGB(220, 255, 210, 90)
+                        : ARGB(210, 255, 95, 95));
+
+                if (innerAimX >= baseX - 40.0f && innerAimY >= baseY - 40.0f &&
+                    innerAimX <= baseX + regionW + 40.0f && innerAimY <= baseY + regionH + 40.0f)
+                {
+                    gameOverlayPtr->AddLine({ innerAimX - cross, innerAimY, innerAimX + cross, innerAimY }, innerCol, 1.4f);
+                    gameOverlayPtr->AddLine({ innerAimX, innerAimY - cross, innerAimX, innerAimY + cross }, innerCol, 1.4f);
+                    gameOverlayPtr->AddCircle({ innerAimX, innerAimY, innerAimRadius }, innerCol, 1.0f);
+                }
             }
         }
 

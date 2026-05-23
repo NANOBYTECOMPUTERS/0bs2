@@ -49,6 +49,7 @@
     <ClCompile Include="mouse\PidGovernor.cpp" />
     <ClCompile Include="mouse\PidMouseController.cpp" />
     <ClCompile Include="mouse\MouseInput.cpp" />
+    <ClCompile Include="mouse\Teensy41RawHid.cpp" />
     <ClCompile Include="mouse\mouse.cpp" />
     <ClCompile Include="mouse\Arduino.cpp" />
     <ClCompile Include="mouse\BoxTarget.cpp" />
@@ -115,6 +116,7 @@
     <ClInclude Include="mouse\PidGovernor.h" />
     <ClInclude Include="mouse\PidMouseController.h" />
     <ClInclude Include="mouse\MouseInput.h" />
+    <ClInclude Include="mouse\Teensy41RawHid.h" />
     <ClInclude Include="mouse\mouse.h" />
     <ClInclude Include="mouse\Arduino.h" />
     <ClInclude Include="mouse\BoxTarget.h" />

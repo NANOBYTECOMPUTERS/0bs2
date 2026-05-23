@@ -2,6 +2,7 @@
 #include <winsock2.h>
 #include <Windows.h>
 
+#include <algorithm>
 #include <chrono>
 #include <optional>
 #include <vector>
@@ -138,8 +139,8 @@ void mouseThreadFunction(MouseThread& mouseThread)
                 mouseThread.setTargetDetected(true);
 
                 auto futurePositions = mouseThread.predictFuturePositions(
-                    activeTarget->pivotX,
-                    activeTarget->pivotY,
+                    activeTarget->smoothX,
+                    activeTarget->smoothY,
                     config.prediction_futurePositions
                 );
                 mouseThread.storeFuturePositions(futurePositions);
@@ -170,16 +171,13 @@ void mouseThreadFunction(MouseThread& mouseThread)
         {
             if (activeTarget && hasAimObservation)
             {
-                const double targetCenterX = activeTarget->x + activeTarget->w * 0.5;
-                const double targetCenterY = activeTarget->y + activeTarget->h * 0.5;
                 mouseThread.moveMousePivot(
-                    activeTarget->pivotX,
-                    activeTarget->pivotY,
+                    activeTarget->smoothX,
+                    activeTarget->smoothY,
                     activeTarget->w,
                     activeTarget->h,
                     activeTarget->confidence,
-                    activeTarget->pivotX - targetCenterX,
-                    activeTarget->pivotY - targetCenterY);
+                    0.0, 0.0);
 
                 if (config.auto_shoot)
                 {
