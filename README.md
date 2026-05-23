@@ -1,3 +1,6 @@
+# Discord
+https://discord.gg/hZzdvvVU8b
+
 # 0BS GUI and Config Setting Reference
 
 Generated on 2026-05-16 from `x64\DML\config.ini` and the ImGui source files under `overlay/`.
