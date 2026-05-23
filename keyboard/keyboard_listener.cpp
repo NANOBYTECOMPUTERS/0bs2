@@ -5,6 +5,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <mutex>
 #include <thread>
 #include <iostream>
 
@@ -42,9 +43,22 @@ bool prevDownArrow = false;
 bool prevLeftArrow = false;
 bool prevRightArrow = false;
 
+bool isTeensy41InputMethod()
+{
+    return config.input_method == "TEENSY41" || config.input_method == "TEENSY41_HID";
+}
+
+bool useInputDeviceButtonState()
+{
+    return (config.arduino_enable_keys || isTeensy41InputMethod()) &&
+        activeMouseInputOwner && activeMouseInputOwner->isOpen();
+}
+
 bool isAnyKeyPressed(const std::vector<std::string>& keys)
 {
     bool usePhysicalDevice = false;
+    const bool useArduinoButtonState = config.arduino_enable_keys || isTeensy41InputMethod();
+    const bool useGenericButtonState = useInputDeviceButtonState();
 
     if (makcuSerial && makcuSerial->isOpen()) {
         usePhysicalDevice = true;
@@ -52,7 +66,10 @@ bool isAnyKeyPressed(const std::vector<std::string>& keys)
     else if (kmboxNetSerial && kmboxNetSerial->isOpen()) {
         usePhysicalDevice = true;
     }
-    else if (config.arduino_enable_keys && arduinoSerial && arduinoSerial->isOpen()) {
+    else if (useArduinoButtonState && arduinoSerial && arduinoSerial->isOpen()) {
+        usePhysicalDevice = true;
+    }
+    else if (useGenericButtonState) {
         usePhysicalDevice = true;
     }
 
@@ -87,12 +104,20 @@ bool isAnyKeyPressed(const std::vector<std::string>& keys)
             else if (key_name == "X2MouseButton")     pressed = kmboxNetSerial->aiming_active;
         }
 
-        // Arduino
-        if (!pressed && config.arduino_enable_keys && arduinoSerial && arduinoSerial->isOpen())
+        // Arduino / Teensy serial button state
+        if (!pressed && useArduinoButtonState && arduinoSerial && arduinoSerial->isOpen())
         {
             if (key_name == "LeftMouseButton")       pressed = arduinoSerial->shooting_active;
             else if (key_name == "RightMouseButton")  pressed = arduinoSerial->zooming_active;
             else if (key_name == "X2MouseButton")     pressed = arduinoSerial->aiming_active;
+        }
+
+        // Generic input-device button state, including TEENSY41_HID RawHID.
+        if (!pressed && useGenericButtonState)
+        {
+            if (key_name == "LeftMouseButton")       pressed = activeMouseInputOwner->shootingActive();
+            else if (key_name == "RightMouseButton")  pressed = activeMouseInputOwner->zoomingActive();
+            else if (key_name == "X2MouseButton")     pressed = activeMouseInputOwner->aimingActive();
         }
 
         // Win32 API
@@ -130,11 +155,15 @@ void keyboardListener()
 {
     while (!shouldExit)
     {
+        const bool useArduinoButtonState = config.arduino_enable_keys || isTeensy41InputMethod();
+        const bool useGenericButtonState = useInputDeviceButtonState();
+
         // Aiming
         if (!config.auto_aim)
         {
             aiming = isAnyKeyPressed(config.button_targeting) ||
-                (config.arduino_enable_keys && arduinoSerial && arduinoSerial->isOpen() && arduinoSerial->aiming_active) ||
+                (useArduinoButtonState && arduinoSerial && arduinoSerial->isOpen() && arduinoSerial->aiming_active) ||
+                (useGenericButtonState && activeMouseInputOwner->aimingActive()) ||
                 (kmboxNetSerial && kmboxNetSerial->isOpen() && kmboxNetSerial->aiming_active) ||
                 (makcuSerial && makcuSerial->isOpen() && makcuSerial->aiming_active);
         }
@@ -145,13 +174,15 @@ void keyboardListener()
 
         // Shooting
         shooting = isAnyKeyPressed(config.button_shoot) ||
-            (config.arduino_enable_keys && arduinoSerial && arduinoSerial->isOpen() && arduinoSerial->shooting_active) ||
+            (useArduinoButtonState && arduinoSerial && arduinoSerial->isOpen() && arduinoSerial->shooting_active) ||
+            (useGenericButtonState && activeMouseInputOwner->shootingActive()) ||
             (kmboxNetSerial && kmboxNetSerial->isOpen() && kmboxNetSerial->shooting_active) ||
             (makcuSerial && makcuSerial->isOpen() && makcuSerial->shooting_active);
 
         // Zooming
         zooming = isAnyKeyPressed(config.button_zoom) ||
-            (config.arduino_enable_keys && arduinoSerial && arduinoSerial->isOpen() && arduinoSerial->zooming_active) ||
+            (useArduinoButtonState && arduinoSerial && arduinoSerial->isOpen() && arduinoSerial->zooming_active) ||
+            (useGenericButtonState && activeMouseInputOwner->zoomingActive()) ||
             (kmboxNetSerial && kmboxNetSerial->isOpen() && kmboxNetSerial->zooming_active) ||
             (makcuSerial && makcuSerial->isOpen() && makcuSerial->zooming_active);
 
@@ -183,18 +214,8 @@ void keyboardListener()
         {
             if (!reloadPressed)
             {
-                config.loadConfig();
-
-                if (globalMouseThread)
-                {
-                    globalMouseThread->updateConfig(
-                        config.detection_resolution,
-                        config.fovX,
-                        config.fovY,
-                        config.auto_shoot,
-                        config.bScope_multiplier
-                    );
-                }
+                std::lock_guard<std::mutex> lock(configMutex);
+                LoadRuntimeConfigMerge();
                 reloadPressed = true;
             }
         }

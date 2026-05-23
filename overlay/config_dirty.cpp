@@ -18,6 +18,20 @@ void OverlayConfig_MarkDirty()
     cfgDirtyAt = ImGui::GetTime();
 }
 
+void OverlayConfig_ClearDirty()
+{
+    cfgDirty = false;
+    cfgDirtyAt = 0.0;
+}
+
+bool OverlayConfig_SaveNow(const char* filename)
+{
+    const bool saved = config.saveConfig(filename ? filename : "config.ini");
+    if (saved)
+        OverlayConfig_ClearDirty();
+    return saved;
+}
+
 void OverlayConfig_TrySave(const char* filename)
 {
     if (!cfgDirty)
@@ -30,6 +44,5 @@ void OverlayConfig_TrySave(const char* filename)
     if (ImGui::IsAnyItemActive())
         return;
 
-    config.saveConfig(filename ? filename : "config.ini");
-    cfgDirty = false;
+    OverlayConfig_SaveNow(filename);
 }

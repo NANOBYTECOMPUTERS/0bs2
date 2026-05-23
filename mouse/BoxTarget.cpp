@@ -16,7 +16,7 @@
 #include "neural/NeuralTracker.h"
 
 BoxTarget::BoxTarget()
-    : x(0), y(0), w(0), h(0), classId(0), pivotX(0.0), pivotY(0.0), confidence(1.0), trackId(-1)
+    : x(0), y(0), w(0), h(0), classId(0), pivotX(0.0), pivotY(0.0), smoothX(0.0), smoothY(0.0), confidence(1.0), trackId(-1)
 {
 }
 
@@ -30,7 +30,7 @@ BoxTarget::BoxTarget(
     double py,
     double conf,
     int tid)
-    : x(x_), y(y_), w(w_), h(h_), classId(cls), pivotX(px), pivotY(py), confidence(conf), trackId(tid)
+    : x(x_), y(y_), w(w_), h(h_), classId(cls), pivotX(px), pivotY(py), smoothX(px), smoothY(py), confidence(conf), trackId(tid)
 {
 }
 
@@ -140,6 +140,208 @@ float MultiTargetTracker::iou(const cv::Rect2f& a, const cv::Rect2f& b)
     return inter / ua;
 }
 
+float MultiTargetTracker::scaleFactor() const
+{
+    return std::clamp(config.detection_resolution / 320.0f, 0.5f, 2.5f);
+}
+
+cv::Point2d MultiTargetTracker::computeInnerAimPoint(const cv::Rect2f& box, int classId) const
+{
+    const float smallBoxThreshold = 18.0f * scaleFactor();
+    const float mediumBoxThreshold = 45.0f * scaleFactor();
+
+    const double x = box.x + box.width * 0.5;
+    double yBias = 0.5;
+    if (classId == config.class_head)
+    {
+        yBias = std::clamp(static_cast<double>(config.head_y_offset), 0.05, 0.55);
+    }
+    else if (classId == config.class_player)
+    {
+        yBias = std::clamp(static_cast<double>(config.body_y_offset), 0.20, 0.90);
+    }
+    else if (box.width < smallBoxThreshold)
+    {
+        yBias = 0.5;
+    }
+    else if (box.width < mediumBoxThreshold)
+    {
+        yBias = std::clamp(static_cast<double>(config.head_y_offset), 0.10, 0.48);
+    }
+    else
+    {
+        (void)classId;
+        yBias = 0.48;
+    }
+
+    return { x, box.y + box.height * yBias };
+}
+
+double MultiTargetTracker::computeAssociationCost(const cv::Rect& newBox, const InnerAimTrack& track, float newConf) const
+{
+    const cv::Rect2f newBoxF(
+        static_cast<float>(newBox.x),
+        static_cast<float>(newBox.y),
+        static_cast<float>(newBox.width),
+        static_cast<float>(newBox.height));
+    const cv::Rect2f currentBoxF(
+        static_cast<float>(track.outerBox.x),
+        static_cast<float>(track.outerBox.y),
+        static_cast<float>(track.outerBox.width),
+        static_cast<float>(track.outerBox.height));
+
+    const float iouScore = std::clamp(iou(newBoxF, currentBoxF), 0.0f, 1.0f);
+    const cv::Point2d innerPoint = computeInnerAimPoint(newBoxF, track.classId);
+    const double innerX = innerPoint.x;
+    const double innerY = innerPoint.y;
+    const double dist = std::hypot(innerX - track.smoothX, innerY - track.smoothY);
+    const double normDist = std::min(1.0, dist / std::max(12.0, static_cast<double>(newBox.width)));
+    const double consistencyBonus = std::clamp(static_cast<double>(track.consistencyScore * 0.8f), 0.0, 1.0);
+
+    double cost =
+        0.22 * (1.0f - iouScore) +
+        0.48 * normDist +
+        0.30 * (1.0 - consistencyBonus);
+
+    const double proximity = 16.0f * scaleFactor();
+    if (dist < proximity)
+    {
+        if (!(newConf > track.confidence + 0.38f && newConf > 0.72f))
+            cost += 0.28 * (1.0 - dist / std::max(1.0, proximity));
+    }
+
+    return cost;
+}
+
+aim::AimKalmanSettings MultiTargetTracker::buildInnerAimKalmanSettings(bool agileMotion) const
+{
+    aim::AimKalmanSettings settings;
+    settings.runtimeLatencySweepEnabled = config.runtime_latency_sweep_enabled;
+    settings.enabled = config.kalman_enabled;
+    settings.process_noise_position = agileMotion ? 2.2 : 0.6;
+    settings.process_noise_velocity = agileMotion ? 3200.0 : 1400.0;
+    settings.measurement_noise = std::max(0.85, static_cast<double>(1.15f * scaleFactor()));
+    settings.velocity_damping = agileMotion ? 0.18 : 0.32;
+    settings.max_velocity = std::clamp(static_cast<double>(config.kalman_max_velocity), 100.0, 60000.0);
+    settings.warmup_frames = 2;
+    settings.velocitySeedEnabled = true;
+    settings.acquisitionFrames = 4;
+    return settings;
+}
+
+void MultiTargetTracker::initializeInnerAim(TrackState& t, const DetectionCandidate& d)
+{
+    t.innerAim = InnerAimTrack();
+    t.innerAim.trackId = t.id;
+    t.innerAim.classId = d.innerAimClassId;
+    const cv::Rect det(
+        static_cast<int>(std::lround(d.box.x)),
+        static_cast<int>(std::lround(d.box.y)),
+        static_cast<int>(std::lround(d.box.width)),
+        static_cast<int>(std::lround(d.box.height)));
+    t.innerAim.hits = t.hits;
+    updateInnerAim(t.innerAim, det, d.confidence, 1.0 / 120.0, d.innerAimX, d.innerAimY);
+}
+
+void MultiTargetTracker::updateInnerAim(InnerAimTrack& track, const cv::Rect& det, float conf, double dt)
+{
+    const cv::Point2d rawInner = computeInnerAimPoint(
+        cv::Rect2f(
+            static_cast<float>(det.x),
+            static_cast<float>(det.y),
+            static_cast<float>(det.width),
+            static_cast<float>(det.height)),
+        track.classId);
+    updateInnerAim(track, det, conf, dt, rawInner.x, rawInner.y);
+}
+
+void MultiTargetTracker::updateInnerAim(InnerAimTrack& track, const cv::Rect& det, float conf, double dt, double rawInnerX, double rawInnerY)
+{
+    track.observedThisFrame = true;
+    track.outerBox = det;
+    track.confidence = std::clamp(conf, 0.0f, 1.0f);
+
+    const double closeDistance = std::hypot(rawInnerX - track.smoothX, rawInnerY - track.smoothY);
+    if (config.kalman_enabled && track.kalman.initialized() && closeDistance < 2.5 * scaleFactor() && track.consistencyScore > 0.70f)
+    {
+        std::uniform_real_distribution<double> jitter(-0.4f * scaleFactor(), 0.4f * scaleFactor());
+        const double jitterScale = 0.25 * (1.0 - std::clamp(static_cast<double>(track.consistencyScore), 0.0, 1.0));
+        rawInnerX += jitter(innerAimRng_) * jitterScale;
+        rawInnerY += jitter(innerAimRng_) * jitterScale;
+    }
+
+    if (!config.kalman_enabled)
+    {
+        track.kalman.reset();
+        track.smoothX = rawInnerX;
+        track.smoothY = rawInnerY;
+    }
+    else
+    {
+        const auto velocity = track.kalman.velocity();
+        const bool highSpeed =
+            std::abs(velocity.first) > 45.0 * scaleFactor() ||
+            std::abs(velocity.second) > 45.0 * scaleFactor();
+        track.kalman.setSettings(buildInnerAimKalmanSettings(highSpeed));
+
+        const double lookahead = highSpeed ? 0.018 : 0.011;
+        const aim::AimKalmanTelemetry telemetry = track.kalman.update(rawInnerX, rawInnerY, dt, lookahead);
+        // Fast tracks keep the intended Kalman velocity * 0.011 forward bias, clamped to avoid orbiting.
+        const double velocityLeadSeconds = highSpeed ? 0.011 : 0.0;
+        double leadX = telemetry.velocity_x * velocityLeadSeconds;
+        double leadY = telemetry.velocity_y * velocityLeadSeconds;
+        const double maxLead = 2.5 * scaleFactor();
+        const double leadMag = std::hypot(leadX, leadY);
+        if (leadMag > maxLead && leadMag > 1e-9)
+        {
+            const double leadScale = maxLead / leadMag;
+            leadX *= leadScale;
+            leadY *= leadScale;
+        }
+        track.smoothX = telemetry.estimate_x + leadX;
+        track.smoothY = telemetry.estimate_y + leadY;
+    }
+
+    track.smoothX = std::clamp(track.smoothX, det.x - 2.0 * scaleFactor(), det.x + det.width + 2.0 * scaleFactor());
+    track.smoothY = std::clamp(track.smoothY, det.y - 2.0 * scaleFactor(), det.y + det.height + 2.0 * scaleFactor());
+
+    track.radius = (4.0f + (1.0f - track.confidence) * 14.0f) * scaleFactor();
+    if (config.kalman_enabled && track.kalman.initialized())
+        track.radius = std::max(3.5f * scaleFactor(), track.radius * 0.65f);
+
+    track.consistencyScore = std::min(1.0f, track.consistencyScore + 0.22f);
+    track.missedFrames = 0;
+}
+
+void MultiTargetTracker::decayInnerAim(InnerAimTrack& track)
+{
+    if (!track.observedThisFrame)
+    {
+        track.consistencyScore = std::max(0.0f, track.consistencyScore - 0.085f);
+        track.missedFrames++;
+        track.radius = std::min(48.0f * scaleFactor(), track.radius + 2.0f * scaleFactor());
+    }
+    else
+    {
+        track.missedFrames = 0;
+    }
+}
+
+bool MultiTargetTracker::shouldAcceptAsNewLock(const DetectionCandidate& det, const InnerAimTrack* current) const
+{
+    if (!current)
+        return true;
+
+    const double dist = std::hypot(det.pivotX - current->smoothX, det.pivotY - current->smoothY);
+    if (dist < 16.0f * scaleFactor())
+    {
+        return det.confidence > current->confidence + 0.38f &&
+               det.confidence > 0.72f;
+    }
+
+    return true;
+}
+
 int MultiTargetTracker::findTrackIndexById(int id) const
 {
     for (size_t i = 0; i < tracks_.size(); ++i)
@@ -185,8 +387,8 @@ int MultiTargetTracker::chooseBestTrack(int screenWidth, int screenHeight) const
         if (t.missed > allowedMissedFrames(t))
             continue;
 
-        const double dx = t.pivotX - cx;
-        const double dy = t.pivotY - cy;
+        const double dx = t.innerAim.smoothX - cx;
+        const double dy = t.innerAim.smoothY - cy;
         const double dist = std::hypot(dx, dy);
         const double hitBonus = std::min(5, t.hits) * 4.0;
         const double confidenceBonus = std::clamp(static_cast<double>(t.confidence), 0.0, 1.0) * 12.0;
@@ -235,7 +437,10 @@ void MultiTargetTracker::update(
     const auto now = std::chrono::steady_clock::now();
 
     for (auto& t : tracks_)
+    {
         t.observedThisFrame = false;
+        t.innerAim.observedThisFrame = false;
+    }
 
     if (boxes.size() != classes.size())
     {
@@ -262,13 +467,16 @@ void MultiTargetTracker::update(
         }
 
         const cv::Rect& b = boxes[i];
-        const double yOffset = (cls == config.class_head) ? config.head_y_offset : config.body_y_offset;
         DetectionCandidate d;
         d.box = cv::Rect2f(static_cast<float>(b.x), static_cast<float>(b.y), static_cast<float>(b.width), static_cast<float>(b.height));
         d.classId = cls;
         d.confidence = (i < confidences.size()) ? std::clamp(confidences[i], 0.0f, 1.0f) : 1.0f;
-        d.pivotX = b.x + b.width * 0.5;
-        d.pivotY = b.y + b.height * yOffset;
+        const cv::Point2d innerPoint = computeInnerAimPoint(d.box, cls);
+        d.pivotX = innerPoint.x;
+        d.pivotY = innerPoint.y;
+        d.innerAimX = innerPoint.x;
+        d.innerAimY = innerPoint.y;
+        d.innerAimClassId = cls;
         dets.push_back(d);
     }
 
@@ -352,6 +560,9 @@ void MultiTargetTracker::update(
                 {
                     d.pivotX = playerHeadPivotX[i];
                     d.pivotY = playerHeadPivotY[i];
+                    d.innerAimX = playerHeadPivotX[i];
+                    d.innerAimY = playerHeadPivotY[i];
+                    d.innerAimClassId = config.class_head;
                 }
                 filtered.push_back(d);
             }
@@ -374,6 +585,8 @@ void MultiTargetTracker::update(
         double headingPenalty = 0.0;
         double lockedBias = 0.0;
         double confidenceBonus = 0.0;
+        double innerAssociationCost = 0.0;
+        double antiStealPenalty = 0.0;
         double neuralScore = 0.5;
         double neuralBonus = 0.0;
         bool neuralEvaluated = false;
@@ -492,6 +705,12 @@ void MultiTargetTracker::update(
                 return breakdown;
 
             const double overlap = iou(predictedBox, d.box);
+            const cv::Rect detRect(
+                static_cast<int>(std::lround(d.box.x)),
+                static_cast<int>(std::lround(d.box.y)),
+                static_cast<int>(std::lround(d.box.width)),
+                static_cast<int>(std::lround(d.box.height)));
+            const double innerAssociationCost = computeAssociationCost(detRect, t.innerAim, d.confidence);
             const double predictedArea = std::max(1.0, static_cast<double>(predictedBox.width * predictedBox.height));
             const double detArea = std::max(1.0, static_cast<double>(d.box.width * d.box.height));
             const double sizePenalty = std::min(0.35, std::abs(std::log(detArea / predictedArea)) * 0.18);
@@ -528,23 +747,48 @@ void MultiTargetTracker::update(
                     lockedBias *= 0.75;
             }
 
+            double antiStealPenalty = 0.0;
+            if (lockedTrackId_ != -1 && t.id != lockedTrackId_)
+            {
+                const int lockedIdx = findTrackIndexById(lockedTrackId_);
+                if (lockedIdx >= 0)
+                {
+                    const auto& locked = tracks_[lockedIdx].innerAim;
+                    const double lockedProximity = std::hypot(d.pivotX - locked.smoothX, d.pivotY - locked.smoothY);
+                    const double antiStealRadius = 16.0f * scaleFactor();
+                    if (lockedProximity < antiStealRadius)
+                    {
+                        if (!shouldAcceptAsNewLock(d, &locked))
+                            antiStealPenalty = 3.0;
+                        else
+                            antiStealPenalty = 0.18 * (1.0 - lockedProximity / std::max(1.0, antiStealRadius));
+                    }
+                }
+            }
+
             breakdown.overlap = overlap;
             breakdown.sizePenalty = sizePenalty;
             breakdown.headingAlignment = headingAlignment;
             breakdown.headingPenalty = headingPenalty;
             breakdown.lockedBias = lockedBias;
             breakdown.confidenceBonus = confidenceBonus;
+            breakdown.innerAssociationCost = innerAssociationCost;
+            breakdown.antiStealPenalty = antiStealPenalty;
+            if (antiStealPenalty >= 3.0)
+                return breakdown;
+
             breakdown.accepted = true;
             breakdown.score =
-                (dist / maxDist) +
-                (1.0 - overlap) * 0.30 +
+                innerAssociationCost +
+                std::clamp(dist / maxDist, 0.0, 1.5) * 0.35 +
                 sizePenalty +
                 classPenalty +
                 missPenalty +
                 headingPenalty -
                 hitBonus -
                 confidenceBonus -
-                lockedBias;
+                lockedBias +
+                antiStealPenalty;
 
             if (config.neural_tracker_enabled)
             {
@@ -741,6 +985,21 @@ void MultiTargetTracker::update(
             t.age += 1;
             t.missed = 0;
             t.observedThisFrame = true;
+            t.innerAim.trackId = t.id;
+            t.innerAim.classId = d.innerAimClassId;
+            t.innerAim.hits = t.hits;
+            updateInnerAim(
+                t.innerAim,
+                cv::Rect(
+                    static_cast<int>(std::lround(d.box.x)),
+                    static_cast<int>(std::lround(d.box.y)),
+                    static_cast<int>(std::lround(d.box.width)),
+                    static_cast<int>(std::lround(d.box.height))),
+                d.confidence,
+                dt,
+                d.innerAimX,
+                d.innerAimY);
+            t.innerAim.hits = t.hits;
             t.lastUpdate = now;
         }
         else
@@ -755,10 +1014,29 @@ void MultiTargetTracker::update(
             t.box.height = std::max(1.0f, t.box.height + t.sizeVelocity.y * static_cast<float>(dt));
             t.pivotX += t.velocity.x * dt;
             t.pivotY += t.velocity.y * dt;
+            if (config.kalman_enabled && t.innerAim.kalman.initialized())
+            {
+                const auto predicted = t.innerAim.kalman.predict(std::clamp(dt + 0.011, 0.0, 0.08));
+                t.innerAim.smoothX = predicted.first;
+                t.innerAim.smoothY = predicted.second;
+            }
+            else if (config.kalman_enabled)
+            {
+                t.innerAim.smoothX += t.velocity.x * dt;
+                t.innerAim.smoothY += t.velocity.y * dt;
+            }
             const float decay = (t.id == lockedTrackId_) ? 0.90f : 0.84f;
             t.velocity *= decay;
             t.sizeVelocity *= decay;
             t.confidence *= (t.id == lockedTrackId_) ? 0.88f : 0.80f;
+            t.innerAim.confidence *= (t.id == lockedTrackId_) ? 0.90f : 0.82f;
+            t.innerAim.outerBox = cv::Rect(
+                static_cast<int>(std::lround(t.box.x)),
+                static_cast<int>(std::lround(t.box.y)),
+                static_cast<int>(std::lround(t.box.width)),
+                static_cast<int>(std::lround(t.box.height)));
+            t.innerAim.hits = t.hits;
+            decayInnerAim(t.innerAim);
             t.lastAssociationScore = std::numeric_limits<double>::infinity();
             t.lastAssociationDistancePx = 0.0;
             t.lastAssociationIou = 0.0;
@@ -772,12 +1050,32 @@ void MultiTargetTracker::update(
         }
     }
 
+    auto suppressedByLockedInnerAim = [&](const DetectionCandidate& d) -> bool
+        {
+            if (lockedTrackId_ == -1)
+                return false;
+
+            const int lockedIdx = findTrackIndexById(lockedTrackId_);
+            if (lockedIdx < 0)
+                return false;
+
+            const InnerAimTrack& locked = tracks_[lockedIdx].innerAim;
+            const double distance = std::hypot(d.pivotX - locked.smoothX, d.pivotY - locked.smoothY);
+            if (distance >= 16.0f * scaleFactor())
+                return false;
+
+            return !shouldAcceptAsNewLock(d, &locked);
+        };
+
     for (size_t di = 0; di < dets.size(); ++di)
     {
         if (detAssigned[di] != -1)
             continue;
 
         const auto& d = dets[di];
+        if (suppressedByLockedInnerAim(d))
+            continue;
+
         TrackState t;
         t.id = nextId_++;
         t.box = d.box;
@@ -797,6 +1095,7 @@ void MultiTargetTracker::update(
         t.lastNeuralBonus = 0.0;
         t.lastNeuralEvaluated = false;
         t.lastUpdate = now;
+        initializeInnerAim(t, d);
         tracks_.push_back(t);
     }
 
@@ -843,6 +1142,8 @@ bool MultiTargetTracker::getLockedTarget(LockedTargetInfo& out) const
         std::clamp(static_cast<double>(t.confidence), 0.0, 1.0),
         t.id
     );
+    out.target.smoothX = t.innerAim.smoothX;
+    out.target.smoothY = t.innerAim.smoothY;
     return true;
 }
 
@@ -867,6 +1168,10 @@ std::vector<TrackDebugInfo> MultiTargetTracker::getDebugTracks() const
         );
         d.pivotX = t.pivotX;
         d.pivotY = t.pivotY;
+        d.innerAimX = t.innerAim.smoothX;
+        d.innerAimY = t.innerAim.smoothY;
+        d.innerAimRadius = t.innerAim.radius;
+        d.consistencyScore = t.innerAim.consistencyScore;
         d.confidence = t.confidence;
         d.hits = t.hits;
         d.observedThisFrame = t.observedThisFrame;

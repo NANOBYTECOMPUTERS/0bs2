@@ -11,6 +11,8 @@ namespace aim
 {
 struct PidMouseSettings
 {
+    // Runtime sweep gate for experimental PID behavior; false keeps the legacy control path.
+    bool runtimeLatencySweepEnabled = false;
     int actuatorHz = 1000;
     double kp = 0.0085;
     double ki = 0.0003;
@@ -35,9 +37,25 @@ struct PidMouseSettings
     bool feedForwardEnabled = true;
     double feedForwardGain = 0.35;
     double feedForwardLookaheadMs = 24.0;
+    // Extra 0-2 frame velocity lead added to feed-forward while runtimeLatencySweepEnabled is true.
+    int feedForwardFrameLookahead = 1;
     double feedForwardMaxStep = 0.35;
     double feedForwardMinSpeed = 20.0;
     double feedForwardConfidenceFloor = 0.55;
+    // Uses perspective FOV geometry in center-equivalent angular units when runtimeLatencySweepEnabled is true.
+    bool perspectiveFovMappingEnabled = false;
+    double projectionWidthPx = 0.0;
+    double projectionHeightPx = 0.0;
+    double fovXDeg = 90.0;
+    double fovYDeg = 60.0;
+    // Integrates only below this per-axis error and when the last actuator step was not saturated.
+    bool conditionalIntegrationEnabled = true;
+    double conditionalIntegrationErrorPx = 12.0;
+    // Error-magnitude scaling reference used while runtimeLatencySweepEnabled is true.
+    bool adaptiveOutputScalingEnabled = true;
+    double adaptiveOutputErrorScale = 96.0;
+    // Multiplies derivative tau, range 1.0-6.0, to suppress noise-induced corrections.
+    double derivativeSmoothingMultiplier = 1.5;
     bool governorEnabled = false;
     double governorBlend = 1.0;
     double governorMaxSpeedMultiple = 5.0;
@@ -77,8 +95,11 @@ struct PidMouseCommand
     double feedForwardX = 0.0;
     double feedForwardY = 0.0;
     double feedForwardScale = 0.0;
+    double angularDxDeg = 0.0;
+    double angularDyDeg = 0.0;
     bool governorActive = false;
     bool feedForwardActive = false;
+    bool angularOutputActive = false;
     bool active = false;
 };
 
@@ -119,14 +140,29 @@ private:
     double previousOutputY = 0.0;
     double movementSinceObservationX = 0.0;
     double movementSinceObservationY = 0.0;
+    double observationTravelBudget = 0.0;
+    double observationTravelUsed = 0.0;
+    double latestControlErrorX = 0.0;
+    double latestControlErrorY = 0.0;
     double feedForwardCooldownSeconds = 0.0;
+    bool outputSaturatedLastStep = false;
     bool hasPreviousDistance = false;
     std::shared_ptr<IPidGovernor> governor;
 
     static double clampFinite(double value, double lo, double hi, double fallback);
     static double smoothAlpha(double dtSeconds, double tauSeconds);
     static double smoothStep(double t);
+    static double degreesToRadians(double degrees);
+    static double radiansToDegrees(double radians);
     double targetSize() const;
+    bool perspectiveFovActive() const;
+    double centerDegPerControlX() const;
+    double centerDegPerControlY() const;
+    double screenOffsetToControlX(double offsetPx) const;
+    double screenOffsetToControlY(double offsetPx) const;
+    double controlDeltaToDegreesX(double controlDelta) const;
+    double controlDeltaToDegreesY(double controlDelta) const;
+    void applyConvergenceDirectionGuard(double& outX, double& outY, double distance, double precisionRadius) const;
     double computeOutputScale(double distance, double dtSeconds, bool overshot);
     std::pair<double, double> computeFeedForward(
         const PidMouseCommand& command,

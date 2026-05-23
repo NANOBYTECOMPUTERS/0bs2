@@ -4,6 +4,9 @@
 #include <opencv2/opencv.hpp>
 #include <vector>
 #include <chrono>
+#include <random>
+
+#include "aim_kalman.h"
 
 class BoxTarget
 {
@@ -14,6 +17,8 @@ public:
 
     double pivotX;
     double pivotY;
+    double smoothX;
+    double smoothY;
     double confidence;
     int trackId;
 
@@ -36,7 +41,27 @@ BoxTarget* sortTargets(
     int screenHeight,
     bool disableHeadshot,
     const std::vector<float>* confidences = nullptr
-);
+    );
+
+struct InnerAimTrack {
+    int trackId = -1;
+    int classId = -1;
+
+    cv::Rect outerBox;
+
+    double smoothX = 0.0;
+    double smoothY = 0.0;
+    float  radius = 8.0f;
+
+    float confidence = 0.0f;
+    float consistencyScore = 0.0f;
+
+    int hits = 0;
+    int missedFrames = 0;
+    bool observedThisFrame = false;
+
+    aim::AimKalman2D kalman;
+};
 
 struct LockedTargetInfo
 {
@@ -53,6 +78,10 @@ struct TrackDebugInfo
     cv::Rect box;
     double pivotX = 0.0;
     double pivotY = 0.0;
+    double innerAimX = 0.0;
+    double innerAimY = 0.0;
+    float innerAimRadius = 0.0f;
+    float consistencyScore = 0.0f;
     float confidence = 1.0f;
     int hits = 0;
     bool observedThisFrame = false;
@@ -114,6 +143,7 @@ private:
         double lastNeuralScore = 0.5;
         double lastNeuralBonus = 0.0;
         bool lastNeuralEvaluated = false;
+        InnerAimTrack innerAim;
         std::chrono::steady_clock::time_point lastUpdate;
     };
 
@@ -124,9 +154,21 @@ private:
         float confidence = 1.0f;
         double pivotX = 0.0;
         double pivotY = 0.0;
+        double innerAimX = 0.0;
+        double innerAimY = 0.0;
+        int innerAimClassId = -1;
     };
 
     static float iou(const cv::Rect2f& a, const cv::Rect2f& b);
+    float scaleFactor() const;
+    cv::Point2d computeInnerAimPoint(const cv::Rect2f& box, int classId) const;
+    double computeAssociationCost(const cv::Rect& newBox, const InnerAimTrack& track, float newConf) const;
+    aim::AimKalmanSettings buildInnerAimKalmanSettings(bool agileMotion) const;
+    void initializeInnerAim(TrackState& t, const DetectionCandidate& d);
+    void updateInnerAim(InnerAimTrack& track, const cv::Rect& det, float conf, double dt);
+    void updateInnerAim(InnerAimTrack& track, const cv::Rect& det, float conf, double dt, double rawInnerX, double rawInnerY);
+    void decayInnerAim(InnerAimTrack& track);
+    bool shouldAcceptAsNewLock(const DetectionCandidate& det, const InnerAimTrack* current) const;
     int findTrackIndexById(int id) const;
     int chooseBestTrack(int screenWidth, int screenHeight) const;
     int allowedMissedFrames(const TrackState& t) const;
@@ -136,6 +178,7 @@ private:
     int nextId_ = 1;
     int lockedTrackId_ = -1;
     int maxMissedFrames_ = 6;
+    std::mt19937 innerAimRng_{ std::random_device{}() };
 };
 
 #endif // BOXTARGET_H

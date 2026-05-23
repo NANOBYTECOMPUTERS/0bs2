@@ -392,12 +392,15 @@ void captureThread(int CAPTURE_WIDTH, int CAPTURE_HEIGHT)
         std::unique_ptr<IScreenCapture> capturer = createCapturer(currentCfg, captureWidth, captureHeight);
         std::string activeCapturerMethod = capturer ? desiredCaptureMethod : std::string();
         auto lastCapturerCreateAttempt = std::chrono::steady_clock::now();
+        cv::Mat lastDetectionFrame;
+        uint64_t detectorFrameId = 0;
 
         auto clearCaptureFrames = [&]()
         {
             std::lock_guard<std::mutex> lock(frameMutex);
             latestFrame.release();
             frameQueue.clear();
+            lastDetectionFrame.release();
         };
 
         auto clearDetections = [&]()
@@ -449,7 +452,30 @@ void captureThread(int CAPTURE_WIDTH, int CAPTURE_HEIGHT)
         captureFpsStartTime = std::chrono::high_resolution_clock::now();
         unsigned long long seenDetectionResolutionGeneration =
             detection_resolution_generation.load(std::memory_order_relaxed);
-        uint64_t detectorFrameId = 0;
+
+        auto submitFrameToDetector = [&](
+            const cv::Mat& frame,
+            std::chrono::steady_clock::time_point captureTimestamp) -> bool
+        {
+            if (frame.empty())
+                return false;
+
+            if (currentCfg.backend == "DML" && dml_detector)
+            {
+                ++detectorFrameId;
+                dml_detector->processFrame(frame, detectorFrameId, captureTimestamp);
+                return true;
+            }
+#ifdef USE_CUDA
+            if (currentCfg.backend == "TRT")
+            {
+                ++detectorFrameId;
+                trt_detector.processFrame(frame, detectorFrameId, captureTimestamp);
+                return true;
+            }
+#endif
+            return false;
+        };
 
         auto frameStartTime = std::chrono::steady_clock::now();
         auto applyFrameLimiter = [&]()
@@ -589,6 +615,7 @@ void captureThread(int CAPTURE_WIDTH, int CAPTURE_HEIGHT)
             cv::Mat detectionFrame;
             auto frameCaptureTimestamp = std::chrono::steady_clock::now();
             bool frameSubmittedToDetector = false;
+            bool reusedCachedDetectionFrame = false;
 
 #ifdef USE_CUDA
             static bool lastDepthInferenceEnabled = true;
@@ -645,16 +672,31 @@ void captureThread(int CAPTURE_WIDTH, int CAPTURE_HEIGHT)
                 if (screenshotCpu.empty())
                 {
                     const auto now = std::chrono::steady_clock::now();
-                    if (now - lastSuccessfulFrameTime >= staleFrameTimeout)
-                        setCaptureUnavailable();
+                    const std::string captureMethodForReuse = NormalizeCaptureMethod(currentCfg.capture_method);
+                    const bool canReuseStableDesktopFrame =
+                        captureMethodForReuse == "duplication_api" || captureMethodForReuse == "winrt";
+                    // Desktop capture can time out when nothing repaints; keep detector cadence from the last stable frame.
+                    if (canReuseStableDesktopFrame && !lastDetectionFrame.empty())
+                    {
+                        detectionFrame = lastDetectionFrame;
+                        frameCaptureTimestamp = now;
+                        frameSubmittedToDetector = submitFrameToDetector(detectionFrame, frameCaptureTimestamp);
+                        reusedCachedDetectionFrame = frameSubmittedToDetector;
+                    }
 
-                    if (!frameDuration.has_value())
-                        std::this_thread::sleep_for(std::chrono::milliseconds(1));
-                    applyFrameLimiter();
-                    continue;
+                    if (!reusedCachedDetectionFrame)
+                    {
+                        if (now - lastSuccessfulFrameTime >= staleFrameTimeout)
+                            setCaptureUnavailable();
+
+                        if (!frameDuration.has_value())
+                            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                        applyFrameLimiter();
+                        continue;
+                    }
                 }
 
-                if (NormalizeCaptureMethod(currentCfg.capture_method) == "virtual_camera")
+                if (!reusedCachedDetectionFrame && NormalizeCaptureMethod(currentCfg.capture_method) == "virtual_camera")
                 {
                     const int targetW = std::max(1, captureWidth);
                     const int targetH = std::max(1, captureHeight);
@@ -681,12 +723,13 @@ void captureThread(int CAPTURE_WIDTH, int CAPTURE_HEIGHT)
                     }
                 }
 
-                if (currentCfg.circle_mask)
+                if (!reusedCachedDetectionFrame && currentCfg.circle_mask)
                     screenshotCpu = apply_circle_mask(screenshotCpu);
 
-                detectionFrame = screenshotCpu;
+                if (!reusedCachedDetectionFrame)
+                    detectionFrame = screenshotCpu;
 #ifdef USE_CUDA
-                if (currentCfg.depth_inference_enabled && currentCfg.depth_mask_enabled)
+                if (!reusedCachedDetectionFrame && currentCfg.depth_inference_enabled && currentCfg.depth_mask_enabled)
                 {
                     if (currentCfg.verbose)
                     {
@@ -805,24 +848,18 @@ void captureThread(int CAPTURE_WIDTH, int CAPTURE_HEIGHT)
                         detectionFrame.setTo(cv::Scalar(0, 0, 0), mask);
                     }
                 }
-                else
+                else if (!reusedCachedDetectionFrame)
                 {
                     UpdateDetectionSuppressionMask(cv::Mat());
                 }
 #endif
 
-                if (currentCfg.backend == "DML" && dml_detector)
+                if (!reusedCachedDetectionFrame)
                 {
-                    ++detectorFrameId;
-                    dml_detector->processFrame(detectionFrame, detectorFrameId, frameCaptureTimestamp);
+                    frameSubmittedToDetector = submitFrameToDetector(detectionFrame, frameCaptureTimestamp);
+                    if (frameSubmittedToDetector)
+                        lastDetectionFrame = detectionFrame.clone();
                 }
-#ifdef USE_CUDA
-                else if (currentCfg.backend == "TRT")
-                {
-                    ++detectorFrameId;
-                    trt_detector.processFrame(detectionFrame, detectorFrameId, frameCaptureTimestamp);
-                }
-#endif
             }
 
             if (frameSubmittedToDetector || !screenshotCpu.empty())

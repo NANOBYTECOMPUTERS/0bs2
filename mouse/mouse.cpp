@@ -24,6 +24,7 @@ namespace
 aim::AimKalmanSettings buildKalmanSettingsFromConfig()
 {
     aim::AimKalmanSettings settings;
+    settings.runtimeLatencySweepEnabled = config.runtime_latency_sweep_enabled;
     settings.enabled = config.kalman_enabled;
     settings.process_noise_position = static_cast<double>(config.kalman_process_noise_position);
     settings.process_noise_velocity = static_cast<double>(config.kalman_process_noise_velocity);
@@ -31,12 +32,19 @@ aim::AimKalmanSettings buildKalmanSettingsFromConfig()
     settings.velocity_damping = static_cast<double>(config.kalman_velocity_damping);
     settings.max_velocity = static_cast<double>(config.kalman_max_velocity);
     settings.warmup_frames = config.kalman_warmup_frames;
+    settings.velocitySeedEnabled = config.kalman_velocity_seed_enabled;
+    settings.acquisitionFrames = config.kalman_acquisition_frames;
     return settings;
 }
 
-aim::PidMouseSettings buildPidMouseSettingsFromConfig()
+aim::PidMouseSettings buildPidMouseSettingsFromConfig(
+    double screen_width,
+    double screen_height,
+    double fov_x,
+    double fov_y)
 {
     aim::PidMouseSettings settings;
+    settings.runtimeLatencySweepEnabled = config.runtime_latency_sweep_enabled;
     settings.actuatorHz = config.pid_actuator_hz;
     settings.kp = static_cast<double>(config.pid_kp);
     settings.ki = static_cast<double>(config.pid_ki);
@@ -61,9 +69,20 @@ aim::PidMouseSettings buildPidMouseSettingsFromConfig()
     settings.feedForwardEnabled = config.pid_feed_forward_enabled;
     settings.feedForwardGain = static_cast<double>(config.pid_feed_forward_gain);
     settings.feedForwardLookaheadMs = static_cast<double>(config.pid_feed_forward_lookahead_ms);
+    settings.feedForwardFrameLookahead = config.pid_feed_forward_frame_lookahead;
     settings.feedForwardMaxStep = static_cast<double>(config.pid_feed_forward_max_step);
     settings.feedForwardMinSpeed = static_cast<double>(config.pid_feed_forward_min_speed);
     settings.feedForwardConfidenceFloor = static_cast<double>(config.pid_feed_forward_confidence_floor);
+    settings.conditionalIntegrationEnabled = config.pid_conditional_integration_enabled;
+    settings.conditionalIntegrationErrorPx = static_cast<double>(config.pid_conditional_integration_error_px);
+    settings.adaptiveOutputScalingEnabled = config.pid_adaptive_output_scaling_enabled;
+    settings.adaptiveOutputErrorScale = static_cast<double>(config.pid_adaptive_output_error_scale);
+    settings.derivativeSmoothingMultiplier = static_cast<double>(config.pid_derivative_smoothing_multiplier);
+    settings.perspectiveFovMappingEnabled = config.pid_perspective_fov_mapping_enabled;
+    settings.projectionWidthPx = screen_width;
+    settings.projectionHeightPx = screen_height;
+    settings.fovXDeg = fov_x;
+    settings.fovYDeg = fov_y;
     settings.governorEnabled = config.pid_governor_enabled;
     settings.governorBlend = static_cast<double>(config.pid_governor_blend);
     settings.governorMaxSpeedMultiple = static_cast<double>(config.pid_governor_max_speed_multiple);
@@ -109,7 +128,7 @@ MouseThread::MouseThread(
     targetKalman.reset();
     lastKalmanTelemetry = {};
     lastPredictionLookaheadSec = 0.0;
-    pidController.setSettings(buildPidMouseSettingsFromConfig());
+    pidController.setSettings(buildPidMouseSettingsFromConfig(screen_width, screen_height, fov_x, fov_y));
     pidController.setGovernor(buildPidGovernorFromConfig());
 
     moveWorker = std::thread(&MouseThread::moveWorkerLoop, this);
@@ -140,7 +159,7 @@ void MouseThread::updateConfig(
 
     {
         std::lock_guard<std::mutex> lock(pidMtx);
-        pidController.setSettings(buildPidMouseSettingsFromConfig());
+        pidController.setSettings(buildPidMouseSettingsFromConfig(screen_width, screen_height, fov_x, fov_y));
         pidController.setGovernor(buildPidGovernorFromConfig());
         pidController.reset();
         pidCountCarryX = 0.0;
@@ -222,7 +241,22 @@ void MouseThread::pidActuatorLoop()
 
             if (command.active)
             {
-                const auto counts = pixelDeltaToCounts(command.pixelDx, command.pixelDy);
+                std::pair<double, double> counts{ 0.0, 0.0 };
+                if (command.angularOutputActive)
+                {
+                    try
+                    {
+                        counts = config.degToCounts(command.angularDxDeg, command.angularDyDeg, fov_x);
+                    }
+                    catch (...)
+                    {
+                        counts = { 0.0, 0.0 };
+                    }
+                }
+                else
+                {
+                    counts = pixelDeltaToCounts(command.pixelDx, command.pixelDy);
+                }
                 int dx = 0;
                 int dy = 0;
                 {
@@ -428,30 +462,13 @@ void MouseThread::sendMovementToDriver(int dx, int dy)
 
     std::lock_guard<std::mutex> lock(input_method_mutex);
 
-    if (mouseInput && mouseInput->move(dx, dy))
-        return;
-
-    INPUT in{ 0 };
-    in.type = INPUT_MOUSE;
-    in.mi.dx = dx;  in.mi.dy = dy;
-    in.mi.dwFlags = MOUSEEVENTF_MOVE | MOUSEEVENTF_VIRTUALDESK;
-    SendInput(1, &in, sizeof(INPUT));
+    if (mouseInput)
+        mouseInput->move(dx, dy);
 }
 
 void MouseThread::moveRelative(int dx, int dy)
 {
     sendMovementToDriver(dx, dy);
-}
-
-namespace
-{
-bool sendWin32LeftButton(DWORD flag)
-{
-    INPUT input = { 0 };
-    input.type = INPUT_MOUSE;
-    input.mi.dwFlags = flag;
-    return SendInput(1, &input, sizeof(INPUT)) == 1;
-}
 }
 
 void MouseThread::pressMouse(const BoxTarget& target)
@@ -461,15 +478,17 @@ void MouseThread::pressMouse(const BoxTarget& target)
     bool bScope = check_target_in_scope(target.x, target.y, target.w, target.h, bScope_multiplier);
     if (bScope && !mouse_pressed)
     {
-        if (!(mouseInput && mouseInput->leftDown()))
-            sendWin32LeftButton(MOUSEEVENTF_LEFTDOWN);
-        mouse_pressed = true;
+        if (mouseInput && mouseInput->leftDown())
+        {
+            mouse_pressed = true;
+        }
     }
     else if (!bScope && mouse_pressed)
     {
-        if (!(mouseInput && mouseInput->leftUp()))
-            sendWin32LeftButton(MOUSEEVENTF_LEFTUP);
-        mouse_pressed = false;
+        if (mouseInput && mouseInput->leftUp())
+        {
+            mouse_pressed = false;
+        }
     }
 }
 
@@ -587,9 +606,10 @@ void MouseThread::releaseMouse()
 
     if (mouse_pressed)
     {
-        if (!(mouseInput && mouseInput->leftUp()))
-            sendWin32LeftButton(MOUSEEVENTF_LEFTUP);
-        mouse_pressed = false;
+        if (mouseInput && mouseInput->leftUp())
+        {
+            mouse_pressed = false;
+        }
     }
 }
 

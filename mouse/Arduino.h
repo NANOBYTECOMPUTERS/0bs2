@@ -12,10 +12,16 @@
 
 #include "serial/serial.h"
 
+enum class ArduinoProtocol
+{
+    Legacy,
+    Teensy41
+};
+
 class Arduino
 {
 public:
-    Arduino(const std::string& port, unsigned int baud_rate);
+    Arduino(const std::string& port, unsigned int baud_rate, ArduinoProtocol protocol = ArduinoProtocol::Legacy);
     ~Arduino();
 
     bool isOpen() const;
@@ -34,6 +40,7 @@ public:
 
 private:
     void sendCommand(const std::string& command);
+    void sendButtons();
     std::vector<int> splitValue(int value);
 
     void startTimer();
@@ -46,6 +53,8 @@ private:
 
 private:
     serial::Serial serial_;
+    ArduinoProtocol protocol_;
+    uint8_t button_mask_ = 0;
     std::atomic<bool> is_open_;
 
     std::thread timer_thread_;

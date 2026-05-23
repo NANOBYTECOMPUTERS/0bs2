@@ -9,6 +9,9 @@ namespace aim
 namespace
 {
 constexpr double FeedForwardOvershootCooldownSeconds = 0.035;
+// Allow one observation to converge fully so actuator speed is not tied to overlay repaint cadence.
+constexpr double ObservationTravelBudgetFraction = 1.0;
+constexpr double Pi = 3.14159265358979323846;
 }
 
 void PidMouseController::setSettings(const PidMouseSettings& nextSettings)
@@ -39,11 +42,19 @@ void PidMouseController::setSettings(const PidMouseSettings& nextSettings)
     settings.maxDerivativeTerm = clampFinite(settings.maxDerivativeTerm, 0.0, 20.0, 0.02);
     settings.derivativeFilterTauMs = clampFinite(settings.derivativeFilterTauMs, 0.0, 250.0, 18.0);
     settings.targetLossTimeoutMs = clampFinite(settings.targetLossTimeoutMs, 10.0, 1000.0, 90.0);
-    settings.feedForwardGain = clampFinite(settings.feedForwardGain, 0.0, 2.0, 0.35);
+    settings.feedForwardGain = clampFinite(settings.feedForwardGain, 0.0, 4.0, 0.35);
     settings.feedForwardLookaheadMs = clampFinite(settings.feedForwardLookaheadMs, 0.0, 120.0, 24.0);
+    settings.feedForwardFrameLookahead = static_cast<int>(clampFinite(settings.feedForwardFrameLookahead, 0.0, 2.0, 1.0));
     settings.feedForwardMaxStep = clampFinite(settings.feedForwardMaxStep, 0.0, 5.0, 0.35);
     settings.feedForwardMinSpeed = clampFinite(settings.feedForwardMinSpeed, 0.0, 3000.0, 20.0);
     settings.feedForwardConfidenceFloor = clampFinite(settings.feedForwardConfidenceFloor, 0.0, 1.0, 0.55);
+    settings.projectionWidthPx = clampFinite(settings.projectionWidthPx, 0.0, 10000.0, 0.0);
+    settings.projectionHeightPx = clampFinite(settings.projectionHeightPx, 0.0, 10000.0, 0.0);
+    settings.fovXDeg = clampFinite(settings.fovXDeg, 1.0, 179.0, 90.0);
+    settings.fovYDeg = clampFinite(settings.fovYDeg, 1.0, 179.0, 60.0);
+    settings.conditionalIntegrationErrorPx = clampFinite(settings.conditionalIntegrationErrorPx, 0.0, 240.0, 12.0);
+    settings.adaptiveOutputErrorScale = clampFinite(settings.adaptiveOutputErrorScale, 1.0, 640.0, 96.0);
+    settings.derivativeSmoothingMultiplier = clampFinite(settings.derivativeSmoothingMultiplier, 1.0, 6.0, 1.5);
     settings.governorBlend = clampFinite(settings.governorBlend, 0.0, 1.0, 1.0);
     settings.governorMaxSpeedMultiple = clampFinite(settings.governorMaxSpeedMultiple, 1.0, 5.0, 5.0);
     outputScaleState = std::clamp(outputScaleState, settings.minOutputScale, settings.maxOutputScale);
@@ -73,7 +84,12 @@ void PidMouseController::reset()
     previousOutputY = 0.0;
     movementSinceObservationX = 0.0;
     movementSinceObservationY = 0.0;
+    observationTravelBudget = 0.0;
+    observationTravelUsed = 0.0;
+    latestControlErrorX = 0.0;
+    latestControlErrorY = 0.0;
     feedForwardCooldownSeconds = 0.0;
+    outputSaturatedLastStep = false;
     hasPreviousDistance = false;
 }
 
@@ -82,13 +98,18 @@ void PidMouseController::updateObservation(const PidMouseObservation& observatio
     if (!observation.valid || !std::isfinite(observation.x) || !std::isfinite(observation.y))
         return;
 
+    const double rawErrorX = observation.x - centerX;
+    const double rawErrorY = observation.y - centerY;
+    const double nextControlErrorX = perspectiveFovActive() ? screenOffsetToControlX(rawErrorX) : rawErrorX;
+    const double nextControlErrorY = perspectiveFovActive() ? screenOffsetToControlY(rawErrorY) : rawErrorY;
+
     if (hasObservation && latest.timestamp.time_since_epoch().count() != 0)
     {
         const double dt = std::chrono::duration<double>(observation.timestamp - latest.timestamp).count();
         if (dt > 0.0005 && dt < 1.0)
         {
-            const double nextVx = (observation.x - latest.x + movementSinceObservationX) / dt;
-            const double nextVy = (observation.y - latest.y + movementSinceObservationY) / dt;
+            const double nextVx = (nextControlErrorX - latestControlErrorX + movementSinceObservationX) / dt;
+            const double nextVy = (nextControlErrorY - latestControlErrorY + movementSinceObservationY) / dt;
             targetAx = (nextVx - targetVx) / dt;
             targetAy = (nextVy - targetVy) / dt;
             targetVx = nextVx;
@@ -104,11 +125,22 @@ void PidMouseController::updateObservation(const PidMouseObservation& observatio
     }
 
     latest = observation;
+    latestControlErrorX = nextControlErrorX;
+    latestControlErrorY = nextControlErrorY;
     hasObservation = true;
     movementSinceObservationX = 0.0;
     movementSinceObservationY = 0.0;
-    virtualErrorX = observation.x - centerX;
-    virtualErrorY = observation.y - centerY;
+    virtualErrorX = nextControlErrorX;
+    virtualErrorY = nextControlErrorY;
+
+    const double observationSize = (observation.width > 0.0 && observation.height > 0.0)
+        ? std::sqrt(observation.width * observation.height)
+        : settings.sizeReferencePx;
+    const double precisionRadius = std::max(settings.deadzonePx, observationSize * settings.precisionRadiusScale);
+    const double observableTravel = std::max(0.0, std::hypot(nextControlErrorX, nextControlErrorY) - precisionRadius);
+    // Spend up to the observed distance so convergence speed does not depend on UI repaint cadence.
+    observationTravelBudget = observableTravel * ObservationTravelBudgetFraction;
+    observationTravelUsed = 0.0;
 }
 
 PidMouseCommand PidMouseController::step(std::chrono::steady_clock::time_point now)
@@ -204,6 +236,7 @@ PidMouseCommand PidMouseController::step(std::chrono::steady_clock::time_point n
     command.feedForwardActive = std::hypot(command.feedForwardX, command.feedForwardY) > 1e-6;
     outX += command.feedForwardX;
     outY += command.feedForwardY;
+    applyConvergenceDirectionGuard(outX, outY, distance, precisionRadius);
 
     const double outputMag = std::hypot(outX, outY);
     const double distanceLimit = std::max(0.0, distance - precisionRadius);
@@ -213,9 +246,26 @@ PidMouseCommand PidMouseController::step(std::chrono::steady_clock::time_point n
     const double governorLimitScale = command.governorActive
         ? std::clamp(settings.governorMaxSpeedMultiple * command.governorSpeedScale, 0.0, settings.governorMaxSpeedMultiple)
         : 1.0;
-    const double limit = std::min(settings.maxPixelStep * sizeScale * governorLimitScale, std::max(0.01, distanceLimit));
+    const double remainingObservationBudget = std::max(0.0, observationTravelBudget - observationTravelUsed);
+    if (remainingObservationBudget <= 1e-6)
+    {
+        axisX.integral *= 0.94;
+        axisY.integral *= 0.94;
+        axisX.filteredDerivative *= 0.90;
+        axisY.filteredDerivative *= 0.90;
+        outputSaturatedLastStep = true;
+        previousDistance = distance;
+        hasPreviousDistance = true;
+        return command;
+    }
+
+    const double limit = std::min(
+        std::min(settings.maxPixelStep * sizeScale * governorLimitScale, std::max(0.01, distanceLimit)),
+        remainingObservationBudget);
+    bool saturatedThisStep = false;
     if (outputMag > limit && outputMag > 1e-9)
     {
+        saturatedThisStep = true;
         const double scale = limit / outputMag;
         outX *= scale;
         outY *= scale;
@@ -231,6 +281,12 @@ PidMouseCommand PidMouseController::step(std::chrono::steady_clock::time_point n
     command.pixelDx = outX;
     command.pixelDy = outY;
     command.active = std::hypot(outX, outY) > 0.001;
+    if (perspectiveFovActive())
+    {
+        command.angularDxDeg = controlDeltaToDegreesX(outX);
+        command.angularDyDeg = controlDeltaToDegreesY(outY);
+        command.angularOutputActive = command.active;
+    }
 
     virtualErrorX -= outX;
     virtualErrorY -= outY;
@@ -238,6 +294,8 @@ PidMouseCommand PidMouseController::step(std::chrono::steady_clock::time_point n
     previousOutputY = outY;
     movementSinceObservationX += outX;
     movementSinceObservationY += outY;
+    observationTravelUsed += std::hypot(outX, outY);
+    outputSaturatedLastStep = saturatedThisStep;
     previousDistance = distance;
     hasPreviousDistance = true;
     return command;
@@ -263,11 +321,117 @@ double PidMouseController::smoothStep(double t)
     return t * t * (3.0 - 2.0 * t);
 }
 
+double PidMouseController::degreesToRadians(double degrees)
+{
+    return degrees * Pi / 180.0;
+}
+
+double PidMouseController::radiansToDegrees(double radians)
+{
+    return radians * 180.0 / Pi;
+}
+
 double PidMouseController::targetSize() const
 {
     if (latest.width > 0.0 && latest.height > 0.0)
         return std::sqrt(latest.width * latest.height);
     return settings.sizeReferencePx;
+}
+
+bool PidMouseController::perspectiveFovActive() const
+{
+    return
+        settings.runtimeLatencySweepEnabled && settings.perspectiveFovMappingEnabled &&
+        settings.projectionWidthPx > 1.0 &&
+        settings.projectionHeightPx > 1.0 &&
+        settings.fovXDeg > 1.0 &&
+        settings.fovYDeg > 1.0;
+}
+
+double PidMouseController::centerDegPerControlX() const
+{
+    const double halfWidth = std::max(1.0, settings.projectionWidthPx) * 0.5;
+    const double halfFov = degreesToRadians(std::clamp(settings.fovXDeg, 1.0, 179.0) * 0.5);
+    return radiansToDegrees(std::tan(halfFov) / halfWidth);
+}
+
+double PidMouseController::centerDegPerControlY() const
+{
+    const double halfHeight = std::max(1.0, settings.projectionHeightPx) * 0.5;
+    const double halfFov = degreesToRadians(std::clamp(settings.fovYDeg, 1.0, 179.0) * 0.5);
+    return radiansToDegrees(std::tan(halfFov) / halfHeight);
+}
+
+double PidMouseController::screenOffsetToControlX(double offsetPx) const
+{
+    const double halfWidth = std::max(1.0, settings.projectionWidthPx) * 0.5;
+    const double normalized = std::clamp(offsetPx / halfWidth, -4.0, 4.0);
+    const double halfFov = degreesToRadians(std::clamp(settings.fovXDeg, 1.0, 179.0) * 0.5);
+    const double angleDeg = radiansToDegrees(std::atan(std::tan(halfFov) * normalized));
+    return angleDeg / std::max(1e-9, centerDegPerControlX());
+}
+
+double PidMouseController::screenOffsetToControlY(double offsetPx) const
+{
+    const double halfHeight = std::max(1.0, settings.projectionHeightPx) * 0.5;
+    const double normalized = std::clamp(offsetPx / halfHeight, -4.0, 4.0);
+    const double halfFov = degreesToRadians(std::clamp(settings.fovYDeg, 1.0, 179.0) * 0.5);
+    const double angleDeg = radiansToDegrees(std::atan(std::tan(halfFov) * normalized));
+    return angleDeg / std::max(1e-9, centerDegPerControlY());
+}
+
+double PidMouseController::controlDeltaToDegreesX(double controlDelta) const
+{
+    return controlDelta * centerDegPerControlX();
+}
+
+double PidMouseController::controlDeltaToDegreesY(double controlDelta) const
+{
+    return controlDelta * centerDegPerControlY();
+}
+
+void PidMouseController::applyConvergenceDirectionGuard(
+    double& outX,
+    double& outY,
+    double distance,
+    double precisionRadius) const
+{
+    if (!std::isfinite(outX) || !std::isfinite(outY) || distance <= precisionRadius + 1e-6)
+        return;
+
+    const double outputMag = std::hypot(outX, outY);
+    if (outputMag <= 1e-9)
+        return;
+
+    const double radialX = virtualErrorX / std::max(distance, 1e-9);
+    const double radialY = virtualErrorY / std::max(distance, 1e-9);
+    double radialComponent = outX * radialX + outY * radialY;
+
+    const double tangentX = outX - radialX * radialComponent;
+    const double tangentY = outY - radialY * radialComponent;
+    const double tangentMag = std::hypot(tangentX, tangentY);
+
+    const double size = targetSize();
+    const double slowdownRadius = std::max(precisionRadius + 0.25, size * settings.slowdownRadiusScale);
+    const double nearT = (distance - precisionRadius) / std::max(0.001, slowdownRadius - precisionRadius);
+    const double nearAmount = 1.0 - smoothStep(nearT);
+    const double tangentialRatio = 0.35 - 0.17 * nearAmount;
+
+    if (radialComponent < 0.0)
+        radialComponent = 0.0;
+
+    const double maxTangential = std::max(0.02, std::abs(radialComponent) * tangentialRatio);
+    double guardedTangentX = tangentX;
+    double guardedTangentY = tangentY;
+    if (tangentMag > maxTangential && tangentMag > 1e-9)
+    {
+        const double scale = maxTangential / tangentMag;
+        guardedTangentX *= scale;
+        guardedTangentY *= scale;
+    }
+
+    outX = radialX * radialComponent + guardedTangentX;
+    outY = radialY * radialComponent + guardedTangentY;
 }
 
 double PidMouseController::computeOutputScale(double distance, double dtSeconds, bool overshot)
@@ -280,6 +444,13 @@ double PidMouseController::computeOutputScale(double distance, double dtSeconds,
     const double sizeScale = std::clamp(size / settings.sizeReferencePx, settings.sizeMinScale, settings.sizeMaxScale);
 
     double desired = settings.outputScale;
+    if (settings.runtimeLatencySweepEnabled && settings.adaptiveOutputScalingEnabled)
+    {
+        const double errorT = smoothStep(distance / std::max(1.0, settings.adaptiveOutputErrorScale));
+        const double magnitudeScale = 0.45 + 0.55 * errorT;
+        desired = settings.minOutputScale + (desired - settings.minOutputScale) * magnitudeScale;
+    }
+
     if (hasPreviousDistance)
     {
         const double closingRate = (previousDistance - distance) / std::max(dtSeconds, 1e-6);
@@ -325,8 +496,13 @@ std::pair<double, double> PidMouseController::computeFeedForward(
     if (!std::isfinite(motionSpeed) || motionSpeed < settings.feedForwardMinSpeed)
         return { 0.0, 0.0 };
 
-    const double lookaheadSec = std::clamp(settings.feedForwardLookaheadMs * 0.001, 0.0, 0.120);
-    if (lookaheadSec <= 1e-6 || settings.feedForwardGain <= 0.0 || settings.feedForwardMaxStep <= 0.0)
+    double lookaheadSec = std::clamp(settings.feedForwardLookaheadMs * 0.001, 0.0, 0.120);
+    if (settings.runtimeLatencySweepEnabled && settings.feedForwardFrameLookahead > 0)
+        lookaheadSec += static_cast<double>(settings.feedForwardFrameLookahead) * std::max(dtSeconds, 1e-6);
+    lookaheadSec = std::clamp(lookaheadSec, 0.0, 0.160);
+
+    const double effectiveFeedForwardGain = settings.runtimeLatencySweepEnabled ? settings.feedForwardGain : std::min(settings.feedForwardGain, 2.0);
+    if (lookaheadSec <= 1e-6 || effectiveFeedForwardGain <= 0.0 || settings.feedForwardMaxStep <= 0.0)
         return { 0.0, 0.0 };
 
     const double size = targetSize();
@@ -381,7 +557,7 @@ std::pair<double, double> PidMouseController::computeFeedForward(
         leadY *= leadScale;
     }
 
-    feedForwardScale = settings.feedForwardGain * nearScale * confidenceScale * approachScale;
+    feedForwardScale = effectiveFeedForwardGain * nearScale * confidenceScale * approachScale;
     double stepX = leadX * (dtSeconds / lookaheadSec) * feedForwardScale;
     double stepY = leadY * (dtSeconds / lookaheadSec) * feedForwardScale;
 
@@ -406,8 +582,8 @@ PidGovernorInput PidMouseController::buildGovernorInput(
     double dtSeconds) const
 {
     PidGovernorInput input;
-    const double offsetX = latest.targetOffsetX;
-    const double offsetY = latest.targetOffsetY;
+    const double offsetX = perspectiveFovActive() ? screenOffsetToControlX(latest.targetOffsetX) : latest.targetOffsetX;
+    const double offsetY = perspectiveFovActive() ? screenOffsetToControlY(latest.targetOffsetY) : latest.targetOffsetY;
     input.errorX = command.errorX - offsetX;
     input.errorY = command.errorY - offsetY;
     input.errorDistance = std::hypot(input.errorX, input.errorY);
@@ -465,10 +641,24 @@ double PidMouseController::computeAxis(
     double& dTerm) const
 {
     const double derivative = axis.hasPreviousError ? (error - axis.previousError) / dtSeconds : 0.0;
-    const double alphaD = smoothAlpha(dtSeconds, settings.derivativeFilterTauMs * 0.001);
+    const double derivativeSmoothingMultiplier =
+        settings.runtimeLatencySweepEnabled ? settings.derivativeSmoothingMultiplier : 1.0;
+    const double alphaD = smoothAlpha(dtSeconds, settings.derivativeFilterTauMs * 0.001 * derivativeSmoothingMultiplier);
     axis.filteredDerivative += (derivative - axis.filteredDerivative) * alphaD;
 
-    axis.integral += error * dtSeconds;
+    const bool conditionalIntegrationActive =
+        settings.runtimeLatencySweepEnabled && settings.conditionalIntegrationEnabled;
+    const bool integrateThisStep =
+        !conditionalIntegrationActive ||
+        (std::abs(error) <= settings.conditionalIntegrationErrorPx && !outputSaturatedLastStep);
+    if (integrateThisStep)
+    {
+        axis.integral += error * dtSeconds;
+    }
+    else
+    {
+        axis.integral *= 0.98;
+    }
     axis.integral = std::clamp(axis.integral, -settings.maxIntegral, settings.maxIntegral);
 
     pTerm = kp * error;

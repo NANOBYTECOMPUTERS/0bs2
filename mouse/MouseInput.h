@@ -12,6 +12,7 @@ class KmboxAConnection;
 class KmboxNetConnection;
 class MakcuConnection;
 class RzctlMouse;
+class Teensy41RawHid;
 
 enum class MouseInputMethod
 {
@@ -19,6 +20,8 @@ enum class MouseInputMethod
     GHub,
     Razer,
     Arduino,
+    Teensy41,
+    Teensy41Hid,
     KmboxNet,
     KmboxA,
     Makcu
@@ -37,6 +40,9 @@ public:
     virtual bool move(int dx, int dy) = 0;
     virtual bool leftDown() = 0;
     virtual bool leftUp() = 0;
+    virtual bool aimingActive() const { return false; }
+    virtual bool shootingActive() const { return false; }
+    virtual bool zoomingActive() const { return false; }
 
     virtual Arduino* arduino() { return nullptr; }
     virtual GhubMouse* ghub() { return nullptr; }
@@ -44,6 +50,7 @@ public:
     virtual KmboxNetConnection* kmboxNet() { return nullptr; }
     virtual KmboxAConnection* kmboxA() { return nullptr; }
     virtual MakcuConnection* makcu() { return nullptr; }
+    virtual Teensy41RawHid* teensy41RawHid() { return nullptr; }
 };
 
 std::unique_ptr<IMouseInput> CreateMouseInputDevice(const Config& config);

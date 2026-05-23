@@ -12,6 +12,7 @@
 #include <opencv2/cudaimgproc.hpp>
 #include <algorithm>
 #include <atomic>
+#include <filesystem>
 #include <limits>
 #include <numeric>
 #include <vector>

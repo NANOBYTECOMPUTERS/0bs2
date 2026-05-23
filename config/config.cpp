@@ -8,6 +8,7 @@
 #include <string>
 #include <filesystem>
 #include <unordered_map>
+#include <unordered_set>
 #include <algorithm>
 
 #include "config.h"
@@ -84,6 +85,7 @@ bool Config::loadConfig(const std::string& filename)
         predictionInterval = 0.01f;
         prediction_futurePositions = 20;
         draw_futurePositions = true;
+        runtime_latency_sweep_enabled = false;
         kalman_enabled = true;
         kalman_process_noise_position = 40.0f;
         kalman_process_noise_velocity = 1800.0f;
@@ -91,6 +93,8 @@ bool Config::loadConfig(const std::string& filename)
         kalman_velocity_damping = 0.08f;
         kalman_max_velocity = 20000.0f;
         kalman_warmup_frames = 2;
+        kalman_velocity_seed_enabled = true;
+        kalman_acquisition_frames = 4;
         kalman_compensate_detection_delay = true;
         kalman_additional_prediction_ms = 0.0f;
         kalman_reset_timeout_sec = 0.5f;
@@ -136,9 +140,16 @@ bool Config::loadConfig(const std::string& filename)
         pid_feed_forward_enabled = true;
         pid_feed_forward_gain = 0.35f;
         pid_feed_forward_lookahead_ms = 24.0f;
+        pid_feed_forward_frame_lookahead = 1;
         pid_feed_forward_max_step = 0.35f;
         pid_feed_forward_min_speed = 20.0f;
         pid_feed_forward_confidence_floor = 0.55f;
+        pid_conditional_integration_enabled = true;
+        pid_conditional_integration_error_px = 12.0f;
+        pid_adaptive_output_scaling_enabled = true;
+        pid_adaptive_output_error_scale = 96.0f;
+        pid_derivative_smoothing_multiplier = 1.5f;
+        pid_perspective_fov_mapping_enabled = false;
         pid_governor_enabled = false;
         pid_governor_model_path = "training/models/pid_governor.onnx";
         pid_governor_blend = 1.0f;
@@ -157,6 +168,18 @@ bool Config::loadConfig(const std::string& filename)
         arduino_port = "COM0";
         arduino_16_bit_mouse = false;
         arduino_enable_keys = false;
+
+        // Teensy 4.1 RawHID generic mouse bridge
+        teensy_hid_manufacturer = "Generic";
+        teensy_hid_product = "USB HID Mouse";
+        teensy_hid_serial = "AUTO";
+        teensy_hid_vid_filter = "AUTO";
+        teensy_hid_pid_filter = "AUTO";
+        teensy_hid_usage_page = 0xFFAB;
+        teensy_hid_usage_id = 0x0200;
+        teensy_hid_open_index = 0;
+        teensy_hid_packet_timeout_ms = 2;
+        teensy_hid_reconnect_interval_ms = 500;
 
         // kmbox_net
         kmbox_net_ip = "10.42.42.42";
@@ -434,6 +457,7 @@ bool Config::loadConfig(const std::string& filename)
     predictionInterval = (float)get_double("predictionInterval", 0.01);
     prediction_futurePositions = get_long("prediction_futurePositions", 20);
     draw_futurePositions = get_bool("draw_futurePositions", true);
+    runtime_latency_sweep_enabled = get_bool("runtime_latency_sweep_enabled", false);
     kalman_enabled = get_bool("kalman_enabled", true);
     kalman_process_noise_position = (float)get_double("kalman_process_noise_position", 40.0);
     kalman_process_noise_velocity = (float)get_double("kalman_process_noise_velocity", 1800.0);
@@ -441,6 +465,8 @@ bool Config::loadConfig(const std::string& filename)
     kalman_velocity_damping = (float)get_double("kalman_velocity_damping", 0.08);
     kalman_max_velocity = (float)get_double("kalman_max_velocity", 20000.0);
     kalman_warmup_frames = get_long("kalman_warmup_frames", 2);
+    kalman_velocity_seed_enabled = get_bool("kalman_velocity_seed_enabled", true);
+    kalman_acquisition_frames = get_long("kalman_acquisition_frames", 4);
     kalman_compensate_detection_delay = get_bool("kalman_compensate_detection_delay", true);
     kalman_additional_prediction_ms = (float)get_double("kalman_additional_prediction_ms", 0.0);
     kalman_reset_timeout_sec = (float)get_double("kalman_reset_timeout_sec", 0.5);
@@ -486,9 +512,16 @@ bool Config::loadConfig(const std::string& filename)
     pid_feed_forward_enabled = get_bool("pid_feed_forward_enabled", true);
     pid_feed_forward_gain = (float)get_double("pid_feed_forward_gain", 0.35);
     pid_feed_forward_lookahead_ms = (float)get_double("pid_feed_forward_lookahead_ms", 24.0);
+    pid_feed_forward_frame_lookahead = get_long("pid_feed_forward_frame_lookahead", 1);
     pid_feed_forward_max_step = (float)get_double("pid_feed_forward_max_step", 0.35);
     pid_feed_forward_min_speed = (float)get_double("pid_feed_forward_min_speed", 20.0);
     pid_feed_forward_confidence_floor = (float)get_double("pid_feed_forward_confidence_floor", 0.55);
+    pid_conditional_integration_enabled = get_bool("pid_conditional_integration_enabled", true);
+    pid_conditional_integration_error_px = (float)get_double("pid_conditional_integration_error_px", 12.0);
+    pid_adaptive_output_scaling_enabled = get_bool("pid_adaptive_output_scaling_enabled", true);
+    pid_adaptive_output_error_scale = (float)get_double("pid_adaptive_output_error_scale", 96.0);
+    pid_derivative_smoothing_multiplier = (float)get_double("pid_derivative_smoothing_multiplier", 1.5);
+    pid_perspective_fov_mapping_enabled = get_bool("pid_perspective_fov_mapping_enabled", false);
     pid_governor_enabled = get_bool("pid_governor_enabled", false);
     pid_governor_model_path = get_string("pid_governor_model_path", "training/models/pid_governor.onnx");
     pid_governor_blend = (float)get_double("pid_governor_blend", 1.0);
@@ -507,6 +540,18 @@ bool Config::loadConfig(const std::string& filename)
     arduino_port = get_string("arduino_port", "COM0");
     arduino_16_bit_mouse = get_bool("arduino_16_bit_mouse", false);
     arduino_enable_keys = get_bool("arduino_enable_keys", false);
+
+    // Teensy 4.1 RawHID generic mouse bridge
+    teensy_hid_manufacturer = get_string("teensy_hid_manufacturer", "Generic");
+    teensy_hid_product = get_string("teensy_hid_product", "USB HID Mouse");
+    teensy_hid_serial = get_string("teensy_hid_serial", "AUTO");
+    teensy_hid_vid_filter = get_string("teensy_hid_vid_filter", "AUTO");
+    teensy_hid_pid_filter = get_string("teensy_hid_pid_filter", "AUTO");
+    teensy_hid_usage_page = get_long("teensy_hid_usage_page", 0xFFAB);
+    teensy_hid_usage_id = get_long("teensy_hid_usage_id", 0x0200);
+    teensy_hid_open_index = get_long("teensy_hid_open_index", 0);
+    teensy_hid_packet_timeout_ms = get_long("teensy_hid_packet_timeout_ms", 2);
+    teensy_hid_reconnect_interval_ms = get_long("teensy_hid_reconnect_interval_ms", 500);
 
     // kmbox_net
     kmbox_net_ip = get_string("kmbox_net_ip", "10.42.42.42");
@@ -661,6 +706,8 @@ bool Config::loadConfig(const std::string& filename)
     if (kalman_max_velocity > 60000.0f) kalman_max_velocity = 60000.0f;
     if (kalman_warmup_frames < 0) kalman_warmup_frames = 0;
     if (kalman_warmup_frames > 20) kalman_warmup_frames = 20;
+    if (kalman_acquisition_frames < 3) kalman_acquisition_frames = 3;
+    if (kalman_acquisition_frames > 5) kalman_acquisition_frames = 5;
     if (kalman_additional_prediction_ms < -80.0f) kalman_additional_prediction_ms = -80.0f;
     if (kalman_additional_prediction_ms > 120.0f) kalman_additional_prediction_ms = 120.0f;
     if (kalman_reset_timeout_sec < 0.05f) kalman_reset_timeout_sec = 0.05f;
@@ -740,15 +787,23 @@ bool Config::loadConfig(const std::string& filename)
     if (pid_target_loss_timeout_ms < 10.0f) pid_target_loss_timeout_ms = 10.0f;
     if (pid_target_loss_timeout_ms > 1000.0f) pid_target_loss_timeout_ms = 1000.0f;
     if (pid_feed_forward_gain < 0.0f) pid_feed_forward_gain = 0.0f;
-    if (pid_feed_forward_gain > 2.0f) pid_feed_forward_gain = 2.0f;
+    if (pid_feed_forward_gain > 4.0f) pid_feed_forward_gain = 4.0f;
     if (pid_feed_forward_lookahead_ms < 0.0f) pid_feed_forward_lookahead_ms = 0.0f;
     if (pid_feed_forward_lookahead_ms > 120.0f) pid_feed_forward_lookahead_ms = 120.0f;
+    if (pid_feed_forward_frame_lookahead < 0) pid_feed_forward_frame_lookahead = 0;
+    if (pid_feed_forward_frame_lookahead > 2) pid_feed_forward_frame_lookahead = 2;
     if (pid_feed_forward_max_step < 0.0f) pid_feed_forward_max_step = 0.0f;
     if (pid_feed_forward_max_step > 5.0f) pid_feed_forward_max_step = 5.0f;
     if (pid_feed_forward_min_speed < 0.0f) pid_feed_forward_min_speed = 0.0f;
     if (pid_feed_forward_min_speed > 3000.0f) pid_feed_forward_min_speed = 3000.0f;
     if (pid_feed_forward_confidence_floor < 0.0f) pid_feed_forward_confidence_floor = 0.0f;
     if (pid_feed_forward_confidence_floor > 1.0f) pid_feed_forward_confidence_floor = 1.0f;
+    if (pid_conditional_integration_error_px < 0.0f) pid_conditional_integration_error_px = 0.0f;
+    if (pid_conditional_integration_error_px > 240.0f) pid_conditional_integration_error_px = 240.0f;
+    if (pid_adaptive_output_error_scale < 1.0f) pid_adaptive_output_error_scale = 1.0f;
+    if (pid_adaptive_output_error_scale > 640.0f) pid_adaptive_output_error_scale = 640.0f;
+    if (pid_derivative_smoothing_multiplier < 1.0f) pid_derivative_smoothing_multiplier = 1.0f;
+    if (pid_derivative_smoothing_multiplier > 6.0f) pid_derivative_smoothing_multiplier = 6.0f;
     if (pid_governor_model_path.empty()) pid_governor_model_path = "training/models/pid_governor.onnx";
     if (pid_governor_blend < 0.0f) pid_governor_blend = 0.0f;
     if (pid_governor_blend > 1.0f) pid_governor_blend = 1.0f;
@@ -775,6 +830,287 @@ bool Config::loadConfig(const std::string& filename)
     return validate();
 }
 
+bool Config::loadConfigMerged(const std::string& filename)
+{
+    const std::string target = filename.empty() ? "config.ini" : filename;
+    if (!std::filesystem::exists(target))
+        return loadConfig(target);
+
+    CSimpleIniA ini;
+    ini.SetUnicode();
+    SI_Error rc = ini.LoadFile(target.c_str());
+    if (rc < 0)
+    {
+        std::cerr << "[Config] Error parsing INI file for merge: " << target << std::endl;
+        return false;
+    }
+
+    std::unordered_set<std::string> presentKeys;
+    CSimpleIniA::TNamesDepend keys;
+    ini.GetAllKeys("", keys);
+    for (const auto& k : keys)
+        presentKeys.insert(k.pItem);
+
+    Config loaded = *this;
+    if (!loaded.loadConfig(target))
+        return false;
+
+    auto hasKey = [&](const char* key) {
+        return presentKeys.find(key) != presentKeys.end();
+    };
+
+#define MERGE_FIELD(keyName, fieldName) \
+    do { if (hasKey(keyName)) fieldName = loaded.fieldName; } while (0)
+
+    MERGE_FIELD("capture_method", capture_method);
+    MERGE_FIELD("capture_target", capture_target);
+    MERGE_FIELD("capture_window_title", capture_window_title);
+    MERGE_FIELD("udp_ip", udp_ip);
+    MERGE_FIELD("udp_port", udp_port);
+    MERGE_FIELD("detection_resolution", detection_resolution);
+    MERGE_FIELD("capture_fps", capture_fps);
+    MERGE_FIELD("monitor_idx", monitor_idx);
+    MERGE_FIELD("circle_mask", circle_mask);
+    MERGE_FIELD("capture_borders", capture_borders);
+    MERGE_FIELD("capture_cursor", capture_cursor);
+    MERGE_FIELD("virtual_camera_name", virtual_camera_name);
+    MERGE_FIELD("virtual_camera_width", virtual_camera_width);
+    MERGE_FIELD("virtual_camera_heigth", virtual_camera_heigth);
+
+    MERGE_FIELD("disable_headshot", disable_headshot);
+    MERGE_FIELD("body_y_offset", body_y_offset);
+    MERGE_FIELD("head_y_offset", head_y_offset);
+    MERGE_FIELD("auto_aim", auto_aim);
+
+    MERGE_FIELD("fovX", fovX);
+    MERGE_FIELD("fovY", fovY);
+    MERGE_FIELD("minSpeedMultiplier", minSpeedMultiplier);
+    MERGE_FIELD("maxSpeedMultiplier", maxSpeedMultiplier);
+    MERGE_FIELD("predictionInterval", predictionInterval);
+    MERGE_FIELD("prediction_futurePositions", prediction_futurePositions);
+    MERGE_FIELD("draw_futurePositions", draw_futurePositions);
+    MERGE_FIELD("runtime_latency_sweep_enabled", runtime_latency_sweep_enabled);
+    MERGE_FIELD("kalman_enabled", kalman_enabled);
+    MERGE_FIELD("kalman_process_noise_position", kalman_process_noise_position);
+    MERGE_FIELD("kalman_process_noise_velocity", kalman_process_noise_velocity);
+    MERGE_FIELD("kalman_measurement_noise", kalman_measurement_noise);
+    MERGE_FIELD("kalman_velocity_damping", kalman_velocity_damping);
+    MERGE_FIELD("kalman_max_velocity", kalman_max_velocity);
+    MERGE_FIELD("kalman_warmup_frames", kalman_warmup_frames);
+    MERGE_FIELD("kalman_velocity_seed_enabled", kalman_velocity_seed_enabled);
+    MERGE_FIELD("kalman_acquisition_frames", kalman_acquisition_frames);
+    MERGE_FIELD("kalman_compensate_detection_delay", kalman_compensate_detection_delay);
+    MERGE_FIELD("kalman_additional_prediction_ms", kalman_additional_prediction_ms);
+    MERGE_FIELD("kalman_reset_timeout_sec", kalman_reset_timeout_sec);
+
+    MERGE_FIELD("snapRadius", snapRadius);
+    MERGE_FIELD("nearRadius", nearRadius);
+    MERGE_FIELD("speedCurveExponent", speedCurveExponent);
+    MERGE_FIELD("snapBoostFactor", snapBoostFactor);
+    MERGE_FIELD("easynorecoil", easynorecoil);
+    MERGE_FIELD("easynorecoilstrength", easynorecoilstrength);
+    MERGE_FIELD("input_method", input_method);
+
+    MERGE_FIELD("wind_mouse_enabled", wind_mouse_enabled);
+    MERGE_FIELD("wind_G", wind_G);
+    MERGE_FIELD("wind_W", wind_W);
+    MERGE_FIELD("wind_M", wind_M);
+    MERGE_FIELD("wind_D", wind_D);
+
+    MERGE_FIELD("pid_actuator_hz", pid_actuator_hz);
+    MERGE_FIELD("pid_kp", pid_kp);
+    MERGE_FIELD("pid_ki", pid_ki);
+    MERGE_FIELD("pid_kd", pid_kd);
+    MERGE_FIELD("pid_deadzone_px", pid_deadzone_px);
+    MERGE_FIELD("pid_max_pixel_step", pid_max_pixel_step);
+    MERGE_FIELD("pid_output_scale", pid_output_scale);
+    MERGE_FIELD("pid_min_output_scale", pid_min_output_scale);
+    MERGE_FIELD("pid_max_output_scale", pid_max_output_scale);
+    MERGE_FIELD("pid_size_reference_px", pid_size_reference_px);
+    MERGE_FIELD("pid_size_min_scale", pid_size_min_scale);
+    MERGE_FIELD("pid_size_max_scale", pid_size_max_scale);
+    MERGE_FIELD("pid_precision_radius_scale", pid_precision_radius_scale);
+    MERGE_FIELD("pid_slowdown_radius_scale", pid_slowdown_radius_scale);
+    MERGE_FIELD("pid_overshoot_brake", pid_overshoot_brake);
+    MERGE_FIELD("pid_divergence_boost", pid_divergence_boost);
+    MERGE_FIELD("pid_scale_response", pid_scale_response);
+    MERGE_FIELD("pid_max_integral", pid_max_integral);
+    MERGE_FIELD("pid_max_derivative_term", pid_max_derivative_term);
+    MERGE_FIELD("pid_derivative_filter_tau_ms", pid_derivative_filter_tau_ms);
+    MERGE_FIELD("pid_target_loss_timeout_ms", pid_target_loss_timeout_ms);
+    MERGE_FIELD("pid_feed_forward_enabled", pid_feed_forward_enabled);
+    MERGE_FIELD("pid_feed_forward_gain", pid_feed_forward_gain);
+    MERGE_FIELD("pid_feed_forward_lookahead_ms", pid_feed_forward_lookahead_ms);
+    MERGE_FIELD("pid_feed_forward_frame_lookahead", pid_feed_forward_frame_lookahead);
+    MERGE_FIELD("pid_feed_forward_max_step", pid_feed_forward_max_step);
+    MERGE_FIELD("pid_feed_forward_min_speed", pid_feed_forward_min_speed);
+    MERGE_FIELD("pid_feed_forward_confidence_floor", pid_feed_forward_confidence_floor);
+    MERGE_FIELD("pid_conditional_integration_enabled", pid_conditional_integration_enabled);
+    MERGE_FIELD("pid_conditional_integration_error_px", pid_conditional_integration_error_px);
+    MERGE_FIELD("pid_adaptive_output_scaling_enabled", pid_adaptive_output_scaling_enabled);
+    MERGE_FIELD("pid_adaptive_output_error_scale", pid_adaptive_output_error_scale);
+    MERGE_FIELD("pid_derivative_smoothing_multiplier", pid_derivative_smoothing_multiplier);
+    MERGE_FIELD("pid_perspective_fov_mapping_enabled", pid_perspective_fov_mapping_enabled);
+    MERGE_FIELD("pid_governor_enabled", pid_governor_enabled);
+    MERGE_FIELD("pid_governor_model_path", pid_governor_model_path);
+    MERGE_FIELD("pid_governor_blend", pid_governor_blend);
+    MERGE_FIELD("pid_governor_max_speed_multiple", pid_governor_max_speed_multiple);
+
+    MERGE_FIELD("neural_tracker_enabled", neural_tracker_enabled);
+    MERGE_FIELD("neural_tracker_model_path", neural_tracker_model_path);
+    MERGE_FIELD("neural_tracker_blend", neural_tracker_blend);
+    MERGE_FIELD("neural_tracker_log_enabled", neural_tracker_log_enabled);
+    MERGE_FIELD("neural_tracker_debug_enabled", neural_tracker_debug_enabled);
+    MERGE_FIELD("neural_tracker_log_path", neural_tracker_log_path);
+
+    MERGE_FIELD("arduino_baudrate", arduino_baudrate);
+    MERGE_FIELD("arduino_port", arduino_port);
+    MERGE_FIELD("arduino_16_bit_mouse", arduino_16_bit_mouse);
+    MERGE_FIELD("arduino_enable_keys", arduino_enable_keys);
+    MERGE_FIELD("teensy_hid_manufacturer", teensy_hid_manufacturer);
+    MERGE_FIELD("teensy_hid_product", teensy_hid_product);
+    MERGE_FIELD("teensy_hid_serial", teensy_hid_serial);
+    MERGE_FIELD("teensy_hid_vid_filter", teensy_hid_vid_filter);
+    MERGE_FIELD("teensy_hid_pid_filter", teensy_hid_pid_filter);
+    MERGE_FIELD("teensy_hid_usage_page", teensy_hid_usage_page);
+    MERGE_FIELD("teensy_hid_usage_id", teensy_hid_usage_id);
+    MERGE_FIELD("teensy_hid_open_index", teensy_hid_open_index);
+    MERGE_FIELD("teensy_hid_packet_timeout_ms", teensy_hid_packet_timeout_ms);
+    MERGE_FIELD("teensy_hid_reconnect_interval_ms", teensy_hid_reconnect_interval_ms);
+    MERGE_FIELD("kmbox_net_ip", kmbox_net_ip);
+    MERGE_FIELD("kmbox_net_port", kmbox_net_port);
+    MERGE_FIELD("kmbox_net_uuid", kmbox_net_uuid);
+    MERGE_FIELD("kmbox_a_pidvid", kmbox_a_pidvid);
+    MERGE_FIELD("makcu_baudrate", makcu_baudrate);
+    MERGE_FIELD("makcu_port", makcu_port);
+
+    MERGE_FIELD("auto_shoot", auto_shoot);
+    MERGE_FIELD("bScope_multiplier", bScope_multiplier);
+
+    MERGE_FIELD("backend", backend);
+    MERGE_FIELD("dml_device_id", dml_device_id);
+    MERGE_FIELD("ai_model", ai_model);
+    MERGE_FIELD("confidence_threshold", confidence_threshold);
+    MERGE_FIELD("nms_threshold", nms_threshold);
+    MERGE_FIELD("max_detections", max_detections);
+#ifdef USE_CUDA
+    MERGE_FIELD("export_enable_fp8", export_enable_fp8);
+    MERGE_FIELD("export_enable_fp16", export_enable_fp16);
+    MERGE_FIELD("use_cuda_graph", use_cuda_graph);
+    MERGE_FIELD("use_pinned_memory", use_pinned_memory);
+    MERGE_FIELD("gpuMemoryReserveMB", gpuMemoryReserveMB);
+    MERGE_FIELD("enableGpuExclusiveMode", enableGpuExclusiveMode);
+    MERGE_FIELD("capture_use_cuda", capture_use_cuda);
+#endif
+    MERGE_FIELD("fixed_input_size", fixed_input_size);
+
+    MERGE_FIELD("cpuCoreReserveCount", cpuCoreReserveCount);
+    MERGE_FIELD("systemMemoryReserveMB", systemMemoryReserveMB);
+
+    MERGE_FIELD("button_targeting", button_targeting);
+    MERGE_FIELD("button_shoot", button_shoot);
+    MERGE_FIELD("button_zoom", button_zoom);
+    MERGE_FIELD("button_exit", button_exit);
+    MERGE_FIELD("button_pause", button_pause);
+    MERGE_FIELD("button_reload_config", button_reload_config);
+    MERGE_FIELD("button_open_overlay", button_open_overlay);
+    MERGE_FIELD("enable_arrows_settings", enable_arrows_settings);
+
+    MERGE_FIELD("overlay_opacity", overlay_opacity);
+    MERGE_FIELD("overlay_ui_scale", overlay_ui_scale);
+    MERGE_FIELD("overlay_exclude_from_capture", overlay_exclude_from_capture);
+
+    MERGE_FIELD("depth_inference_enabled", depth_inference_enabled);
+    MERGE_FIELD("depth_model_path", depth_model_path);
+    MERGE_FIELD("depth_fps", depth_fps);
+    MERGE_FIELD("depth_colormap", depth_colormap);
+    MERGE_FIELD("depth_mask_enabled", depth_mask_enabled);
+    MERGE_FIELD("depth_mask_fps", depth_mask_fps);
+    MERGE_FIELD("depth_mask_near_percent", depth_mask_near_percent);
+    MERGE_FIELD("depth_mask_expand", depth_mask_expand);
+    MERGE_FIELD("depth_mask_hold_frames", depth_mask_hold_frames);
+    MERGE_FIELD("depth_mask_alpha", depth_mask_alpha);
+    MERGE_FIELD("depth_mask_invert", depth_mask_invert);
+    MERGE_FIELD("depth_debug_overlay_enabled", depth_debug_overlay_enabled);
+
+    MERGE_FIELD("game_overlay_enabled", game_overlay_enabled);
+    MERGE_FIELD("game_overlay_max_fps", game_overlay_max_fps);
+    MERGE_FIELD("game_overlay_draw_boxes", game_overlay_draw_boxes);
+    MERGE_FIELD("game_overlay_draw_future", game_overlay_draw_future);
+    MERGE_FIELD("game_overlay_draw_wind_tail", game_overlay_draw_wind_tail);
+    MERGE_FIELD("game_overlay_draw_frame", game_overlay_draw_frame);
+    MERGE_FIELD("game_overlay_show_target_correction", game_overlay_show_target_correction);
+    MERGE_FIELD("game_overlay_box_a", game_overlay_box_a);
+    MERGE_FIELD("game_overlay_box_r", game_overlay_box_r);
+    MERGE_FIELD("game_overlay_box_g", game_overlay_box_g);
+    MERGE_FIELD("game_overlay_box_b", game_overlay_box_b);
+    MERGE_FIELD("game_overlay_frame_a", game_overlay_frame_a);
+    MERGE_FIELD("game_overlay_frame_r", game_overlay_frame_r);
+    MERGE_FIELD("game_overlay_frame_g", game_overlay_frame_g);
+    MERGE_FIELD("game_overlay_frame_b", game_overlay_frame_b);
+    MERGE_FIELD("game_overlay_box_thickness", game_overlay_box_thickness);
+    MERGE_FIELD("game_overlay_frame_thickness", game_overlay_frame_thickness);
+    MERGE_FIELD("game_overlay_future_point_radius", game_overlay_future_point_radius);
+    MERGE_FIELD("game_overlay_future_alpha_falloff", game_overlay_future_alpha_falloff);
+    MERGE_FIELD("game_overlay_icon_enabled", game_overlay_icon_enabled);
+    MERGE_FIELD("game_overlay_icon_path", game_overlay_icon_path);
+    MERGE_FIELD("game_overlay_icon_width", game_overlay_icon_width);
+    MERGE_FIELD("game_overlay_icon_height", game_overlay_icon_height);
+    MERGE_FIELD("game_overlay_icon_offset_x", game_overlay_icon_offset_x);
+    MERGE_FIELD("game_overlay_icon_offset_y", game_overlay_icon_offset_y);
+    MERGE_FIELD("game_overlay_icon_anchor", game_overlay_icon_anchor);
+    MERGE_FIELD("game_overlay_icon_class", game_overlay_icon_class);
+
+    MERGE_FIELD("aim_sim_enabled", aim_sim_enabled);
+    MERGE_FIELD("aim_sim_x", aim_sim_x);
+    MERGE_FIELD("aim_sim_y", aim_sim_y);
+    MERGE_FIELD("aim_sim_width", aim_sim_width);
+    MERGE_FIELD("aim_sim_height", aim_sim_height);
+    MERGE_FIELD("aim_sim_fps_min", aim_sim_fps_min);
+    MERGE_FIELD("aim_sim_fps_max", aim_sim_fps_max);
+    MERGE_FIELD("aim_sim_fps_jitter", aim_sim_fps_jitter);
+    MERGE_FIELD("aim_sim_capture_delay_ms", aim_sim_capture_delay_ms);
+    MERGE_FIELD("aim_sim_inference_delay_ms", aim_sim_inference_delay_ms);
+    MERGE_FIELD("aim_sim_use_live_inference", aim_sim_use_live_inference);
+    MERGE_FIELD("aim_sim_input_delay_ms", aim_sim_input_delay_ms);
+    MERGE_FIELD("aim_sim_extra_delay_ms", aim_sim_extra_delay_ms);
+    MERGE_FIELD("aim_sim_target_max_speed", aim_sim_target_max_speed);
+    MERGE_FIELD("aim_sim_target_accel", aim_sim_target_accel);
+    MERGE_FIELD("aim_sim_target_stop_chance", aim_sim_target_stop_chance);
+    MERGE_FIELD("aim_sim_show_observed", aim_sim_show_observed);
+    MERGE_FIELD("aim_sim_show_history", aim_sim_show_history);
+    MERGE_FIELD("aim_sim_show_kalman_debug", aim_sim_show_kalman_debug);
+
+    MERGE_FIELD("class_player", class_player);
+    MERGE_FIELD("class_head", class_head);
+
+    MERGE_FIELD("show_window", show_window);
+    MERGE_FIELD("show_fps", show_fps);
+    MERGE_FIELD("screenshot_button", screenshot_button);
+    MERGE_FIELD("screenshot_delay", screenshot_delay);
+    MERGE_FIELD("verbose", verbose);
+    MERGE_FIELD("debug_log_file_enabled", debug_log_file_enabled);
+    MERGE_FIELD("debug_log_file_path", debug_log_file_path);
+
+    if (hasKey("active_game"))
+        active_game = loaded.active_game;
+
+#undef MERGE_FIELD
+
+    CSimpleIniA::TNamesDepend gameKeys;
+    ini.GetAllKeys("Games", gameKeys);
+    for (const auto& k : gameKeys)
+    {
+        std::string name = k.pItem;
+        auto it = loaded.game_profiles.find(name);
+        if (it != loaded.game_profiles.end())
+            game_profiles[name] = it->second;
+    }
+
+    config_path = loaded.config_path;
+    return validate();
+}
+
 bool Config::validate()
 {
     if (!ParseMouseInputMethod(input_method))
@@ -784,16 +1120,35 @@ bool Config::validate()
         input_method = "WIN32";
     }
 
+    const char* fallbackBackend = "DML";
+#ifdef USE_CUDA
+    // Runtime CUDA inference is selected with TRT; keep CUDA as a config alias.
+    if (backend == "CUDA")
+        backend = "TRT";
+    fallbackBackend = "TRT";
+#endif
+
     if (backend != "DML"
 #ifdef USE_CUDA
-        && backend != "CUDA"
+        && backend != "TRT"
 #endif
         )
     {
         std::cerr << "[Config] Unknown backend '" << backend
-                  << "', falling back to DML." << std::endl;
-        backend = "DML";
+                  << "', falling back to " << fallbackBackend << "." << std::endl;
+        backend = fallbackBackend;
     }
+
+    if (teensy_hid_manufacturer.empty()) teensy_hid_manufacturer = "Generic";
+    if (teensy_hid_product.empty()) teensy_hid_product = "USB HID Mouse";
+    if (teensy_hid_serial.empty()) teensy_hid_serial = "AUTO";
+    if (teensy_hid_vid_filter.empty()) teensy_hid_vid_filter = "AUTO";
+    if (teensy_hid_pid_filter.empty()) teensy_hid_pid_filter = "AUTO";
+    teensy_hid_usage_page = std::clamp(teensy_hid_usage_page, 1, 0xFFFF);
+    teensy_hid_usage_id = std::clamp(teensy_hid_usage_id, 1, 0xFFFF);
+    teensy_hid_open_index = std::clamp(teensy_hid_open_index, 0, 32);
+    teensy_hid_packet_timeout_ms = std::clamp(teensy_hid_packet_timeout_ms, 0, 100);
+    teensy_hid_reconnect_interval_ms = std::clamp(teensy_hid_reconnect_interval_ms, 50, 10000);
 
     if (debug_log_file_path.empty()) debug_log_file_path = "logs/0BS.log";
     return true;
@@ -849,7 +1204,21 @@ bool Config::saveConfig(const std::string& filename)
         << "fovY = " << fovY << "\n"
         << "prediction_futurePositions = " << prediction_futurePositions << "\n"
         << "draw_futurePositions = " << (draw_futurePositions ? "true" : "false") << "\n"
-        << "# WIN32, GHUB, RAZER, ARDUINO, KMBOX_NET, KMBOX_A, MAKCU\n"
+        << "runtime_latency_sweep_enabled = " << (runtime_latency_sweep_enabled ? "true" : "false") << "\n"
+        << std::fixed << std::setprecision(3)
+        << "kalman_enabled = " << (kalman_enabled ? "true" : "false") << "\n"
+        << "kalman_process_noise_position = " << kalman_process_noise_position << "\n"
+        << "kalman_process_noise_velocity = " << kalman_process_noise_velocity << "\n"
+        << "kalman_measurement_noise = " << kalman_measurement_noise << "\n"
+        << "kalman_velocity_damping = " << kalman_velocity_damping << "\n"
+        << "kalman_max_velocity = " << kalman_max_velocity << "\n"
+        << "kalman_warmup_frames = " << kalman_warmup_frames << "\n"
+        << "kalman_velocity_seed_enabled = " << (kalman_velocity_seed_enabled ? "true" : "false") << "\n"
+        << "kalman_acquisition_frames = " << kalman_acquisition_frames << "\n"
+        << "kalman_compensate_detection_delay = " << (kalman_compensate_detection_delay ? "true" : "false") << "\n"
+        << "kalman_additional_prediction_ms = " << kalman_additional_prediction_ms << "\n"
+        << "kalman_reset_timeout_sec = " << kalman_reset_timeout_sec << "\n"
+        << "# WIN32, GHUB, RAZER, ARDUINO, TEENSY41, TEENSY41_HID, KMBOX_NET, KMBOX_A, MAKCU\n"
         << "input_method = " << input_method << "\n\n";
 
     file << "# Pure PID mouse control\n"
@@ -879,9 +1248,16 @@ bool Config::saveConfig(const std::string& filename)
         << "pid_feed_forward_enabled = " << (pid_feed_forward_enabled ? "true" : "false") << "\n"
         << "pid_feed_forward_gain = " << pid_feed_forward_gain << "\n"
         << "pid_feed_forward_lookahead_ms = " << pid_feed_forward_lookahead_ms << "\n"
+        << "pid_feed_forward_frame_lookahead = " << pid_feed_forward_frame_lookahead << "\n"
         << "pid_feed_forward_max_step = " << pid_feed_forward_max_step << "\n"
         << "pid_feed_forward_min_speed = " << pid_feed_forward_min_speed << "\n"
         << "pid_feed_forward_confidence_floor = " << pid_feed_forward_confidence_floor << "\n"
+        << "pid_conditional_integration_enabled = " << (pid_conditional_integration_enabled ? "true" : "false") << "\n"
+        << "pid_conditional_integration_error_px = " << pid_conditional_integration_error_px << "\n"
+        << "pid_adaptive_output_scaling_enabled = " << (pid_adaptive_output_scaling_enabled ? "true" : "false") << "\n"
+        << "pid_adaptive_output_error_scale = " << pid_adaptive_output_error_scale << "\n"
+        << "pid_derivative_smoothing_multiplier = " << pid_derivative_smoothing_multiplier << "\n"
+        << "pid_perspective_fov_mapping_enabled = " << (pid_perspective_fov_mapping_enabled ? "true" : "false") << "\n"
         << "pid_governor_enabled = " << (pid_governor_enabled ? "true" : "false") << "\n"
         << "pid_governor_model_path = " << pid_governor_model_path << "\n"
         << "pid_governor_blend = " << pid_governor_blend << "\n"
@@ -902,6 +1278,18 @@ bool Config::saveConfig(const std::string& filename)
         << "arduino_port = " << arduino_port << "\n"
         << "arduino_16_bit_mouse = " << (arduino_16_bit_mouse ? "true" : "false") << "\n"
         << "arduino_enable_keys = " << (arduino_enable_keys ? "true" : "false") << "\n\n";
+
+    file << "# Teensy 4.1 RawHID generic mouse bridge\n"
+        << "teensy_hid_manufacturer = " << teensy_hid_manufacturer << "\n"
+        << "teensy_hid_product = " << teensy_hid_product << "\n"
+        << "teensy_hid_serial = " << teensy_hid_serial << "\n"
+        << "teensy_hid_vid_filter = " << teensy_hid_vid_filter << "\n"
+        << "teensy_hid_pid_filter = " << teensy_hid_pid_filter << "\n"
+        << "teensy_hid_usage_page = " << teensy_hid_usage_page << "\n"
+        << "teensy_hid_usage_id = " << teensy_hid_usage_id << "\n"
+        << "teensy_hid_open_index = " << teensy_hid_open_index << "\n"
+        << "teensy_hid_packet_timeout_ms = " << teensy_hid_packet_timeout_ms << "\n"
+        << "teensy_hid_reconnect_interval_ms = " << teensy_hid_reconnect_interval_ms << "\n\n";
 
     // kmbox_net
     file << "# Kmbox_net\n"

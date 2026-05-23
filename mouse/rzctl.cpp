@@ -47,24 +47,6 @@ std::filesystem::path RzctlMouse::resolveDllPath()
     return exeDir.empty() ? std::filesystem::path(L"rzctl.dll") : exeDir / L"rzctl.dll";
 }
 
-bool RzctlMouse::sendInputMove(int x, int y)
-{
-    INPUT input{ 0 };
-    input.type = INPUT_MOUSE;
-    input.mi.dx = x;
-    input.mi.dy = y;
-    input.mi.dwFlags = MOUSEEVENTF_MOVE;
-    return SendInput(1, &input, sizeof(INPUT)) == 1;
-}
-
-bool RzctlMouse::sendInputClick(DWORD flag)
-{
-    INPUT input{ 0 };
-    input.type = INPUT_MOUSE;
-    input.mi.dwFlags = flag;
-    return SendInput(1, &input, sizeof(INPUT)) == 1;
-}
-
 int RzctlMouse::downFlagForKey(int key)
 {
     if (key == 2)
@@ -131,7 +113,7 @@ bool RzctlMouse::mouse_xy(int x, int y)
         return true;
     }
 
-    return sendInputMove(x, y);
+    return false;
 }
 
 bool RzctlMouse::mouse_down(int key)
@@ -145,12 +127,7 @@ bool RzctlMouse::mouse_down(int key)
         return true;
     }
 
-    DWORD flag = MOUSEEVENTF_LEFTDOWN;
-    if (key == 2)
-        flag = MOUSEEVENTF_RIGHTDOWN;
-    else if (key == 3)
-        flag = MOUSEEVENTF_MIDDLEDOWN;
-    return sendInputClick(flag);
+    return false;
 }
 
 bool RzctlMouse::mouse_up(int key)
@@ -164,12 +141,7 @@ bool RzctlMouse::mouse_up(int key)
         return true;
     }
 
-    DWORD flag = MOUSEEVENTF_LEFTUP;
-    if (key == 2)
-        flag = MOUSEEVENTF_RIGHTUP;
-    else if (key == 3)
-        flag = MOUSEEVENTF_MIDDLEUP;
-    return sendInputClick(flag);
+    return false;
 }
 
 bool RzctlMouse::mouse_close()

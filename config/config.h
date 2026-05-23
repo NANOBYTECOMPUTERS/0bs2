@@ -40,6 +40,7 @@ public:
     float predictionInterval;
     int prediction_futurePositions;
     bool draw_futurePositions;
+    bool runtime_latency_sweep_enabled;
     bool kalman_enabled;
     float kalman_process_noise_position;
     float kalman_process_noise_velocity;
@@ -47,6 +48,8 @@ public:
     float kalman_velocity_damping;
     float kalman_max_velocity;
     int kalman_warmup_frames;
+    bool kalman_velocity_seed_enabled;
+    int kalman_acquisition_frames;
     bool kalman_compensate_detection_delay;
     float kalman_additional_prediction_ms;
     float kalman_reset_timeout_sec;
@@ -58,7 +61,7 @@ public:
 
     bool easynorecoil;
     float easynorecoilstrength;
-    std::string input_method; // "WIN32", "GHUB", "ARDUINO", "KMBOX_NET", "KMBOX_A", "MAKCU"
+    std::string input_method; // "WIN32", "GHUB", "ARDUINO", "TEENSY41", "TEENSY41_HID", "KMBOX_NET", "KMBOX_A", "MAKCU"
 
     // Wind mouse
     bool wind_mouse_enabled;
@@ -92,9 +95,16 @@ public:
     bool pid_feed_forward_enabled;
     float pid_feed_forward_gain;
     float pid_feed_forward_lookahead_ms;
+    int pid_feed_forward_frame_lookahead;
     float pid_feed_forward_max_step;
     float pid_feed_forward_min_speed;
     float pid_feed_forward_confidence_floor;
+    bool pid_conditional_integration_enabled;
+    float pid_conditional_integration_error_px;
+    bool pid_adaptive_output_scaling_enabled;
+    float pid_adaptive_output_error_scale;
+    float pid_derivative_smoothing_multiplier;
+    bool pid_perspective_fov_mapping_enabled;
     bool pid_governor_enabled;
     std::string pid_governor_model_path;
     float pid_governor_blend;
@@ -113,6 +123,18 @@ public:
     std::string arduino_port;
     bool arduino_16_bit_mouse;
     bool arduino_enable_keys;
+
+    // Teensy 4.1 RawHID generic mouse bridge
+    std::string teensy_hid_manufacturer;
+    std::string teensy_hid_product;
+    std::string teensy_hid_serial;
+    std::string teensy_hid_vid_filter;
+    std::string teensy_hid_pid_filter;
+    int teensy_hid_usage_page;
+    int teensy_hid_usage_id;
+    int teensy_hid_open_index;
+    int teensy_hid_packet_timeout_ms;
+    int teensy_hid_reconnect_interval_ms;
 
     // kmbox_net
     std::string kmbox_net_ip;
@@ -280,6 +302,7 @@ public:
 
     bool validate();
     bool loadConfig(const std::string& filename = "config.ini");
+    bool loadConfigMerged(const std::string& filename = "config.ini");
     bool saveConfig(const std::string& filename = "config.ini");
 
     std::string joinStrings(const std::vector<std::string>& vec, const std::string& delimiter = ",");

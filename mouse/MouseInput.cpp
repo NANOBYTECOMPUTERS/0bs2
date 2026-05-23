@@ -12,6 +12,7 @@
 #include "KmboxAConnection.h"
 #include "KmboxNetConnection.h"
 #include "Makcu.h"
+#include "Teensy41RawHid.h"
 #include "config.h"
 #include "ghub.h"
 #include "rzctl.h"
@@ -49,8 +50,8 @@ public:
 class ArduinoMouseInput final : public IMouseInput
 {
 public:
-    ArduinoMouseInput(const std::string& port, unsigned int baudrate)
-        : device_(std::make_unique<Arduino>(port, baudrate))
+    ArduinoMouseInput(const std::string& port, unsigned int baudrate, ArduinoProtocol protocol = ArduinoProtocol::Legacy)
+        : device_(std::make_unique<Arduino>(port, baudrate, protocol))
     {
     }
 
@@ -59,28 +60,108 @@ public:
     bool move(int dx, int dy) override
     {
         if (!isOpen())
-            return sendWin32Move(dx, dy);
+            return false;
         device_->move(dx, dy);
         return true;
     }
     bool leftDown() override
     {
         if (!isOpen())
-            return sendWin32Click(MOUSEEVENTF_LEFTDOWN);
+            return false;
         device_->press();
         return true;
     }
     bool leftUp() override
     {
         if (!isOpen())
-            return sendWin32Click(MOUSEEVENTF_LEFTUP);
+            return false;
         device_->release();
         return true;
     }
+    bool aimingActive() const override { return device_ && device_->aiming_active; }
+    bool shootingActive() const override { return device_ && device_->shooting_active; }
+    bool zoomingActive() const override { return device_ && device_->zooming_active; }
     Arduino* arduino() override { return device_.get(); }
 
 private:
     std::unique_ptr<Arduino> device_;
+};
+
+class Teensy41MouseInput final : public IMouseInput
+{
+public:
+    Teensy41MouseInput(const std::string& port, unsigned int baudrate)
+        : device_(std::make_unique<Arduino>(port, baudrate, ArduinoProtocol::Teensy41))
+    {
+    }
+
+    const char* name() const override { return "TEENSY41"; }
+    bool isOpen() const override { return device_ && device_->isOpen(); }
+    bool move(int dx, int dy) override
+    {
+        if (!isOpen())
+            return false;
+        device_->move(dx, dy);
+        return true;
+    }
+    bool leftDown() override
+    {
+        if (!isOpen())
+            return false;
+        device_->press();
+        return true;
+    }
+    bool leftUp() override
+    {
+        if (!isOpen())
+            return false;
+        device_->release();
+        return true;
+    }
+    bool aimingActive() const override { return device_ && device_->aiming_active; }
+    bool shootingActive() const override { return device_ && device_->shooting_active; }
+    bool zoomingActive() const override { return device_ && device_->zooming_active; }
+    Arduino* arduino() override { return device_.get(); }
+
+private:
+    std::unique_ptr<Arduino> device_;
+};
+
+class Teensy41RawHidMouseInput final : public IMouseInput
+{
+public:
+    explicit Teensy41RawHidMouseInput(const Config& config)
+        : device_(std::make_unique<Teensy41RawHid>(config))
+    {
+    }
+
+    const char* name() const override { return "TEENSY41_HID"; }
+    bool isOpen() const override { return device_ && device_->isOpen(); }
+    bool move(int dx, int dy) override
+    {
+        if (!isOpen())
+            return false;
+        return device_->move(dx, dy);
+    }
+    bool leftDown() override
+    {
+        if (!isOpen())
+            return false;
+        return device_->press();
+    }
+    bool leftUp() override
+    {
+        if (!isOpen())
+            return false;
+        return device_->release();
+    }
+    bool aimingActive() const override { return device_ && device_->aimingActive(); }
+    bool shootingActive() const override { return device_ && device_->shootingActive(); }
+    bool zoomingActive() const override { return device_ && device_->zoomingActive(); }
+    Teensy41RawHid* teensy41RawHid() override { return device_.get(); }
+
+private:
+    std::unique_ptr<Teensy41RawHid> device_;
 };
 
 class GHubMouseInput final : public IMouseInput
@@ -98,10 +179,10 @@ public:
     }
 
     const char* name() const override { return "GHUB"; }
-    bool isOpen() const override { return device_ != nullptr; }
-    bool move(int dx, int dy) override { return device_ ? device_->mouse_xy(dx, dy) : sendWin32Move(dx, dy); }
-    bool leftDown() override { return device_ ? device_->mouse_down() : sendWin32Click(MOUSEEVENTF_LEFTDOWN); }
-    bool leftUp() override { return device_ ? device_->mouse_up() : sendWin32Click(MOUSEEVENTF_LEFTUP); }
+    bool isOpen() const override { return device_ && device_->isOpen(); }
+    bool move(int dx, int dy) override { return isOpen() && device_->mouse_xy(dx, dy); }
+    bool leftDown() override { return isOpen() && device_->mouse_down(); }
+    bool leftUp() override { return isOpen() && device_->mouse_up(); }
     GhubMouse* ghub() override { return device_.get(); }
 
 private:
@@ -124,9 +205,9 @@ public:
 
     const char* name() const override { return "RAZER"; }
     bool isOpen() const override { return device_ && device_->isOpen(); }
-    bool move(int dx, int dy) override { return device_ ? device_->mouse_xy(dx, dy) : sendWin32Move(dx, dy); }
-    bool leftDown() override { return device_ ? device_->mouse_down() : sendWin32Click(MOUSEEVENTF_LEFTDOWN); }
-    bool leftUp() override { return device_ ? device_->mouse_up() : sendWin32Click(MOUSEEVENTF_LEFTUP); }
+    bool move(int dx, int dy) override { return isOpen() && device_->mouse_xy(dx, dy); }
+    bool leftDown() override { return isOpen() && device_->mouse_down(); }
+    bool leftUp() override { return isOpen() && device_->mouse_up(); }
     RzctlMouse* razer() override { return device_.get(); }
 
 private:
@@ -146,21 +227,21 @@ public:
     bool move(int dx, int dy) override
     {
         if (!isOpen())
-            return sendWin32Move(dx, dy);
+            return false;
         device_->move(dx, dy);
         return true;
     }
     bool leftDown() override
     {
         if (!isOpen())
-            return sendWin32Click(MOUSEEVENTF_LEFTDOWN);
+            return false;
         device_->leftDown();
         return true;
     }
     bool leftUp() override
     {
         if (!isOpen())
-            return sendWin32Click(MOUSEEVENTF_LEFTUP);
+            return false;
         device_->leftUp();
         return true;
     }
@@ -183,21 +264,21 @@ public:
     bool move(int dx, int dy) override
     {
         if (!isOpen())
-            return sendWin32Move(dx, dy);
+            return false;
         device_->move(dx, dy);
         return true;
     }
     bool leftDown() override
     {
         if (!isOpen())
-            return sendWin32Click(MOUSEEVENTF_LEFTDOWN);
+            return false;
         device_->leftDown();
         return true;
     }
     bool leftUp() override
     {
         if (!isOpen())
-            return sendWin32Click(MOUSEEVENTF_LEFTUP);
+            return false;
         device_->leftUp();
         return true;
     }
@@ -220,26 +301,20 @@ public:
     bool move(int dx, int dy) override
     {
         if (!isOpen())
-            return sendWin32Move(dx, dy);
-        if (device_->move(dx, dy))
-            return true;
-        return sendWin32Move(dx, dy);
+            return false;
+        return device_->move(dx, dy);
     }
     bool leftDown() override
     {
         if (!isOpen())
-            return sendWin32Click(MOUSEEVENTF_LEFTDOWN);
-        if (device_->press(0))
-            return true;
-        return sendWin32Click(MOUSEEVENTF_LEFTDOWN);
+            return false;
+        return device_->press(0);
     }
     bool leftUp() override
     {
         if (!isOpen())
-            return sendWin32Click(MOUSEEVENTF_LEFTUP);
-        if (device_->release(0))
-            return true;
-        return sendWin32Click(MOUSEEVENTF_LEFTUP);
+            return false;
+        return device_->release(0);
     }
     MakcuConnection* makcu() override { return device_.get(); }
 
@@ -258,6 +333,10 @@ std::optional<MouseInputMethod> ParseMouseInputMethod(const std::string& method)
         return MouseInputMethod::Razer;
     if (method == "ARDUINO")
         return MouseInputMethod::Arduino;
+    if (method == "TEENSY41")
+        return MouseInputMethod::Teensy41;
+    if (method == "TEENSY41_HID")
+        return MouseInputMethod::Teensy41Hid;
     if (method == "KMBOX_NET")
         return MouseInputMethod::KmboxNet;
     if (method == "KMBOX_A")
@@ -274,6 +353,8 @@ std::string MouseInputMethodName(MouseInputMethod method)
     case MouseInputMethod::GHub: return "GHUB";
     case MouseInputMethod::Razer: return "RAZER";
     case MouseInputMethod::Arduino: return "ARDUINO";
+    case MouseInputMethod::Teensy41: return "TEENSY41";
+    case MouseInputMethod::Teensy41Hid: return "TEENSY41_HID";
     case MouseInputMethod::KmboxNet: return "KMBOX_NET";
     case MouseInputMethod::KmboxA: return "KMBOX_A";
     case MouseInputMethod::Makcu: return "MAKCU";
@@ -290,6 +371,10 @@ std::unique_ptr<IMouseInput> CreateMouseInputDevice(const Config& config)
     {
     case MouseInputMethod::Arduino:
         return std::make_unique<ArduinoMouseInput>(config.arduino_port, static_cast<unsigned int>(config.arduino_baudrate));
+    case MouseInputMethod::Teensy41:
+        return std::make_unique<Teensy41MouseInput>(config.arduino_port, static_cast<unsigned int>(config.arduino_baudrate));
+    case MouseInputMethod::Teensy41Hid:
+        return std::make_unique<Teensy41RawHidMouseInput>(config);
     case MouseInputMethod::GHub:
         return std::make_unique<GHubMouseInput>();
     case MouseInputMethod::Razer:
