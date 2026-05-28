@@ -2,7 +2,10 @@ import unittest
 from pathlib import Path
 
 
-REPO_ROOT = Path(__file__).resolve().parents[4]
+REPO_ROOT = next(
+    parent for parent in Path(__file__).resolve().parents
+    if (parent / "mouse" / "PidMouseController.cpp").exists()
+)
 
 
 class PidFeedForwardContractTests(unittest.TestCase):
@@ -33,8 +36,8 @@ class PidFeedForwardContractTests(unittest.TestCase):
 
         self.assertIn("movementSinceObservationX", header)
         self.assertIn("movementSinceObservationY", header)
-        self.assertIn("observation.x - latest.x + movementSinceObservationX", controller)
-        self.assertIn("observation.y - latest.y + movementSinceObservationY", controller)
+        self.assertIn("nextControlErrorX - latestControlErrorX + movementSinceObservationX", controller)
+        self.assertIn("nextControlErrorY - latestControlErrorY + movementSinceObservationY", controller)
         self.assertIn("movementSinceObservationX += outX", controller)
         self.assertIn("movementSinceObservationY += outY", controller)
 

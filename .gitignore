@@ -74,3 +74,11 @@ modules/opencv/build/
 modules/glfw-3.4/docs/html/
 modules/glfw-3.4.bin.WIN64/docs/
 modules/glfw-3.4.bin.WIN64/lib-*/
+modules/TensorRT-*/
+modules/cudnn-*/
+modules/libtorch/
+training/datasets/
+training/training/
+cuda/obj/
+cuda/0BS_cuda/
+cuda/yolo_ann.*/

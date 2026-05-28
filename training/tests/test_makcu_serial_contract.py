@@ -3,7 +3,10 @@ import unittest
 from pathlib import Path
 
 
-REPO_ROOT = Path(__file__).resolve().parents[4]
+REPO_ROOT = next(
+    parent for parent in Path(__file__).resolve().parents
+    if (parent / "mouse" / "MouseInput.cpp").exists()
+)
 
 
 class MakcuSerialContractTests(unittest.TestCase):
@@ -41,7 +44,7 @@ class MakcuSerialContractTests(unittest.TestCase):
         self.assertNotEqual(enable_pos, -1)
         self.assertGreater(enable_pos, connect_pos)
 
-    def test_makcu_commands_propagate_write_failures_to_mouse_input_fallback(self):
+    def test_makcu_commands_do_not_fallback_to_win32_on_write_failures(self):
         makcu_h = self.read("mouse/Makcu.h")
         makcu_cpp = self.read("mouse/Makcu.cpp")
         mouse_input = self.read("mouse/MouseInput.cpp")
@@ -56,10 +59,19 @@ class MakcuSerialContractTests(unittest.TestCase):
         self.assertIn("device_.mouseDown(toMakcuButton(button))", makcu_cpp)
         self.assertIn("device_.mouseUp(toMakcuButton(button))", makcu_cpp)
         self.assertIn("is_open_ = false", makcu_cpp)
-        self.assertIn("return sendWin32Move(dx, dy);", mouse_input)
-        self.assertIn("if (device_->move(dx, dy))", mouse_input)
-        self.assertIn("if (device_->press(0))", mouse_input)
-        self.assertIn("if (device_->release(0))", mouse_input)
+
+        makcu_mouse_input = re.search(
+            r"class\s+MakcuMouseInput\b(?P<body>.*?)\n\s*private:",
+            mouse_input,
+            re.DOTALL,
+        )
+        self.assertIsNotNone(makcu_mouse_input)
+        body = makcu_mouse_input.group("body")
+        self.assertNotIn("sendWin32Move", body)
+        self.assertNotIn("sendWin32Click", body)
+        self.assertIn("return device_->move(dx, dy);", body)
+        self.assertIn("return device_->press(0);", body)
+        self.assertIn("return device_->release(0);", body)
 
     def test_makcu_default_config_and_ui_offer_auto_port(self):
         config_cpp = self.read("config/config.cpp")

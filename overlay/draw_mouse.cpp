@@ -4,6 +4,7 @@
 #include <Windows.h>
 
 #include <cstring>
+#include <cstdio>
 #include <string>
 #include <vector>
 
@@ -22,6 +23,19 @@ namespace
 {
 int prev_fovX = config.fovX;
 int prev_fovY = config.fovY;
+bool prev_runtime_latency_sweep_enabled = config.runtime_latency_sweep_enabled;
+bool prev_kalman_enabled = config.kalman_enabled;
+float prev_kalman_process_noise_position = config.kalman_process_noise_position;
+float prev_kalman_process_noise_velocity = config.kalman_process_noise_velocity;
+float prev_kalman_measurement_noise = config.kalman_measurement_noise;
+float prev_kalman_velocity_damping = config.kalman_velocity_damping;
+float prev_kalman_max_velocity = config.kalman_max_velocity;
+int prev_kalman_warmup_frames = config.kalman_warmup_frames;
+bool prev_kalman_velocity_seed_enabled = config.kalman_velocity_seed_enabled;
+int prev_kalman_acquisition_frames = config.kalman_acquisition_frames;
+bool prev_kalman_compensate_detection_delay = config.kalman_compensate_detection_delay;
+float prev_kalman_additional_prediction_ms = config.kalman_additional_prediction_ms;
+float prev_kalman_reset_timeout_sec = config.kalman_reset_timeout_sec;
 int prev_pid_actuator_hz = config.pid_actuator_hz;
 float prev_pid_kp = config.pid_kp;
 float prev_pid_ki = config.pid_ki;
@@ -46,12 +60,25 @@ float prev_pid_target_loss_timeout_ms = config.pid_target_loss_timeout_ms;
 bool prev_pid_feed_forward_enabled = config.pid_feed_forward_enabled;
 float prev_pid_feed_forward_gain = config.pid_feed_forward_gain;
 float prev_pid_feed_forward_lookahead_ms = config.pid_feed_forward_lookahead_ms;
+int prev_pid_feed_forward_frame_lookahead = config.pid_feed_forward_frame_lookahead;
 float prev_pid_feed_forward_max_step = config.pid_feed_forward_max_step;
 float prev_pid_feed_forward_min_speed = config.pid_feed_forward_min_speed;
 float prev_pid_feed_forward_confidence_floor = config.pid_feed_forward_confidence_floor;
+bool prev_pid_conditional_integration_enabled = config.pid_conditional_integration_enabled;
+float prev_pid_conditional_integration_error_px = config.pid_conditional_integration_error_px;
+bool prev_pid_adaptive_output_scaling_enabled = config.pid_adaptive_output_scaling_enabled;
+float prev_pid_adaptive_output_error_scale = config.pid_adaptive_output_error_scale;
+float prev_pid_derivative_smoothing_multiplier = config.pid_derivative_smoothing_multiplier;
+bool prev_pid_perspective_fov_mapping_enabled = config.pid_perspective_fov_mapping_enabled;
 bool prev_pid_governor_enabled = config.pid_governor_enabled;
 float prev_pid_governor_blend = config.pid_governor_blend;
 float prev_pid_governor_max_speed_multiple = config.pid_governor_max_speed_multiple;
+bool prev_pid_smart_blending_enabled = config.pid_smart_blending_enabled;
+float prev_pid_smart_blending_aggression = config.pid_smart_blending_aggression;
+float prev_pid_smart_blending_near_damping = config.pid_smart_blending_near_damping;
+float prev_pid_smart_blending_deadzone_px = config.pid_smart_blending_deadzone_px;
+float prev_pid_smart_blending_jerk_limit_px = config.pid_smart_blending_jerk_limit_px;
+float prev_pid_smart_blending_confidence_floor = config.pid_smart_blending_confidence_floor;
 bool prev_auto_shoot = config.auto_shoot;
 float prev_bScope_multiplier = config.bScope_multiplier;
 
@@ -175,7 +202,7 @@ void drawProfileManager()
 
 void drawInputMethod()
 {
-    std::vector<std::string> inputMethods = { "WIN32", "GHUB", "RAZER", "ARDUINO", "KMBOX_NET", "KMBOX_A", "MAKCU" };
+    std::vector<std::string> inputMethods = { "WIN32", "GHUB", "RAZER", "ARDUINO", "TEENSY41", "TEENSY41_HID", "KMBOX_NET", "KMBOX_A", "MAKCU" };
     std::vector<const char*> methodItems;
     methodItems.reserve(inputMethods.size());
     for (const auto& item : inputMethods)
@@ -202,12 +229,12 @@ void drawInputMethod()
         }
     }
 
-    if (config.input_method == "ARDUINO")
+    if (config.input_method == "ARDUINO" || config.input_method == "TEENSY41")
     {
         if (arduinoSerial && arduinoSerial->isOpen())
-            ImGui::TextColored(ImVec4(0, 255, 0, 255), "Arduino connected");
+            ImGui::TextColored(ImVec4(0, 255, 0, 255), config.input_method == "TEENSY41" ? "Teensy 4.1 connected" : "Arduino connected");
         else
-            ImGui::TextColored(ImVec4(255, 0, 0, 255), "Arduino not connected");
+            ImGui::TextColored(ImVec4(255, 0, 0, 255), config.input_method == "TEENSY41" ? "Teensy 4.1 not connected" : "Arduino not connected");
 
         std::vector<std::string> ports;
         for (int i = 1; i <= 30; ++i)
@@ -228,7 +255,7 @@ void drawInputMethod()
             }
         }
 
-        if (ImGui::Combo("Arduino Port", &portIndex, portItems.data(), static_cast<int>(portItems.size())))
+        if (ImGui::Combo(config.input_method == "TEENSY41" ? "Teensy Port" : "Arduino Port", &portIndex, portItems.data(), static_cast<int>(portItems.size())))
         {
             config.arduino_port = ports[portIndex];
             OverlayConfig_MarkDirty();
@@ -255,15 +282,19 @@ void drawInputMethod()
             }
         }
 
-        if (ImGui::Combo("Arduino Baudrate", &baudIndex, baudItems.data(), static_cast<int>(baudItems.size())))
+        if (ImGui::Combo(config.input_method == "TEENSY41" ? "Teensy Baudrate" : "Arduino Baudrate", &baudIndex, baudItems.data(), static_cast<int>(baudItems.size())))
         {
             config.arduino_baudrate = baudRates[baudIndex];
             OverlayConfig_MarkDirty();
             input_method_changed.store(true);
         }
 
-        if (ImGui::Checkbox("Arduino 16-bit Mouse", &config.arduino_16_bit_mouse) ||
-            ImGui::Checkbox("Arduino Enable Keys", &config.arduino_enable_keys))
+        if (config.input_method == "TEENSY41")
+        {
+            ImGui::TextWrapped("Uses Teensy command protocol: move dx dy 0 0. Select the Teensy COM port.");
+        }
+        else if (ImGui::Checkbox("Arduino 16-bit Mouse", &config.arduino_16_bit_mouse) ||
+                 ImGui::Checkbox("Arduino Enable Keys", &config.arduino_enable_keys))
         {
             OverlayConfig_MarkDirty();
             input_method_changed.store(true);
@@ -277,6 +308,113 @@ void drawInputMethod()
         {
             ImGui::Text("The wrong version of GHub is installed or the path to GHub is not set by default.");
             ImGui::Text("Install GHub 13.1.4 using the default path.");
+        }
+    }
+    else if (config.input_method == "TEENSY41_HID")
+    {
+        if (activeMouseInputOwner && activeMouseInputOwner->isOpen())
+            ImGui::TextColored(ImVec4(0, 255, 0, 255), "Generic HID Mouse connected");
+        else
+            ImGui::TextColored(ImVec4(255, 0, 0, 255), "Generic HID Mouse not connected");
+
+        static char manufacturer[64] = "";
+        static char product[64] = "";
+        static char serial[64] = "";
+        static char vidFilter[16] = "";
+        static char pidFilter[16] = "";
+        static std::string lastManufacturer;
+        static std::string lastProduct;
+        static std::string lastSerial;
+        static std::string lastVidFilter;
+        static std::string lastPidFilter;
+
+        auto syncHidText = [&]() {
+            if (lastManufacturer != config.teensy_hid_manufacturer)
+            {
+                strncpy(manufacturer, config.teensy_hid_manufacturer.c_str(), sizeof(manufacturer));
+                manufacturer[sizeof(manufacturer) - 1] = '\0';
+                lastManufacturer = config.teensy_hid_manufacturer;
+            }
+            if (lastProduct != config.teensy_hid_product)
+            {
+                strncpy(product, config.teensy_hid_product.c_str(), sizeof(product));
+                product[sizeof(product) - 1] = '\0';
+                lastProduct = config.teensy_hid_product;
+            }
+            if (lastSerial != config.teensy_hid_serial)
+            {
+                strncpy(serial, config.teensy_hid_serial.c_str(), sizeof(serial));
+                serial[sizeof(serial) - 1] = '\0';
+                lastSerial = config.teensy_hid_serial;
+            }
+            if (lastVidFilter != config.teensy_hid_vid_filter)
+            {
+                strncpy(vidFilter, config.teensy_hid_vid_filter.c_str(), sizeof(vidFilter));
+                vidFilter[sizeof(vidFilter) - 1] = '\0';
+                lastVidFilter = config.teensy_hid_vid_filter;
+            }
+            if (lastPidFilter != config.teensy_hid_pid_filter)
+            {
+                strncpy(pidFilter, config.teensy_hid_pid_filter.c_str(), sizeof(pidFilter));
+                pidFilter[sizeof(pidFilter) - 1] = '\0';
+                lastPidFilter = config.teensy_hid_pid_filter;
+            }
+        };
+        syncHidText();
+
+        ImGui::InputText("Manufacturer", manufacturer, sizeof(manufacturer));
+        ImGui::InputText("Product", product, sizeof(product));
+        ImGui::InputText("Serial", serial, sizeof(serial));
+        ImGui::InputText("VID filter", vidFilter, sizeof(vidFilter));
+        ImGui::InputText("PID filter", pidFilter, sizeof(pidFilter));
+        bool hidNumericChanged = false;
+        hidNumericChanged |= ImGui::SliderInt("Usage page", &config.teensy_hid_usage_page, 1, 0xFFFF);
+        hidNumericChanged |= ImGui::SliderInt("Usage ID", &config.teensy_hid_usage_id, 1, 0xFFFF);
+        hidNumericChanged |= ImGui::SliderInt("Open index", &config.teensy_hid_open_index, 0, 32);
+        hidNumericChanged |= ImGui::SliderInt("Packet timeout ms", &config.teensy_hid_packet_timeout_ms, 0, 100);
+        hidNumericChanged |= ImGui::SliderInt("Reconnect ms", &config.teensy_hid_reconnect_interval_ms, 50, 10000);
+        if (hidNumericChanged)
+        {
+            OverlayConfig_MarkDirty();
+            input_method_changed.store(true);
+        }
+
+        if (ImGui::Button("Save & Reconnect##teensy_hid"))
+        {
+            config.teensy_hid_manufacturer = manufacturer;
+            config.teensy_hid_product = product;
+            config.teensy_hid_serial = serial;
+            config.teensy_hid_vid_filter = vidFilter;
+            config.teensy_hid_pid_filter = pidFilter;
+            lastManufacturer = config.teensy_hid_manufacturer;
+            lastProduct = config.teensy_hid_product;
+            lastSerial = config.teensy_hid_serial;
+            lastVidFilter = config.teensy_hid_vid_filter;
+            lastPidFilter = config.teensy_hid_pid_filter;
+            OverlayConfig_MarkDirty();
+            input_method_changed.store(true);
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Reset HID defaults"))
+        {
+            config.teensy_hid_manufacturer = "Generic";
+            config.teensy_hid_product = "USB HID Mouse";
+            config.teensy_hid_serial = "AUTO";
+            config.teensy_hid_vid_filter = "AUTO";
+            config.teensy_hid_pid_filter = "AUTO";
+            config.teensy_hid_usage_page = 0xFFAB;
+            config.teensy_hid_usage_id = 0x0200;
+            config.teensy_hid_open_index = 0;
+            config.teensy_hid_packet_timeout_ms = 2;
+            config.teensy_hid_reconnect_interval_ms = 500;
+            lastManufacturer.clear();
+            lastProduct.clear();
+            lastSerial.clear();
+            lastVidFilter.clear();
+            lastPidFilter.clear();
+            syncHidText();
+            OverlayConfig_MarkDirty();
+            input_method_changed.store(true);
         }
     }
     else if (config.input_method == "RAZER")
@@ -441,6 +579,24 @@ void draw_mouse()
         OverlayUI::EndSection();
     }
 
+    if (OverlayUI::BeginSection("State Estimator", "mouse_section_state_estimator"))
+    {
+        ImGui::Checkbox("Runtime latency sweep", &config.runtime_latency_sweep_enabled);
+        ImGui::Checkbox("Enable Kalman estimator", &config.kalman_enabled);
+        ImGui::Checkbox("Seed velocity on acquire", &config.kalman_velocity_seed_enabled);
+        ImGui::SliderInt("Acquisition frames", &config.kalman_acquisition_frames, 3, 5);
+        ImGui::SliderFloat("Process noise position", &config.kalman_process_noise_position, 0.0001f, 5000.0f, "%.3f");
+        ImGui::SliderFloat("Process noise velocity", &config.kalman_process_noise_velocity, 0.0001f, 50000.0f, "%.3f");
+        ImGui::SliderFloat("Measurement noise", &config.kalman_measurement_noise, 0.0001f, 5000.0f, "%.3f");
+        ImGui::SliderFloat("Velocity damping", &config.kalman_velocity_damping, 0.0f, 3.0f, "%.3f");
+        ImGui::SliderFloat("Max velocity (px/s)", &config.kalman_max_velocity, 100.0f, 60000.0f, "%.0f");
+        ImGui::SliderInt("Warmup frames", &config.kalman_warmup_frames, 0, 20);
+        ImGui::Checkbox("Compensate detection delay", &config.kalman_compensate_detection_delay);
+        ImGui::SliderFloat("Additional prediction (ms)", &config.kalman_additional_prediction_ms, -80.0f, 120.0f, "%.1f");
+        ImGui::SliderFloat("Reset timeout (s)", &config.kalman_reset_timeout_sec, 0.05f, 3.0f, "%.2f");
+        OverlayUI::EndSection();
+    }
+
     if (OverlayUI::BeginSection("Pure PID Movement", "mouse_section_pid"))
     {
         ImGui::SliderInt("Actuator Hz", &config.pid_actuator_hz, 30, 2000);
@@ -465,11 +621,33 @@ void draw_mouse()
         ImGui::SliderFloat("Derivative filter (ms)", &config.pid_derivative_filter_tau_ms, 0.0f, 250.0f, "%.1f");
         ImGui::SliderFloat("Target timeout (ms)", &config.pid_target_loss_timeout_ms, 10.0f, 1000.0f, "%.1f");
         ImGui::Checkbox("Feed-forward prediction", &config.pid_feed_forward_enabled);
-        ImGui::SliderFloat("Feed-forward gain", &config.pid_feed_forward_gain, 0.0f, 2.0f, "%.3f");
+        ImGui::SliderFloat("Feed-forward gain", &config.pid_feed_forward_gain, 0.0f, 4.0f, "%.3f");
         ImGui::SliderFloat("Feed-forward lookahead (ms)", &config.pid_feed_forward_lookahead_ms, 0.0f, 120.0f, "%.1f");
+        ImGui::SliderInt("Feed-forward frame lookahead", &config.pid_feed_forward_frame_lookahead, 0, 2);
         ImGui::SliderFloat("Feed-forward max step (px/tick)", &config.pid_feed_forward_max_step, 0.0f, 5.0f, "%.3f");
         ImGui::SliderFloat("Feed-forward min speed (px/s)", &config.pid_feed_forward_min_speed, 0.0f, 3000.0f, "%.1f");
         ImGui::SliderFloat("Feed-forward confidence floor", &config.pid_feed_forward_confidence_floor, 0.0f, 1.0f, "%.3f");
+        ImGui::Checkbox("Conditional integration", &config.pid_conditional_integration_enabled);
+        ImGui::SliderFloat("Integration error limit (px)", &config.pid_conditional_integration_error_px, 0.0f, 240.0f, "%.1f");
+        ImGui::Checkbox("Adaptive output scaling", &config.pid_adaptive_output_scaling_enabled);
+        ImGui::SliderFloat("Adaptive error scale (px)", &config.pid_adaptive_output_error_scale, 1.0f, 640.0f, "%.1f");
+        ImGui::SliderFloat("Derivative smoothing multiplier", &config.pid_derivative_smoothing_multiplier, 1.0f, 6.0f, "%.2f");
+        ImGui::Checkbox("Perspective FOV PID", &config.pid_perspective_fov_mapping_enabled);
+
+        ImGui::Separator();
+        ImGui::TextUnformatted("Smart Blending");
+        ImGui::Checkbox("Enable smart blending", &config.pid_smart_blending_enabled);
+        if (!config.pid_smart_blending_enabled)
+            ImGui::BeginDisabled();
+
+        ImGui::SliderFloat("Smoothing aggression", &config.pid_smart_blending_aggression, 0.30f, 1.0f, "%.2f");
+        ImGui::SliderFloat("Near-target damping", &config.pid_smart_blending_near_damping, 0.0f, 1.0f, "%.2f");
+        ImGui::SliderFloat("Blend deadzone (px)", &config.pid_smart_blending_deadzone_px, 0.0f, 12.0f, "%.2f");
+        ImGui::SliderFloat("Blend jerk limit (px/tick)", &config.pid_smart_blending_jerk_limit_px, 0.02f, 8.0f, "%.2f");
+        ImGui::SliderFloat("Blend confidence floor", &config.pid_smart_blending_confidence_floor, 0.0f, 1.0f, "%.2f");
+
+        if (!config.pid_smart_blending_enabled)
+            ImGui::EndDisabled();
 
         ImGui::Separator();
         ImGui::TextUnformatted("PID Governor");
@@ -509,9 +687,22 @@ void draw_mouse()
             config.pid_feed_forward_enabled = true;
             config.pid_feed_forward_gain = 0.35f;
             config.pid_feed_forward_lookahead_ms = 24.0f;
+            config.pid_feed_forward_frame_lookahead = 1;
             config.pid_feed_forward_max_step = 0.35f;
             config.pid_feed_forward_min_speed = 20.0f;
             config.pid_feed_forward_confidence_floor = 0.55f;
+            config.pid_conditional_integration_enabled = true;
+            config.pid_conditional_integration_error_px = 12.0f;
+            config.pid_adaptive_output_scaling_enabled = true;
+            config.pid_adaptive_output_error_scale = 96.0f;
+            config.pid_derivative_smoothing_multiplier = 1.5f;
+            config.pid_perspective_fov_mapping_enabled = false;
+            config.pid_smart_blending_enabled = false;
+            config.pid_smart_blending_aggression = 0.65f;
+            config.pid_smart_blending_near_damping = 0.75f;
+            config.pid_smart_blending_deadzone_px = 0.0f;
+            config.pid_smart_blending_jerk_limit_px = 0.65f;
+            config.pid_smart_blending_confidence_floor = 0.45f;
             OverlayConfig_MarkDirty();
             refreshMouseThread();
         }
@@ -559,6 +750,19 @@ void draw_mouse()
 
     if (prev_fovX != config.fovX ||
         prev_fovY != config.fovY ||
+        prev_runtime_latency_sweep_enabled != config.runtime_latency_sweep_enabled ||
+        prev_kalman_enabled != config.kalman_enabled ||
+        prev_kalman_process_noise_position != config.kalman_process_noise_position ||
+        prev_kalman_process_noise_velocity != config.kalman_process_noise_velocity ||
+        prev_kalman_measurement_noise != config.kalman_measurement_noise ||
+        prev_kalman_velocity_damping != config.kalman_velocity_damping ||
+        prev_kalman_max_velocity != config.kalman_max_velocity ||
+        prev_kalman_warmup_frames != config.kalman_warmup_frames ||
+        prev_kalman_velocity_seed_enabled != config.kalman_velocity_seed_enabled ||
+        prev_kalman_acquisition_frames != config.kalman_acquisition_frames ||
+        prev_kalman_compensate_detection_delay != config.kalman_compensate_detection_delay ||
+        prev_kalman_additional_prediction_ms != config.kalman_additional_prediction_ms ||
+        prev_kalman_reset_timeout_sec != config.kalman_reset_timeout_sec ||
         prev_pid_actuator_hz != config.pid_actuator_hz ||
         prev_pid_kp != config.pid_kp ||
         prev_pid_ki != config.pid_ki ||
@@ -583,17 +787,43 @@ void draw_mouse()
         prev_pid_feed_forward_enabled != config.pid_feed_forward_enabled ||
         prev_pid_feed_forward_gain != config.pid_feed_forward_gain ||
         prev_pid_feed_forward_lookahead_ms != config.pid_feed_forward_lookahead_ms ||
+        prev_pid_feed_forward_frame_lookahead != config.pid_feed_forward_frame_lookahead ||
         prev_pid_feed_forward_max_step != config.pid_feed_forward_max_step ||
         prev_pid_feed_forward_min_speed != config.pid_feed_forward_min_speed ||
         prev_pid_feed_forward_confidence_floor != config.pid_feed_forward_confidence_floor ||
+        prev_pid_conditional_integration_enabled != config.pid_conditional_integration_enabled ||
+        prev_pid_conditional_integration_error_px != config.pid_conditional_integration_error_px ||
+        prev_pid_adaptive_output_scaling_enabled != config.pid_adaptive_output_scaling_enabled ||
+        prev_pid_adaptive_output_error_scale != config.pid_adaptive_output_error_scale ||
+        prev_pid_derivative_smoothing_multiplier != config.pid_derivative_smoothing_multiplier ||
+        prev_pid_perspective_fov_mapping_enabled != config.pid_perspective_fov_mapping_enabled ||
         prev_pid_governor_enabled != config.pid_governor_enabled ||
         prev_pid_governor_blend != config.pid_governor_blend ||
         prev_pid_governor_max_speed_multiple != config.pid_governor_max_speed_multiple ||
+        prev_pid_smart_blending_enabled != config.pid_smart_blending_enabled ||
+        prev_pid_smart_blending_aggression != config.pid_smart_blending_aggression ||
+        prev_pid_smart_blending_near_damping != config.pid_smart_blending_near_damping ||
+        prev_pid_smart_blending_deadzone_px != config.pid_smart_blending_deadzone_px ||
+        prev_pid_smart_blending_jerk_limit_px != config.pid_smart_blending_jerk_limit_px ||
+        prev_pid_smart_blending_confidence_floor != config.pid_smart_blending_confidence_floor ||
         prev_auto_shoot != config.auto_shoot ||
         prev_bScope_multiplier != config.bScope_multiplier)
     {
         prev_fovX = config.fovX;
         prev_fovY = config.fovY;
+        prev_runtime_latency_sweep_enabled = config.runtime_latency_sweep_enabled;
+        prev_kalman_enabled = config.kalman_enabled;
+        prev_kalman_process_noise_position = config.kalman_process_noise_position;
+        prev_kalman_process_noise_velocity = config.kalman_process_noise_velocity;
+        prev_kalman_measurement_noise = config.kalman_measurement_noise;
+        prev_kalman_velocity_damping = config.kalman_velocity_damping;
+        prev_kalman_max_velocity = config.kalman_max_velocity;
+        prev_kalman_warmup_frames = config.kalman_warmup_frames;
+        prev_kalman_velocity_seed_enabled = config.kalman_velocity_seed_enabled;
+        prev_kalman_acquisition_frames = config.kalman_acquisition_frames;
+        prev_kalman_compensate_detection_delay = config.kalman_compensate_detection_delay;
+        prev_kalman_additional_prediction_ms = config.kalman_additional_prediction_ms;
+        prev_kalman_reset_timeout_sec = config.kalman_reset_timeout_sec;
         prev_pid_actuator_hz = config.pid_actuator_hz;
         prev_pid_kp = config.pid_kp;
         prev_pid_ki = config.pid_ki;
@@ -618,12 +848,25 @@ void draw_mouse()
         prev_pid_feed_forward_enabled = config.pid_feed_forward_enabled;
         prev_pid_feed_forward_gain = config.pid_feed_forward_gain;
         prev_pid_feed_forward_lookahead_ms = config.pid_feed_forward_lookahead_ms;
+        prev_pid_feed_forward_frame_lookahead = config.pid_feed_forward_frame_lookahead;
         prev_pid_feed_forward_max_step = config.pid_feed_forward_max_step;
         prev_pid_feed_forward_min_speed = config.pid_feed_forward_min_speed;
         prev_pid_feed_forward_confidence_floor = config.pid_feed_forward_confidence_floor;
+        prev_pid_conditional_integration_enabled = config.pid_conditional_integration_enabled;
+        prev_pid_conditional_integration_error_px = config.pid_conditional_integration_error_px;
+        prev_pid_adaptive_output_scaling_enabled = config.pid_adaptive_output_scaling_enabled;
+        prev_pid_adaptive_output_error_scale = config.pid_adaptive_output_error_scale;
+        prev_pid_derivative_smoothing_multiplier = config.pid_derivative_smoothing_multiplier;
+        prev_pid_perspective_fov_mapping_enabled = config.pid_perspective_fov_mapping_enabled;
         prev_pid_governor_enabled = config.pid_governor_enabled;
         prev_pid_governor_blend = config.pid_governor_blend;
         prev_pid_governor_max_speed_multiple = config.pid_governor_max_speed_multiple;
+        prev_pid_smart_blending_enabled = config.pid_smart_blending_enabled;
+        prev_pid_smart_blending_aggression = config.pid_smart_blending_aggression;
+        prev_pid_smart_blending_near_damping = config.pid_smart_blending_near_damping;
+        prev_pid_smart_blending_deadzone_px = config.pid_smart_blending_deadzone_px;
+        prev_pid_smart_blending_jerk_limit_px = config.pid_smart_blending_jerk_limit_px;
+        prev_pid_smart_blending_confidence_floor = config.pid_smart_blending_confidence_floor;
         prev_auto_shoot = config.auto_shoot;
         prev_bScope_multiplier = config.bScope_multiplier;
 

@@ -127,7 +127,7 @@ void createInputDevices()
 
     std::string message = std::string("[Mouse] Using ") + activeMouseInputOwner->name() + " input.";
     if (!activeMouseInputOwner->isOpen())
-        message += " Device not connected; Win32 fallback remains available.";
+        message += " Device not connected; input disabled until the selected method is available.";
     std::cout << message << std::endl;
     appLogger.log(message);
 }
@@ -140,6 +140,100 @@ void assignInputDevices()
     }
 }
 
+bool SaveRuntimeConfig(const std::string& filename)
+{
+    return config.saveConfig(filename);
+}
+
+void RefreshRuntimeAfterConfigLoad(const Config& previousConfig)
+{
+    if (previousConfig.detection_resolution != config.detection_resolution)
+    {
+        detection_resolution_changed.store(true);
+        detection_resolution_generation.fetch_add(1, std::memory_order_relaxed);
+        detector_model_changed.store(true);
+    }
+
+    if (previousConfig.capture_fps != config.capture_fps)
+        capture_fps_changed.store(true);
+
+    if (previousConfig.capture_method != config.capture_method)
+        capture_method_changed.store(true);
+    if (previousConfig.capture_cursor != config.capture_cursor)
+        capture_cursor_changed.store(true);
+    if (previousConfig.capture_borders != config.capture_borders)
+        capture_borders_changed.store(true);
+    if (previousConfig.capture_target != config.capture_target ||
+        previousConfig.capture_window_title != config.capture_window_title ||
+        previousConfig.monitor_idx != config.monitor_idx ||
+        previousConfig.virtual_camera_name != config.virtual_camera_name ||
+        previousConfig.virtual_camera_width != config.virtual_camera_width ||
+        previousConfig.virtual_camera_heigth != config.virtual_camera_heigth ||
+        previousConfig.udp_ip != config.udp_ip ||
+        previousConfig.udp_port != config.udp_port)
+    {
+        capture_window_changed.store(true);
+    }
+
+    if (previousConfig.ai_model != config.ai_model ||
+        previousConfig.backend != config.backend ||
+        previousConfig.dml_device_id != config.dml_device_id ||
+        previousConfig.confidence_threshold != config.confidence_threshold ||
+        previousConfig.nms_threshold != config.nms_threshold ||
+        previousConfig.max_detections != config.max_detections ||
+        previousConfig.fixed_input_size != config.fixed_input_size)
+    {
+        detector_model_changed.store(true);
+    }
+
+    if (previousConfig.input_method != config.input_method ||
+        previousConfig.arduino_port != config.arduino_port ||
+        previousConfig.arduino_baudrate != config.arduino_baudrate ||
+        previousConfig.arduino_16_bit_mouse != config.arduino_16_bit_mouse ||
+        previousConfig.arduino_enable_keys != config.arduino_enable_keys ||
+        previousConfig.teensy_hid_serial != config.teensy_hid_serial ||
+        previousConfig.teensy_hid_vid_filter != config.teensy_hid_vid_filter ||
+        previousConfig.teensy_hid_pid_filter != config.teensy_hid_pid_filter ||
+        previousConfig.teensy_hid_usage_page != config.teensy_hid_usage_page ||
+        previousConfig.teensy_hid_usage_id != config.teensy_hid_usage_id ||
+        previousConfig.teensy_hid_open_index != config.teensy_hid_open_index ||
+        previousConfig.teensy_hid_packet_timeout_ms != config.teensy_hid_packet_timeout_ms ||
+        previousConfig.teensy_hid_reconnect_interval_ms != config.teensy_hid_reconnect_interval_ms ||
+        previousConfig.kmbox_net_ip != config.kmbox_net_ip ||
+        previousConfig.kmbox_net_port != config.kmbox_net_port ||
+        previousConfig.kmbox_net_uuid != config.kmbox_net_uuid ||
+        previousConfig.kmbox_a_pidvid != config.kmbox_a_pidvid ||
+        previousConfig.makcu_port != config.makcu_port ||
+        previousConfig.makcu_baudrate != config.makcu_baudrate)
+    {
+        input_method_changed.store(true);
+    }
+
+    if (previousConfig.show_window != config.show_window)
+        show_window_changed.store(true);
+
+    appLogger.configure(config.debug_log_file_enabled, config.debug_log_file_path);
+
+    if (globalMouseThread)
+    {
+        globalMouseThread->updateConfig(
+            config.detection_resolution,
+            config.fovX,
+            config.fovY,
+            config.auto_shoot,
+            config.bScope_multiplier);
+    }
+}
+
+bool LoadRuntimeConfigMerge(const std::string& filename)
+{
+    Config previousConfig = config;
+    if (!config.loadConfigMerged(filename))
+        return false;
+
+    RefreshRuntimeAfterConfigLoad(previousConfig);
+    return true;
+}
 
 int main()
 {

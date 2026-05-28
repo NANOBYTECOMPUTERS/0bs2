@@ -20,6 +20,7 @@
 #include <opencv2/cudaarithm.hpp>
 #include <cuda_runtime_api.h>
 
+#include "capture/capture_geometry.h"
 #include "postProcess.h"
 
 class TrtDetector
@@ -33,11 +34,21 @@ public:
         const cv::Mat& frame,
         uint64_t frameId,
         std::chrono::steady_clock::time_point captureTimestamp);
+    void processFrame(
+        const cv::Mat& frame,
+        uint64_t frameId,
+        std::chrono::steady_clock::time_point captureTimestamp,
+        const CaptureFrameGeometry& frameGeometry);
     void processFrameGpu(const cv::cuda::GpuMat& frame);
     void processFrameGpu(
         const cv::cuda::GpuMat& frame,
         uint64_t frameId,
         std::chrono::steady_clock::time_point captureTimestamp);
+    void processFrameGpu(
+        const cv::cuda::GpuMat& frame,
+        uint64_t frameId,
+        std::chrono::steady_clock::time_point captureTimestamp,
+        const CaptureFrameGeometry& frameGeometry);
     void inferenceThread();
 
     float img_scale;
@@ -78,6 +89,7 @@ private:
     cv::cuda::GpuMat currentFrameGpu;
     uint64_t currentFrameId = 0;
     std::chrono::steady_clock::time_point currentFrameCaptureTimestamp{};
+    CaptureFrameGeometry currentFrameGeometry;
     bool frameReady;
 
     enum class PendingFrameType
@@ -105,6 +117,7 @@ private:
         const std::string& outputName,
         uint64_t frameId,
         std::chrono::steady_clock::time_point captureTimestamp,
+        const CaptureFrameGeometry& frameGeometry,
         std::chrono::duration<double, std::milli>* nmsTime
     );
 

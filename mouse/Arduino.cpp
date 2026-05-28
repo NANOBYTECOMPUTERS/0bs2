@@ -8,8 +8,11 @@
 #include "0BS_box_2.h"
 #include "Arduino.h"
 
-Arduino::Arduino(const std::string& port, unsigned int baud_rate)
-    : is_open_(false),
+Arduino::Arduino(const std::string& port, unsigned int baud_rate, ArduinoProtocol protocol)
+    : protocol_(protocol),
+    button_mask_(0),
+    is_open_(false),
+    timer_running_(false),
     listening_(false),
     aiming_active(false),
     shooting_active(false),
@@ -26,7 +29,7 @@ Arduino::Arduino(const std::string& port, unsigned int baud_rate)
             is_open_ = true;
             std::cout << "[Arduino] Connected! PORT: " << port << std::endl;
 
-            if (config.arduino_enable_keys)
+            if (config.arduino_enable_keys || protocol_ == ArduinoProtocol::Teensy41)
             {
                 startListening();
             }
@@ -97,16 +100,37 @@ std::string Arduino::read()
 
 void Arduino::click()
 {
+    if (protocol_ == ArduinoProtocol::Teensy41)
+    {
+        press();
+        release();
+        return;
+    }
+
     sendCommand("c");
 }
 
 void Arduino::press()
 {
+    if (protocol_ == ArduinoProtocol::Teensy41)
+    {
+        button_mask_ |= 1;
+        sendButtons();
+        return;
+    }
+
     sendCommand("p");
 }
 
 void Arduino::release()
 {
+    if (protocol_ == ArduinoProtocol::Teensy41)
+    {
+        button_mask_ &= static_cast<uint8_t>(~1u);
+        sendButtons();
+        return;
+    }
+
     sendCommand("r");
 }
 
@@ -117,6 +141,12 @@ void Arduino::move(int x, int y)
 
     if (x == 0 && y == 0)
     {
+        return;
+    }
+
+    if (protocol_ == ArduinoProtocol::Teensy41)
+    {
+        write("move " + std::to_string(x) + " " + std::to_string(y) + " 0 0\n");
         return;
     }
 
@@ -145,6 +175,11 @@ void Arduino::move(int x, int y)
 void Arduino::sendCommand(const std::string& command)
 {
     write(command + "\n");
+}
+
+void Arduino::sendButtons()
+{
+    write("buttons " + std::to_string(button_mask_) + "\n");
 }
 
 std::vector<int> Arduino::splitValue(int value)
@@ -186,7 +221,7 @@ void Arduino::timerThreadFunc()
             arduino_enable_keys_local = config.arduino_enable_keys;
         }
 
-        if (arduino_enable_keys_local)
+        if (arduino_enable_keys_local || protocol_ == ArduinoProtocol::Teensy41)
         {
             if (!listening_)
             {
@@ -255,35 +290,44 @@ void Arduino::processIncomingLine(const std::string& line)
 {
     try
     {
+        auto applyButtonState = [&](uint16_t buttonId, bool pressed)
+        {
+            switch (buttonId)
+            {
+            case 1:
+                shooting_active = pressed;
+                shooting.store(pressed);
+                break;
+            case 2:
+                if (protocol_ == ArduinoProtocol::Teensy41)
+                {
+                    zooming_active = pressed;
+                    zooming.store(pressed);
+                }
+                else
+                {
+                    aiming_active = pressed;
+                    aiming.store(pressed);
+                }
+                break;
+            case 5:
+                aiming_active = pressed;
+                aiming.store(pressed);
+                break;
+            default:
+                break;
+            }
+        };
+
         if (line.rfind("BD:", 0) == 0)
         {
             uint16_t buttonId = static_cast<uint16_t>(std::stoi(line.substr(3)));
-            switch (buttonId)
-            {
-            case 2:
-                aiming_active = true;
-                aiming.store(true);
-                break;
-            case 1:
-                shooting_active = true;
-                shooting.store(true);
-                break;
-            }
+            applyButtonState(buttonId, true);
         }
         else if (line.rfind("BU:", 0) == 0)
         {
             uint16_t buttonId = static_cast<uint16_t>(std::stoi(line.substr(3)));
-            switch (buttonId)
-            {
-            case 2:
-                aiming_active = false;
-                aiming.store(false);
-                break;
-            case 1:
-                shooting_active = false;
-                shooting.store(false);
-                break;
-            }
+            applyButtonState(buttonId, false);
         }
     }
     catch (const std::exception& e)

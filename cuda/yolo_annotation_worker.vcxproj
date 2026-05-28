@@ -1,0 +1,93 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="CUDA|x64">
+      <Configuration>CUDA</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="..\worker\ndjson_protocol.cpp" />
+    <ClCompile Include="..\worker\tensorrt_batch_detector.cpp" />
+    <ClCompile Include="..\worker\yolo_annotation_worker.cpp" />
+    <ClCompile Include="..\detector\postProcess.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <CudaCompile Include="..\detector\cuda_preprocess.cu" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="..\worker\ndjson_protocol.h" />
+    <ClInclude Include="..\worker\tensorrt_batch_detector.h" />
+    <ClInclude Include="..\detector\postProcess.h" />
+    <ClInclude Include="..\detector\cuda_preprocess.h" />
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <VCProjectVersion>18.0</VCProjectVersion>
+    <Keyword>Win32Proj</Keyword>
+    <ProjectGuid>{2F0A272C-11EF-4D1E-8FC6-37F9C7582DF9}</ProjectGuid>
+    <RootNamespace>yoloannotationworker</RootNamespace>
+    <WindowsTargetPlatformVersion>10.0.26100.0</WindowsTargetPlatformVersion>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='CUDA|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>v145</PlatformToolset>
+    <WholeProgramOptimization>true</WholeProgramOptimization>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <ImportGroup Label="ExtensionSettings">
+    <Import Project="$(VCTargetsPath)\BuildCustomizations\CUDA 13.2.props" Condition="Exists('$(VCTargetsPath)\BuildCustomizations\CUDA 13.2.props')" />
+  </ImportGroup>
+  <ImportGroup Label="Shared">
+  </ImportGroup>
+  <ImportGroup Condition="'$(Configuration)|$(Platform)'=='CUDA|x64'" Label="PropertySheets">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <PropertyGroup Label="UserMacros" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='CUDA|x64'">
+    <CudaToolkitCustomDir Condition="'$(CudaToolkitCustomDir)'==''">C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.2\</CudaToolkitCustomDir>
+    <TensorRTDir Condition="'$(TensorRTDir)'=='' and Exists('$(MSBuildProjectDirectory)\..\modules\tensorrt\include\NvInfer.h')">$(MSBuildProjectDirectory)\..\modules\tensorrt</TensorRTDir>
+    <TensorRTDir Condition="'$(TensorRTDir)'==''">$(MSBuildProjectDirectory)\..\modules\TensorRT-10.14.1.48</TensorRTDir>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='CUDA|x64'">
+    <LinkIncremental>false</LinkIncremental>
+    <OutDir>$(MSBuildProjectDirectory)\..\x64\CUDA\</OutDir>
+    <IntDir>$(MSBuildProjectDirectory)\obj\yolo_annotation_worker\</IntDir>
+    <IncludePath>$(MSBuildProjectDirectory)\include;$(MSBuildProjectDirectory)\..;$(MSBuildProjectDirectory)\..\worker;$(MSBuildProjectDirectory)\..\detector;$(MSBuildProjectDirectory)\..\modules\opencv\build\install\include;$(TensorRTDir)\include;$(TensorRTDir)\include\tensorrt;$(CudaToolkitCustomDir)\include;$(IncludePath)</IncludePath>
+    <LibraryPath>$(MSBuildProjectDirectory)\..\modules\opencv\build\install\x64\vc18\lib;$(TensorRTDir)\lib;$(TensorRTDir)\lib\x64;$(CudaToolkitCustomDir)\lib\x64;$(LibraryPath)</LibraryPath>
+    <TargetName>yolo_annotation_worker</TargetName>
+  </PropertyGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='CUDA|x64'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <SDLCheck>true</SDLCheck>
+      <PreprocessorDefinitions>NDEBUG;USE_CUDA;YOLO_ANNOTATION_WORKER;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <ConformanceMode>true</ConformanceMode>
+      <AdditionalIncludeDirectories>$(MSBuildProjectDirectory)\include;$(MSBuildProjectDirectory)\..;$(MSBuildProjectDirectory)\..\worker;$(MSBuildProjectDirectory)\..\detector;$(MSBuildProjectDirectory)\..\modules\opencv\build\install\include;$(TensorRTDir)\include;$(TensorRTDir)\include\tensorrt;$(CudaToolkitCustomDir)\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <AdditionalOptions>/FS %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
+    <CudaCompile>
+      <TargetMachinePlatform>64</TargetMachinePlatform>
+      <AdditionalIncludeDirectories>$(MSBuildProjectDirectory)\..;$(MSBuildProjectDirectory)\..\detector;$(MSBuildProjectDirectory)\..\modules\opencv\build\install\include;$(CudaToolkitCustomDir)\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalOptions>-DUSE_CUDA -DYOLO_ANNOTATION_WORKER %(AdditionalOptions)</AdditionalOptions>
+    </CudaCompile>
+    <Link>
+      <SubSystem>Console</SubSystem>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+      <OptimizeReferences>true</OptimizeReferences>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <AdditionalDependencies>nvinfer_10.lib;nvonnxparser_10.lib;nvinfer_plugin_10.lib;cudart.lib;cuda.lib;opencv_world4140.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
+  </ItemDefinitionGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <ImportGroup Label="ExtensionTargets">
+    <Import Project="$(VCTargetsPath)\BuildCustomizations\CUDA 13.2.targets" Condition="Exists('$(VCTargetsPath)\BuildCustomizations\CUDA 13.2.targets')" />
+  </ImportGroup>
+</Project>

@@ -1,6 +1,6 @@
 # 0BS GUI and Config Setting Reference
 
-Generated on 2026-05-15 from `x64\DML\config.ini` and the ImGui source files under `overlay/`.
+Generated on 2026-05-16 from `x64\DML\config.ini` and the ImGui source files under `overlay/`.
 
 This reference is ordered by the GUI sidebar tabs in `overlay/overlay.cpp`. It lists every GUI slider and every activate/deactivate checkbox, then documents config.ini settings that are not editable in the current DML GUI or are hidden/loadable config keys.
 
@@ -52,7 +52,7 @@ Search by GUI label, config key, tab, section, or source file. Rows marked `CUDA
 
 | Section | Control | Config key | Type/options | Current | Notes |
 | --- | --- | --- | --- | --- | --- |
-| General Capture | Detection Resolution | detection_resolution | 160, 320, 640 | 320 | Changes detector input resolution and restarts/reloads dependent paths. |
+| General Capture | Detection Resolution | detection_resolution | 160, 320, 640 | 640 | Changes detector input resolution and restarts/reloads dependent paths. |
 | General Capture | Capture method | capture_method | duplication_api, winrt, virtual_camera, udp_capture | duplication_api | Selects frame source. |
 | WinRT | Capture target (WinRT) | capture_target | monitor, window | monitor | WinRT only. |
 | WinRT | Window title contains | capture_window_title | text |  | Used when WinRT target is window. |
@@ -83,16 +83,25 @@ Search by GUI label, config key, tab, section, or source file. Rows marked `CUDA
 
 | Section | Slider | Config key | Range | Current | Notes |
 | --- | --- | --- | --- | --- | --- |
-| FOV | FOV X | fovX | 10-120 | 120 | Horizontal field of view for the mouse controller. |
-| FOV | FOV Y | fovY | 10-120 | 120 | Vertical field of view for the mouse controller. |
+| FOV | FOV X | fovX | 10-120 | 70 | Horizontal field of view for the mouse controller. |
+| FOV | FOV Y | fovY | 10-120 | 70 | Vertical field of view for the mouse controller. |
+| State Estimator | Acquisition frames | kalman_acquisition_frames | 3-5 | n/a | Frames used to ramp prediction weight after target acquisition. |
+| State Estimator | Process noise position | kalman_process_noise_position | 0.0001-5000 | n/a | Position process noise. Higher values adapt faster to position changes. |
+| State Estimator | Process noise velocity | kalman_process_noise_velocity | 0.0001-50000 | n/a | Velocity process noise. Higher values adapt faster to speed changes. |
+| State Estimator | Measurement noise | kalman_measurement_noise | 0.0001-5000 | n/a | Measurement noise. Higher values trust detections less. |
+| State Estimator | Velocity damping | kalman_velocity_damping | 0.0-3.0 | n/a | Damps velocity estimates to reduce runaway prediction. |
+| State Estimator | Max velocity (px/s) | kalman_max_velocity | 100-60000 | n/a | Maximum allowed tracked velocity. |
+| State Estimator | Warmup frames | kalman_warmup_frames | 0-20 | n/a | Legacy warmup frames when latency sweep is off. |
+| State Estimator | Additional prediction (ms) | kalman_additional_prediction_ms | -80.0-120.0 | n/a | Manual extra prediction offset in milliseconds. |
+| State Estimator | Reset timeout (s) | kalman_reset_timeout_sec | 0.05-3.0 | n/a | Time without stable observations before estimator state resets. |
 | Pure PID Movement | Actuator Hz | pid_actuator_hz | 30-2000 | 2000 | PID update rate used by the mouse actuator. |
-| Pure PID Movement | Kp | pid_kp | 0.0000-1.5000 | 0.0065 | Proportional PID gain. |
+| Pure PID Movement | Kp | pid_kp | 0.0000-1.5000 | 0.0115 | Proportional PID gain. |
 | Pure PID Movement | Ki | pid_ki | 0.0000-0.5000 | 0.0003 | Integral PID gain. |
 | Pure PID Movement | Kd | pid_kd | 0.0000-0.2500 | 0.0001 | Derivative PID gain. |
 | Pure PID Movement | Deadzone (px) | pid_deadzone_px | 0.000-10.000 | 1.500 | Minimum error radius before movement is applied. |
-| Pure PID Movement | Max step (px/tick) | pid_max_pixel_step | 0.010-20.000 | 10.138 | Maximum movement step per PID tick from the GUI. Runtime clamp allows up to 80. |
-| Pure PID Movement | Output scale | pid_output_scale | 0.010-3.000 | 0.300 | Base multiplier applied to PID output. |
-| Pure PID Movement | Min output scale | pid_min_output_scale | 0.000-3.000 | 0.250 | Lower bound for adaptive output scaling. |
+| Pure PID Movement | Max step (px/tick) | pid_max_pixel_step | 0.010-20.000 | 20.000 | Maximum movement step per PID tick from the GUI. Runtime clamp allows up to 80. |
+| Pure PID Movement | Output scale | pid_output_scale | 0.010-3.000 | 0.209 | Base multiplier applied to PID output. |
+| Pure PID Movement | Min output scale | pid_min_output_scale | 0.000-3.000 | 0.100 | Lower bound for adaptive output scaling. |
 | Pure PID Movement | Max output scale | pid_max_output_scale | 0.010-3.000 | 0.509 | Upper bound for adaptive output scaling. |
 | Pure PID Movement | Size reference (px) | pid_size_reference_px | 1.0-240.0 | 48.000 | Target size used as the neutral reference for size scaling. |
 | Pure PID Movement | Small target scale | pid_size_min_scale | 0.010-1.000 | 0.200 | Minimum scale when targets are smaller than the reference. |
@@ -106,13 +115,17 @@ Search by GUI label, config key, tab, section, or source file. Rows marked `CUDA
 | Pure PID Movement | Max derivative term | pid_max_derivative_term | 0.000-5.000 | 0.020 | Caps derivative contribution from a single axis. |
 | Pure PID Movement | Derivative filter (ms) | pid_derivative_filter_tau_ms | 0.0-250.0 | 18.000 | Smoothing time constant for derivative filtering. |
 | Pure PID Movement | Target timeout (ms) | pid_target_loss_timeout_ms | 10.0-1000.0 | 90.000 | Time without target observation before PID state resets. |
-| Pure PID Movement | Feed-forward gain | pid_feed_forward_gain | 0.000-2.000 | 0.108 | Strength of feed-forward movement. |
-| Pure PID Movement | Feed-forward lookahead (ms) | pid_feed_forward_lookahead_ms | 0.0-120.0 | 34.400 | Prediction lookahead horizon. |
-| Pure PID Movement | Feed-forward max step (px/tick) | pid_feed_forward_max_step | 0.000-5.000 | 0.250 | Caps feed-forward contribution per tick. |
-| Pure PID Movement | Feed-forward min speed (px/s) | pid_feed_forward_min_speed | 0.0-3000.0 | 10.000 | Minimum target speed required before feed-forward contributes. |
+| Pure PID Movement | Feed-forward gain | pid_feed_forward_gain | 0.000-4.000 | 0.201 | Strength of feed-forward movement. |
+| Pure PID Movement | Feed-forward lookahead (ms) | pid_feed_forward_lookahead_ms | 0.0-120.0 | 16.800 | Prediction lookahead horizon. |
+| Pure PID Movement | Feed-forward frame lookahead | pid_feed_forward_frame_lookahead | 0-2 | n/a | Additional frame-based velocity lead used when latency sweep is enabled. |
+| Pure PID Movement | Feed-forward max step (px/tick) | pid_feed_forward_max_step | 0.000-5.000 | 5.000 | Caps feed-forward contribution per tick. |
+| Pure PID Movement | Feed-forward min speed (px/s) | pid_feed_forward_min_speed | 0.0-3000.0 | 3000.000 | Minimum target speed required before feed-forward contributes. |
 | Pure PID Movement | Feed-forward confidence floor | pid_feed_forward_confidence_floor | 0.000-1.000 | 0.527 | Minimum observation confidence for feed-forward contribution. |
-| Pure PID Movement | Governor blend | pid_governor_blend | 0.00-1.00 | 0.001 | Blend strength for governor-generated PID scales. |
-| Pure PID Movement | Governor max speed multiple | pid_governor_max_speed_multiple | 1.00-5.00 | 5.000 | Maximum speed multiplier allowed when governor output is active. |
+| Pure PID Movement | Integration error limit (px) | pid_conditional_integration_error_px | 0.0-240.0 | n/a | Maximum per-axis error allowed for conditional integral accumulation. |
+| Pure PID Movement | Adaptive error scale (px) | pid_adaptive_output_error_scale | 1.0-640.0 | n/a | Error distance used as the adaptive output scaling reference. |
+| Pure PID Movement | Derivative smoothing multiplier | pid_derivative_smoothing_multiplier | 1.00-6.00 | n/a | Multiplies derivative filter tau when latency sweep is enabled. |
+| Pure PID Movement | Governor blend | pid_governor_blend | 0.00-1.00 | 0.200 | Blend strength for governor-generated PID scales. |
+| Pure PID Movement | Governor max speed multiple | pid_governor_max_speed_multiple | 1.00-5.00 | 1.000 | Maximum speed multiplier allowed when governor output is active. |
 | Game Profile | Sensitivity | Games.<profile>.sens | 0.0010-10.0000 | profile/local | Editable for custom profiles. UNIFIED is shown read-only. |
 | Game Profile | Yaw | Games.<profile>.yaw | 0.0010-0.1000 | profile/local | Horizontal degree-to-count conversion for a custom profile. |
 | Game Profile | Pitch | Games.<profile>.pitch | 0.0010-0.1000 | profile/local | Vertical degree-to-count conversion for a custom profile. |
@@ -123,7 +136,13 @@ Search by GUI label, config key, tab, section, or source file. Rows marked `CUDA
 
 | Section | Control | Config key | Values | Current | Notes |
 | --- | --- | --- | --- | --- | --- |
+| State Estimator | Runtime latency sweep | runtime_latency_sweep_enabled | true/false | n/a | Enables side-by-side latency sweep behavior for estimator and PID experiments. |
+| State Estimator | Enable Kalman estimator | kalman_enabled | true/false | n/a | Enables Kalman filtering for target motion estimation. |
+| State Estimator | Seed velocity on acquire | kalman_velocity_seed_enabled | true/false | n/a | Seeds velocity from early measurement deltas during acquisition. |
+| State Estimator | Compensate detection delay | kalman_compensate_detection_delay | true/false | n/a | Accounts for detector latency in prediction. |
 | Pure PID Movement | Feed-forward prediction | pid_feed_forward_enabled | true/false | true | Adds velocity-based prediction ahead of pure PID output. |
+| Pure PID Movement | Conditional integration | pid_conditional_integration_enabled | true/false | n/a | Prevents integral windup when latency sweep is enabled and error/output conditions are unsafe. |
+| Pure PID Movement | Adaptive output scaling | pid_adaptive_output_scaling_enabled | true/false | n/a | Enables error-magnitude output scaling when latency sweep is enabled. |
 | Pure PID Movement | Enable PID governor | pid_governor_enabled | true/false | true | Enables the ONNX PID governor when a compatible model can be loaded. |
 | Game Profile | FOV Scaled | Games.<profile>.fovScaled | true/false | profile/local | When enabled, the profile also uses a Base FOV value. |
 | Auto Shoot | Auto Shoot | auto_shoot | true/false | false | Enables automatic shooting behavior. |
@@ -136,9 +155,9 @@ Search by GUI label, config key, tab, section, or source file. Rows marked `CUDA
 | --- | --- | --- | --- | --- | --- |
 | Game Profile | Active Game Profile | active_game | profile names | UNIFIED | Selects the active game profile. |
 | Manage Profiles | Game profile rows | Games.<profile> | name = sens,yaw,pitch[,true,baseFOV] | profile/local | Custom profiles can be added/deleted; UNIFIED is read-only. |
-| Input Method | Mouse Input Method | input_method | WIN32, GHUB, RAZER, ARDUINO, KMBOX_NET, KMBOX_A, MAKCU | RAZER | Changes active mouse backend. |
-| Input Method | Arduino Port | arduino_port | COM1-COM30 | COM0 | Arduino input only. |
-| Input Method | Arduino Baudrate | arduino_baudrate | 9600-115200 | 115200 | Arduino input only. |
+| Input Method | Mouse Input Method | input_method | WIN32, GHUB, RAZER, ARDUINO, TEENSY41, KMBOX_NET, KMBOX_A, MAKCU | RAZER | Changes active mouse backend. |
+| Input Method | Arduino/Teensy Port | arduino_port | COM1-COM30 | COM0 | Arduino and Teensy 4.1 serial input. |
+| Input Method | Arduino/Teensy Baudrate | arduino_baudrate | 9600-115200 | 115200 | Arduino and Teensy 4.1 serial input. |
 | Input Method | Kmbox Net IP | kmbox_net_ip | text | 10.42.42.42 | Saved with Save & Reconnect. |
 | Input Method | Kmbox Net Port | kmbox_net_port | text | 1984 | Saved with Save & Reconnect. |
 | Input Method | Kmbox Net UUID | kmbox_net_uuid | text | DEADC0DE | Saved with Save & Reconnect. |
@@ -152,7 +171,7 @@ Search by GUI label, config key, tab, section, or source file. Rows marked `CUDA
 
 | Section | Slider | Config key | Range | Current | Notes |
 | --- | --- | --- | --- | --- | --- |
-| Neural Tracker | Association blend | neural_tracker_blend | 0.00-1.00 | 0.100 | Blend strength between regular and neural association output. |
+| Neural Tracker | Association blend | neural_tracker_blend | 0.00-1.00 | 1.000 | Blend strength between regular and neural association output. |
 
 ### Activate/Deactivate
 
@@ -195,7 +214,7 @@ Search by GUI label, config key, tab, section, or source file. Rows marked `CUDA
 
 | Section | Control | Config key | Type/options | Current | Notes |
 | --- | --- | --- | --- | --- | --- |
-| Model | Model | ai_model | models folder | sunxds_0.8.1.onnx | Selects detector model from available files. |
+| Model | Model | ai_model | models folder | sunxds_0.8.2_DML.onnx | Selects detector model from available files. |
 | Backend | Backend | backend | TRT, DML | DML | CUDA builds only; DML build does not expose this combo. |
 | Depth Inference | Depth model | depth_model_path | models/depth | depth_anything_v2.engine | CUDA builds only. |
 | Depth Mask | Depth colormap | depth_colormap | 0-21 OpenCV colormap index | 18 | CUDA builds only. |
@@ -238,6 +257,13 @@ No saved GUI sliders in this tab.
 | Section | Control | Config key | Values | Current | Notes |
 | --- | --- | --- | --- | --- | --- |
 | Capture Privacy | Hide Overlays From Recording | overlay_exclude_from_capture | true/false | true | Applies capture exclusion so overlay windows are hidden from supported recording/capture paths. |
+
+### Other GUI-Exposed Config Controls
+
+| Section | Control | Config key | Type/options | Current | Notes |
+| --- | --- | --- | --- | --- | --- |
+| Config | Save Config | config.ini | writes config.ini | n/a | Immediately writes the current runtime config. |
+| Config | Load Config | config.ini | reads config.ini | n/a | Merges config.ini into current runtime values and refreshes runtime-sensitive paths. |
 
 ## Game Overlay Tab
 
@@ -362,16 +388,6 @@ These settings are editable by changing `config.ini` directly. Some are build-ga
 | Advanced mouse | minSpeedMultiplier | 0.1 | float | Loadable hidden key | Legacy minimum movement speed multiplier. | Loadable from config.ini if added manually; saveConfig does not currently emit it. |
 | Advanced mouse | maxSpeedMultiplier | 0.1 | float | Loadable hidden key | Legacy maximum movement speed multiplier. | Loadable from config.ini if added manually; saveConfig does not currently emit it. |
 | Advanced mouse | predictionInterval | 0.01 | seconds | Loadable hidden key | Prediction sample interval used by legacy/auxiliary prediction logic. | Loadable from config.ini if added manually; saveConfig does not currently emit it. |
-| Kalman | kalman_enabled | true | true/false | Config only | Enables Kalman filtering for target motion estimation. | Loadable hidden key; no GUI control. |
-| Kalman | kalman_process_noise_position | 40.0 | 0.0001-5000 | Config only | Position process noise. Higher values make the filter adapt faster to position changes. | Loadable hidden key; no GUI control. |
-| Kalman | kalman_process_noise_velocity | 1800.0 | 0.0001-50000 | Config only | Velocity process noise. Higher values make velocity estimates change faster. | Loadable hidden key; no GUI control. |
-| Kalman | kalman_measurement_noise | 35.0 | 0.0001-5000 | Config only | Measurement noise. Higher values trust detections less. | Loadable hidden key; no GUI control. |
-| Kalman | kalman_velocity_damping | 0.08 | 0.0-3.0 | Config only | Damps velocity estimates to reduce runaway prediction. | Loadable hidden key; no GUI control. |
-| Kalman | kalman_max_velocity | 20000.0 | 100-60000 | Config only | Maximum allowed tracked velocity. | Loadable hidden key; no GUI control. |
-| Kalman | kalman_warmup_frames | 2 | 0-20 | Config only | Frames before Kalman output is considered warmed up. | Loadable hidden key; no GUI control. |
-| Kalman | kalman_compensate_detection_delay | true | true/false | Config only | Accounts for detector latency in prediction. | Loadable hidden key; no GUI control. |
-| Kalman | kalman_additional_prediction_ms | 0.0 | -80.0-120.0 | Config only | Manual extra prediction offset in milliseconds. | Loadable hidden key; no GUI control. |
-| Kalman | kalman_reset_timeout_sec | 0.5 | 0.05-3.0 | Config only | Time without stable observations before Kalman state resets. | Loadable hidden key; no GUI control. |
 | Legacy snap | snapRadius | 1.5 | float | Config only | Legacy snap radius. | Loadable hidden key; no GUI control. |
 | Legacy snap | nearRadius | 25.0 | float | Config only | Legacy near-target radius. | Loadable hidden key; no GUI control. |
 | Legacy snap | speedCurveExponent | 3.0 | float | Config only | Legacy speed curve exponent. | Loadable hidden key; no GUI control. |

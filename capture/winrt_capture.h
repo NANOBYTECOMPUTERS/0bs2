@@ -37,6 +37,7 @@ public:
     ~WinRTScreenCapture();
 
     cv::Mat GetNextFrameCpu() override;
+    CaptureFrameGeometry GetFrameGeometry(int modelWidth, int modelHeight) const override;
 
 private:
     winrt::com_ptr<ID3D11Device>         d3dDevice;

@@ -12,6 +12,7 @@
 #include <opencv2/cudaimgproc.hpp>
 #include <algorithm>
 #include <atomic>
+#include <filesystem>
 #include <limits>
 #include <numeric>
 #include <vector>
@@ -610,11 +611,33 @@ void TrtDetector::processFrame(
     uint64_t frameId,
     std::chrono::steady_clock::time_point captureTimestamp)
 {
+    processFrame(
+        frame,
+        frameId,
+        captureTimestamp,
+        CaptureFrameGeometry::FromCrop(
+            0,
+            0,
+            frame.cols,
+            frame.rows,
+            frame.cols,
+            frame.rows,
+            frame.cols,
+            frame.rows,
+            false));
+}
+
+void TrtDetector::processFrame(
+    const cv::Mat& frame,
+    uint64_t frameId,
+    std::chrono::steady_clock::time_point captureTimestamp,
+    const CaptureFrameGeometry& frameGeometry)
+{
     if (config.backend == "DML") return;
 
     if (detectionPaused)
     {
-        detectionBuffer.clear(frameId, captureTimestamp);
+        detectionBuffer.clear(frameId, captureTimestamp, frameGeometry);
         return;
     }
 
@@ -623,6 +646,7 @@ void TrtDetector::processFrame(
     currentFrameGpu.release();
     currentFrameId = frameId;
     currentFrameCaptureTimestamp = captureTimestamp;
+    currentFrameGeometry = frameGeometry;
     pendingFrameType = PendingFrameType::Cpu;
     frameReady = true;
     inferenceCV.notify_one();
@@ -642,11 +666,33 @@ void TrtDetector::processFrameGpu(
     uint64_t frameId,
     std::chrono::steady_clock::time_point captureTimestamp)
 {
+    processFrameGpu(
+        frame,
+        frameId,
+        captureTimestamp,
+        CaptureFrameGeometry::FromCrop(
+            0,
+            0,
+            frame.cols,
+            frame.rows,
+            frame.cols,
+            frame.rows,
+            frame.cols,
+            frame.rows,
+            false));
+}
+
+void TrtDetector::processFrameGpu(
+    const cv::cuda::GpuMat& frame,
+    uint64_t frameId,
+    std::chrono::steady_clock::time_point captureTimestamp,
+    const CaptureFrameGeometry& frameGeometry)
+{
     if (config.backend == "DML") return;
 
     if (detectionPaused)
     {
-        detectionBuffer.clear(frameId, captureTimestamp);
+        detectionBuffer.clear(frameId, captureTimestamp, frameGeometry);
         return;
     }
 
@@ -655,6 +701,7 @@ void TrtDetector::processFrameGpu(
     currentFrameGpu = frame;
     currentFrameId = frameId;
     currentFrameCaptureTimestamp = captureTimestamp;
+    currentFrameGeometry = frameGeometry;
     pendingFrameType = PendingFrameType::Gpu;
     frameReady = true;
     inferenceCV.notify_one();
@@ -709,6 +756,7 @@ void TrtDetector::inferenceThread()
         cv::cuda::GpuMat frameGpu;
         uint64_t frameId = 0;
         std::chrono::steady_clock::time_point frameCaptureTimestamp{};
+        CaptureFrameGeometry frameGeometry;
         PendingFrameType frameType = PendingFrameType::None;
         bool hasNewFrame = false;
 
@@ -724,6 +772,7 @@ void TrtDetector::inferenceThread()
                 frameType = pendingFrameType;
                 frameId = currentFrameId;
                 frameCaptureTimestamp = currentFrameCaptureTimestamp;
+                frameGeometry = currentFrameGeometry;
                 if (frameType == PendingFrameType::Gpu)
                 {
                     frameGpu = currentFrameGpu;
@@ -828,12 +877,12 @@ void TrtDetector::inferenceThread()
                         for (size_t i = 0; i < numElements; ++i)
                             outputDataFloat[i] = __half2float(halfPtr[i]);
 
-                        postProcess(outputDataFloat.data(), name, frameId, frameCaptureTimestamp, &lastNmsTime);
+                        postProcess(outputDataFloat.data(), name, frameId, frameCaptureTimestamp, frameGeometry, &lastNmsTime);
                     }
                     else if (dtype == nvinfer1::DataType::kFLOAT)
                     {
                         const float* floatPtr = reinterpret_cast<const float*>(itPinned->second);
-                        postProcess(floatPtr, name, frameId, frameCaptureTimestamp, &lastNmsTime);
+                        postProcess(floatPtr, name, frameId, frameCaptureTimestamp, frameGeometry, &lastNmsTime);
                     }
                 }
 
@@ -933,18 +982,19 @@ void TrtDetector::postProcess(
     const std::string& outputName,
     uint64_t frameId,
     std::chrono::steady_clock::time_point captureTimestamp,
+    const CaptureFrameGeometry& frameGeometry,
     std::chrono::duration<double, std::milli>* nmsTime)
 {
     if (numClasses <= 0)
     {
-        detectionBuffer.clear(frameId, captureTimestamp);
+        detectionBuffer.clear(frameId, captureTimestamp, frameGeometry);
         return;
     }
 
     const auto shapeIt = outputShapes.find(outputName);
     if (shapeIt == outputShapes.end())
     {
-        detectionBuffer.clear(frameId, captureTimestamp);
+        detectionBuffer.clear(frameId, captureTimestamp, frameGeometry);
         return;
     }
 
@@ -977,6 +1027,7 @@ void TrtDetector::postProcess(
         std::move(classes),
         std::move(confidences),
         frameId,
-        captureTimestamp);
+        captureTimestamp,
+        frameGeometry);
 }
 #endif

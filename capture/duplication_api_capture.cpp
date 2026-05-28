@@ -309,6 +309,20 @@ DuplicationAPIScreenCapture::~DuplicationAPIScreenCapture()
     output1 = nullptr;
 }
 
+CaptureFrameGeometry DuplicationAPIScreenCapture::GetFrameGeometry(int modelWidth, int modelHeight) const
+{
+    const int copyWidth = std::min(regionWidth, std::max(1, screenWidth));
+    const int copyHeight = std::min(regionHeight, std::max(1, screenHeight));
+    return CaptureFrameGeometry::FromCenterCrop(
+        screenWidth,
+        screenHeight,
+        copyWidth,
+        copyHeight,
+        modelWidth,
+        modelHeight,
+        true);
+}
+
 cv::Mat DuplicationAPIScreenCapture::GetNextFrameCpu()
 {
     if (!m_ddaManager || !m_ddaManager->m_duplication || !stagingTextureCPU)

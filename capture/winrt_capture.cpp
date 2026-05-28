@@ -194,6 +194,20 @@ WinRTScreenCapture::~WinRTScreenCapture()
     d3dDevice = nullptr;
 }
 
+CaptureFrameGeometry WinRTScreenCapture::GetFrameGeometry(int modelWidth, int modelHeight) const
+{
+    return CaptureFrameGeometry::FromCrop(
+        regionX,
+        regionY,
+        regionWidth,
+        regionHeight,
+        modelWidth,
+        modelHeight,
+        screenWidth,
+        screenHeight,
+        true);
+}
+
 bool WinRTScreenCapture::createStagingTextureCPU()
 {
     stagingTextureCPU = nullptr;

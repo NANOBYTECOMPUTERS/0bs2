@@ -2,8 +2,10 @@
 #include <winsock2.h>
 #include <Windows.h>
 
+#include <algorithm>
 #include <chrono>
 #include <optional>
+#include <utility>
 #include <vector>
 
 #include "capture.h"
@@ -30,6 +32,7 @@ void mouseThreadFunction(MouseThread& mouseThread)
     std::vector<float> confidences;
     MultiTargetTracker targetTracker;
     std::optional<BoxTarget> activeTarget;
+    std::pair<double, double> learnedPredictionLead{ 0.0, 0.0 };
     auto lastTrackerUpdate = std::chrono::steady_clock::time_point::min();
     unsigned long long seenDetectionResolutionGeneration =
         detection_resolution_generation.load(std::memory_order_relaxed);
@@ -133,20 +136,30 @@ void mouseThreadFunction(MouseThread& mouseThread)
             if (targetTracker.getLockedTarget(lockInfo) && (lockInfo.observedThisFrame || lockInfo.missedFrames <= 2))
             {
                 activeTarget = lockInfo.target;
+                learnedPredictionLead = { 0.0, 0.0 };
                 hasAimObservation = true;
                 mouseThread.setLastTargetTime(std::chrono::steady_clock::now());
                 mouseThread.setTargetDetected(true);
 
-                auto futurePositions = mouseThread.predictFuturePositions(
-                    activeTarget->pivotX,
-                    activeTarget->pivotY,
-                    config.prediction_futurePositions
-                );
-                mouseThread.storeFuturePositions(futurePositions);
+                if (config.temporal_prediction_enabled && !lockInfo.predictedFuture.empty())
+                {
+                    mouseThread.storeFuturePositions(lockInfo.predictedFuture);
+                    learnedPredictionLead = mouseThread.computePredictionFeedForwardLead(*activeTarget, lockInfo);
+                }
+                else
+                {
+                    auto futurePositions = mouseThread.predictFuturePositions(
+                        activeTarget->smoothX,
+                        activeTarget->smoothY,
+                        config.prediction_futurePositions
+                    );
+                    mouseThread.storeFuturePositions(futurePositions);
+                }
             }
             else
             {
                 activeTarget.reset();
+                learnedPredictionLead = { 0.0, 0.0 };
                 mouseThread.clearFuturePositions();
                 mouseThread.setTargetDetected(false);
                 mouseThread.clearQueuedMoves();
@@ -160,6 +173,7 @@ void mouseThreadFunction(MouseThread& mouseThread)
             if (std::chrono::steady_clock::now() - lastTrackerUpdate > std::chrono::milliseconds(staleMs))
             {
                 activeTarget.reset();
+                learnedPredictionLead = { 0.0, 0.0 };
                 mouseThread.clearFuturePositions();
                 mouseThread.setTargetDetected(false);
                 mouseThread.clearQueuedMoves();
@@ -170,16 +184,15 @@ void mouseThreadFunction(MouseThread& mouseThread)
         {
             if (activeTarget && hasAimObservation)
             {
-                const double targetCenterX = activeTarget->x + activeTarget->w * 0.5;
-                const double targetCenterY = activeTarget->y + activeTarget->h * 0.5;
                 mouseThread.moveMousePivot(
-                    activeTarget->pivotX,
-                    activeTarget->pivotY,
+                    activeTarget->smoothX,
+                    activeTarget->smoothY,
                     activeTarget->w,
                     activeTarget->h,
                     activeTarget->confidence,
-                    activeTarget->pivotX - targetCenterX,
-                    activeTarget->pivotY - targetCenterY);
+                    0.0, 0.0,
+                    learnedPredictionLead.first,
+                    learnedPredictionLead.second);
 
                 if (config.auto_shoot)
                 {

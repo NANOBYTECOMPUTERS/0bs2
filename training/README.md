@@ -73,3 +73,89 @@ python training/evaluate_pid_governor.py `
   --dataset training/data/pid_governor_dataset.csv `
   --model training/models/pid_governor.pt
 ```
+
+# Temporal Predictor Training
+
+This trains the learned future-position predictor used by the optional C++
+`TemporalPredictor` path. The exported ONNX accepts raw runtime history:
+
+```text
+[batch, history_length, 8]
+[x, y, w, h, vx, vy, box_scale_vel, confidence]
+```
+
+and returns:
+
+```text
+[batch, prediction_horizon, 2]
+[future_x, future_y]
+```
+
+## Generate Track Data
+
+```powershell
+python training/data_gen/generate_track_data.py `
+  --output training/datasets/temporal_tracks.npz `
+  --samples 8192 `
+  --history-length 12 `
+  --prediction-horizon 16 `
+  --detection-width 320 `
+  --detection-height 320
+```
+
+The generator covers constant velocity, acceleration, curves, abrupt direction
+changes, stop-and-go motion, partial occlusion, jitter, and camera shake.
+
+## Train And Export
+
+```powershell
+python training/train_temporal.py `
+  --dataset training/datasets/temporal_tracks.npz `
+  --output training/models/temporal_predictor.pt `
+  --onnx-output models/temporal_predictor.onnx `
+  --metadata training/models/temporal_predictor.json `
+  --model-type gru `
+  --hidden-size 160 `
+  --near-horizon-frames 6 `
+  --near-horizon-weight 2.5 `
+  --epochs 40
+```
+
+If the dataset path does not exist, `train_temporal.py` auto-generates it using
+the requested history length, horizon, and detection resolution. Add
+`--no-auto-generate-dataset` when you want a missing dataset to be treated as an
+error.
+
+`--model-type transformer` is available for experiments, but the GRU is the
+default because it is small, fast, and matches the runtime latency goal.
+The default loss weights the first six predicted frames more heavily than the
+far end of the horizon, which makes the exported model more useful for PID
+feed-forward and less likely to over-optimize distant positions.
+
+## Evaluate
+
+```powershell
+python training/evaluate.py `
+  --dataset training/datasets/temporal_tracks.npz `
+  --model training/models/temporal_predictor.pt `
+  --output-dir training/models/temporal_eval
+```
+
+Evaluation writes `metrics.json` with ADE, FDE, and smoothness score, plus
+trajectory comparison plots when `matplotlib` is installed.
+
+## Runtime Config
+
+After export, enable the runtime path with:
+
+```ini
+temporal_prediction_enabled = true
+temporal_prediction_model_path = models/temporal_predictor.onnx
+temporal_prediction_history_length = 12
+temporal_prediction_horizon = 16
+temporal_prediction_interval_frames = 2
+```
+
+Training-only knobs such as `hidden_size` and `model_type` are CLI arguments,
+not runtime fields. The runtime only needs the exported ONNX contract and the
+history/horizon values used during export.

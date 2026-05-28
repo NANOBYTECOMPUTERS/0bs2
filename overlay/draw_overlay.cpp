@@ -3,6 +3,7 @@
 #include <winsock2.h>
 #include <Windows.h>
 #include <algorithm>
+#include <string>
 
 #include "imgui/imgui.h"
 #include "0BS_box_2.h"
@@ -21,6 +22,42 @@ float OverlayCompactControlWidth()
 void draw_overlay()
 {
     constexpr int kMinReadableOpacity = 220;
+    static std::string configStatus;
+
+    if (OverlayUI::BeginSection("Config", "overlay_section_config"))
+    {
+        if (ImGui::Button("Save Config"))
+        {
+            if (SaveRuntimeConfig("config.ini"))
+            {
+                OverlayConfig_ClearDirty();
+                configStatus = "Saved config.ini";
+            }
+            else
+            {
+                configStatus = "Save failed";
+            }
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Load Config"))
+        {
+            if (LoadRuntimeConfigMerge("config.ini"))
+            {
+                OverlayConfig_ClearDirty();
+                Overlay_SetOpacity(config.overlay_opacity);
+                Overlay_ApplyCaptureExclusion();
+                configStatus = "Loaded config.ini";
+            }
+            else
+            {
+                configStatus = "Load failed";
+            }
+        }
+        if (!configStatus.empty())
+            ImGui::TextDisabled("%s", configStatus.c_str());
+
+        OverlayUI::EndSection();
+    }
 
     if (OverlayUI::BeginSection("Visual", "overlay_section_visual"))
     {

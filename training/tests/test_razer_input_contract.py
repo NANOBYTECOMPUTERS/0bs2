@@ -2,7 +2,10 @@ import unittest
 from pathlib import Path
 
 
-REPO_ROOT = Path(__file__).resolve().parents[4]
+REPO_ROOT = next(
+    parent for parent in Path(__file__).resolve().parents
+    if (parent / "mouse" / "MouseInput.cpp").exists()
+)
 
 
 class RazerInputContractTest(unittest.TestCase):

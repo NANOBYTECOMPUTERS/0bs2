@@ -36,8 +36,6 @@ private:
     KeyboardInputFn keyboardInput = nullptr;
 
     static std::filesystem::path resolveDllPath();
-    static bool sendInputMove(int x, int y);
-    static bool sendInputClick(DWORD flag);
     static int downFlagForKey(int key);
     static int upFlagForKey(int key);
 };

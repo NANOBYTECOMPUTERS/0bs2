@@ -1,8 +1,12 @@
 import unittest
+import re
 from pathlib import Path
 
 
-REPO_ROOT = Path(__file__).resolve().parents[4]
+REPO_ROOT = next(
+    parent for parent in Path(__file__).resolve().parents
+    if (parent / "mouse" / "MouseInput.cpp").exists()
+)
 
 
 class RuntimeArchitectureContractTest(unittest.TestCase):
@@ -38,6 +42,43 @@ class RuntimeArchitectureContractTest(unittest.TestCase):
         self.assertIn("mouseInput->move(dx, dy)", mouse_cpp)
         self.assertIn("mouseInput->leftDown()", mouse_cpp)
         self.assertIn("mouseInput->leftUp()", mouse_cpp)
+
+    def test_only_explicit_win32_method_uses_win32_mouse_packets(self):
+        mouse_h = self.read("mouse/MouseInput.h")
+        mouse_input = self.read("mouse/MouseInput.cpp")
+        mouse_cpp = self.read("mouse/mouse.cpp")
+        main_cpp = self.read("0BS_box_2.cpp")
+        ghub_cpp = self.read("mouse/ghub.cpp")
+        rzctl_cpp = self.read("mouse/rzctl.cpp")
+
+        self.assertNotIn("allowWin32Fallback", mouse_h)
+        self.assertNotIn("allowWin32Fallback", mouse_input)
+        self.assertNotIn("allowWin32Fallback", mouse_cpp)
+        self.assertNotIn("SendInput", mouse_cpp)
+        self.assertNotIn("Win32 fallback remains available", main_cpp)
+        self.assertNotIn("SendInput", ghub_cpp)
+        self.assertNotIn("SendInput", rzctl_cpp)
+
+        for class_name in [
+            "ArduinoMouseInput",
+            "Teensy41MouseInput",
+            "Teensy41RawHidMouseInput",
+            "GHubMouseInput",
+            "RazerMouseInput",
+            "KmboxNetMouseInput",
+            "KmboxAMouseInput",
+            "MakcuMouseInput",
+        ]:
+            with self.subTest(class_name=class_name):
+                match = re.search(
+                    rf"class\s+{class_name}\b(?P<body>.*?)\n\s*private:",
+                    mouse_input,
+                    re.DOTALL,
+                )
+                self.assertIsNotNone(match)
+                body = match.group("body")
+                self.assertNotIn("sendWin32Move", body)
+                self.assertNotIn("sendWin32Click", body)
 
     def test_runtime_threads_are_owned_by_supervisor(self):
         header_path = REPO_ROOT / "runtime" / "RuntimeSupervisor.h"
@@ -79,6 +120,15 @@ class RuntimeArchitectureContractTest(unittest.TestCase):
         self.assertIn("#define NOMINMAX", mouse_h)
         self.assertLess(mouse_h.index("#define NOMINMAX"), mouse_h.index("#include <Windows.h>"))
         self.assertIn('#include "rzctl.h"', draw_mouse)
+
+    def test_capture_submits_cached_frames_when_backend_has_no_new_desktop_frame(self):
+        capture_cpp = self.read("capture/capture.cpp")
+
+        self.assertIn("lastDetectionFrame", capture_cpp)
+        self.assertIn("reusedCachedDetectionFrame", capture_cpp)
+        self.assertIn("submitFrameToDetector", capture_cpp)
+        self.assertIn("lastDetectionFrame = detectionFrame.clone()", capture_cpp)
+        self.assertIn("detectionFrame = lastDetectionFrame", capture_cpp)
 
 
 if __name__ == "__main__":
