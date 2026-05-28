@@ -53,7 +53,7 @@ ID3D11RenderTargetView* g_mainRenderTargetView = NULL;
 HWND g_hwnd = NULL;
 
 extern Config config;
-extern std::mutex configMutex;
+extern std::recursive_mutex configMutex;
 extern std::atomic<bool> shouldExit;
 
 bool CreateDeviceD3D(HWND hWnd);
@@ -928,7 +928,7 @@ void OverlayThread()
         DrawMainPanelBackground(ImGui::GetWindowPos(), ImGui::GetWindowSize());
 
         {
-            std::lock_guard<std::mutex> lock(configMutex);
+            std::lock_guard<std::recursive_mutex> lock(configMutex);
 
             static int activeTab = 0;
             const int tabCount = (int)(sizeof(kOverlayTabs) / sizeof(kOverlayTabs[0]));

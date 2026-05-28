@@ -113,7 +113,7 @@ struct CaptureThreadConfig
 
 CaptureThreadConfig SnapshotCaptureConfig()
 {
-    std::lock_guard<std::mutex> cfgLock(configMutex);
+    std::lock_guard<std::recursive_mutex> cfgLock(configMutex);
     CaptureThreadConfig snapshot;
     snapshot.capture_method = config.capture_method;
     snapshot.capture_fps = config.capture_fps;

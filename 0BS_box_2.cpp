@@ -43,7 +43,7 @@ std::condition_variable frameCV;
 std::atomic<bool> shouldExit(false);
 std::atomic<bool> aiming(false);
 std::atomic<bool> detectionPaused(false);
-std::mutex configMutex;
+std::recursive_mutex configMutex;
 
 #ifdef USE_CUDA
 TrtDetector trt_detector;
@@ -142,15 +142,11 @@ void assignInputDevices()
 
 bool SaveRuntimeConfig(const std::string& filename)
 {
+    std::lock_guard<std::recursive_mutex> lock(configMutex);
     return config.saveConfig(filename);
 }
 
-// Precondition: caller must hold configMutex. RefreshRuntimeAfterConfigLoad
-// reads from the global `config` and calls MouseThread::updateConfig which
-// reads from `config` again via buildKalmanSettingsFromConfig /
-// buildPidMouseSettingsFromConfig. All current callers (keyboard_listener.cpp,
-// draw_overlay.cpp via overlay.cpp:931) hold the lock.
-void RefreshRuntimeAfterConfigLoad(const Config& previousConfig)
+static void RefreshRuntimeAfterConfigLoadUnlocked(const Config& previousConfig)
 {
     if (previousConfig.detection_resolution != config.detection_resolution)
     {
@@ -230,13 +226,20 @@ void RefreshRuntimeAfterConfigLoad(const Config& previousConfig)
     }
 }
 
+void RefreshRuntimeAfterConfigLoad(const Config& previousConfig)
+{
+    std::lock_guard<std::recursive_mutex> lock(configMutex);
+    RefreshRuntimeAfterConfigLoadUnlocked(previousConfig);
+}
+
 bool LoadRuntimeConfigMerge(const std::string& filename)
 {
+    std::lock_guard<std::recursive_mutex> lock(configMutex);
     Config previousConfig = config;
     if (!config.loadConfigMerged(filename))
         return false;
 
-    RefreshRuntimeAfterConfigLoad(previousConfig);
+    RefreshRuntimeAfterConfigLoadUnlocked(previousConfig);
     return true;
 }
 

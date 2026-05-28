@@ -33,7 +33,7 @@ extern std::atomic<bool> input_method_changed;
 extern std::atomic<bool> aiming;
 extern std::atomic<bool> shooting;
 extern std::atomic<bool> zooming;
-extern std::mutex configMutex;
+extern std::recursive_mutex configMutex;
 
 bool SaveRuntimeConfig(const std::string& filename = "config.ini");
 bool LoadRuntimeConfigMerge(const std::string& filename = "config.ini");

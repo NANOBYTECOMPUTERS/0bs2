@@ -78,7 +78,7 @@ void mouseThreadFunction(MouseThread& mouseThread)
         {
             seenDetectionResolutionGeneration = currentDetectionResolutionGeneration;
             {
-                std::lock_guard<std::mutex> cfgLock(configMutex);
+                std::lock_guard<std::recursive_mutex> cfgLock(configMutex);
                 mouseThread.updateConfig(
                     config.detection_resolution,
                     config.fovX,

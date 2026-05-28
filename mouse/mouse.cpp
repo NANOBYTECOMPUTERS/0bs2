@@ -348,7 +348,7 @@ void MouseThread::appendWindDebugStep(int dx, int dy)
     double deltaPxY = static_cast<double>(dy);
 
     {
-        std::lock_guard<std::mutex> cfgLock(configMutex);
+        std::lock_guard<std::recursive_mutex> cfgLock(configMutex);
         const Config::GameProfile* gpPtr = nullptr;
 
         auto activeIt = config.game_profiles.find(config.active_game);

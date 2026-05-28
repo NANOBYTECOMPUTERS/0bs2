@@ -1,9 +1,7 @@
 #include "overlay/config_dirty.h"
 
-#include "config.h"
+#include "0BS_box_2.h"
 #include "imgui/imgui.h"
-
-extern Config config;
 
 namespace
 {
@@ -26,7 +24,7 @@ void OverlayConfig_ClearDirty()
 
 bool OverlayConfig_SaveNow(const char* filename)
 {
-    const bool saved = config.saveConfig(filename ? filename : "config.ini");
+    const bool saved = SaveRuntimeConfig(filename ? filename : "config.ini");
     if (saved)
         OverlayConfig_ClearDirty();
     return saved;

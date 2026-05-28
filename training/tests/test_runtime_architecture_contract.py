@@ -138,6 +138,21 @@ class RuntimeArchitectureContractTest(unittest.TestCase):
         self.assertIn("lastDetectionFrame = detectionFrame.clone()", capture_cpp)
         self.assertIn("detectionFrame = lastDetectionFrame", capture_cpp)
 
+    def test_runtime_config_entrypoints_lock_internally(self):
+        main_h = self.read("0BS_box_2.h")
+        main_cpp = self.read("0BS_box_2.cpp")
+        overlay_dirty = self.read("overlay/config_dirty.cpp")
+
+        self.assertIn("extern std::recursive_mutex configMutex", main_h)
+        self.assertIn("std::recursive_mutex configMutex", main_cpp)
+        self.assertIn("bool SaveRuntimeConfig", main_cpp)
+        self.assertIn("bool LoadRuntimeConfigMerge", main_cpp)
+        self.assertIn("void RefreshRuntimeAfterConfigLoad", main_cpp)
+        self.assertIn("RefreshRuntimeAfterConfigLoadUnlocked", main_cpp)
+        self.assertIn("std::lock_guard<std::recursive_mutex> lock(configMutex)", main_cpp)
+        self.assertIn("SaveRuntimeConfig(filename ? filename : \"config.ini\")", overlay_dirty)
+        self.assertNotIn("config.saveConfig(filename ? filename : \"config.ini\")", overlay_dirty)
+
 
 if __name__ == "__main__":
     unittest.main()

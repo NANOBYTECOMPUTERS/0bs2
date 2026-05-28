@@ -214,7 +214,7 @@ void keyboardListener()
         {
             if (!reloadPressed)
             {
-                std::lock_guard<std::mutex> lock(configMutex);
+                std::lock_guard<std::recursive_mutex> lock(configMutex);
                 LoadRuntimeConfigMerge();
                 reloadPressed = true;
             }
