@@ -27,6 +27,18 @@ class TrtPostProcessLayoutContractTests(unittest.TestCase):
         self.assertIn("YoloDecoderLayout{ false, true, false, rows, cols", resolver)
         self.assertIn("YoloDecoderLayout{ true, true, false, cols, rows", resolver)
 
+    def test_explicit_class_layout_prefers_objectness_variant(self):
+        post_cpp = self.read_postprocess()
+        resolver_start = post_cpp.index("bool resolveYoloDecoderLayout(")
+        resolver_end = post_cpp.index("#endif", resolver_start)
+        resolver = post_cpp[resolver_start:resolver_end]
+
+        self.assertIn("collectExplicitScoreLayout", post_cpp)
+        self.assertIn("explicitClassCount - 1", post_cpp)
+        self.assertIn("hasObjectnessLayout", resolver)
+        self.assertIn("hasPlainLayout", resolver)
+        self.assertLess(resolver.index("if (hasObjectnessLayout)"), resolver.index("if (hasPlainLayout)"))
+
     def test_trt_detector_can_pass_positive_class_count_for_nms_shape(self):
         trt_cpp = (REPO_ROOT / "detector" / "trt_detector.cpp").read_text(encoding="utf-8")
 

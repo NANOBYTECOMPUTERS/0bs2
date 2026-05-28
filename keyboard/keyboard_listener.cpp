@@ -50,7 +50,7 @@ bool isTeensy41InputMethod()
 
 bool useInputDeviceButtonState()
 {
-    return (config.arduino_enable_keys || isTeensy41InputMethod()) &&
+    return isTeensy41InputMethod() &&
         activeMouseInputOwner && activeMouseInputOwner->isOpen();
 }
 

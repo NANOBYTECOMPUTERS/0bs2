@@ -12,10 +12,58 @@ REPO_ROOT = next(
 )
 
 
+def find_vsdev() -> Path | None:
+    candidates: list[Path] = []
+
+    env_vsdev = os.environ.get("VSDEVCMD")
+    if env_vsdev:
+        candidates.append(Path(env_vsdev))
+
+    vswhere = (
+        Path(os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)"))
+        / "Microsoft Visual Studio"
+        / "Installer"
+        / "vswhere.exe"
+    )
+    if vswhere.exists():
+        probe = subprocess.run(
+            [
+                str(vswhere),
+                "-latest",
+                "-products",
+                "*",
+                "-requires",
+                "Microsoft.VisualStudio.Component.VC.Tools.x86.x64",
+                "-find",
+                r"Common7\Tools\VsDevCmd.bat",
+            ],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            timeout=10,
+            check=False,
+        )
+        for line in probe.stdout.splitlines():
+            if line.strip():
+                candidates.append(Path(line.strip()))
+
+    program_files = Path(os.environ.get("ProgramFiles", r"C:\Program Files"))
+    candidates.extend(
+        [
+            program_files / "Microsoft Visual Studio" / "18" / "Community" / "Common7" / "Tools" / "VsDevCmd.bat",
+            program_files / "Microsoft Visual Studio" / "18" / "BuildTools" / "Common7" / "Tools" / "VsDevCmd.bat",
+            program_files / "Microsoft Visual Studio" / "2022" / "Community" / "Common7" / "Tools" / "VsDevCmd.bat",
+            program_files / "Microsoft Visual Studio" / "2022" / "BuildTools" / "Common7" / "Tools" / "VsDevCmd.bat",
+        ]
+    )
+
+    return next((candidate for candidate in candidates if candidate.exists()), None)
+
+
 class ControlLoopSyntheticTests(unittest.TestCase):
     def compile_and_run(self, source: str) -> str:
-        vsdev = Path(r"C:\Program Files\Microsoft Visual Studio\18\Community\Common7\Tools\VsDevCmd.bat")
-        if not vsdev.exists():
+        vsdev = find_vsdev()
+        if vsdev is None:
             self.skipTest("Visual Studio developer command prompt is not available")
 
         with tempfile.TemporaryDirectory() as tmp:
@@ -23,6 +71,10 @@ class ControlLoopSyntheticTests(unittest.TestCase):
             cpp = tmp_path / "control_loop_synthetic.cpp"
             exe = tmp_path / "control_loop_synthetic.exe"
             build_cmd = tmp_path / "build_control_loop_synthetic.cmd"
+            obj_dir = tmp_path / "obj"
+            obj_dir.mkdir()
+            obj_dir_arg = str(obj_dir) + "\\\\"
+            pdb = tmp_path / "control_loop_synthetic.pdb"
             cpp.write_text(source, encoding="utf-8")
 
             build_cmd.write_text(
@@ -32,6 +84,7 @@ class ControlLoopSyntheticTests(unittest.TestCase):
                         f'call "{vsdev}" -arch=x64 -host_arch=x64 >nul',
                         f'cl /nologo /std:c++17 /EHsc '
                         f'/I"{REPO_ROOT}" /I"{REPO_ROOT / "mouse"}" /I"{REPO_ROOT / "include"}" '
+                        f'/Fo"{obj_dir_arg}" /Fd"{pdb}" '
                         f'"{cpp}" '
                         f'"{REPO_ROOT / "mouse" / "PidMouseController.cpp"}" '
                         f'"{REPO_ROOT / "mouse" / "PidGovernor.cpp"}" '
@@ -43,7 +96,7 @@ class ControlLoopSyntheticTests(unittest.TestCase):
             )
             compile_result = subprocess.run(
                 ["cmd", "/c", str(build_cmd)],
-                cwd=REPO_ROOT,
+                cwd=tmp_path,
                 text=True,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
@@ -53,7 +106,7 @@ class ControlLoopSyntheticTests(unittest.TestCase):
 
             run_result = subprocess.run(
                 [str(exe)],
-                cwd=REPO_ROOT,
+                cwd=tmp_path,
                 text=True,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,

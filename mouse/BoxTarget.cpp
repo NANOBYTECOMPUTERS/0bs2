@@ -1170,6 +1170,11 @@ void MultiTargetTracker::update(
                 t.innerAim.smoothX += t.velocity.x * dt;
                 t.innerAim.smoothY += t.velocity.y * dt;
             }
+            else
+            {
+                t.innerAim.smoothX += t.velocity.x * dt;
+                t.innerAim.smoothY += t.velocity.y * dt;
+            }
             const float decay = (t.id == lockedTrackId_) ? 0.90f : 0.84f;
             t.velocity *= decay;
             t.sizeVelocity *= decay;

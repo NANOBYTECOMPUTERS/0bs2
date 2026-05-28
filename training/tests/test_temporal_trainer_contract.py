@@ -54,6 +54,10 @@ class TemporalTrainerContractTests(unittest.TestCase):
         ):
             self.assertIn(token, model)
 
+        self.assertIn("hidden_size must be divisible by 4 when model_type='transformer'", model)
+        self.assertIn("temporal_history length", model)
+        self.assertIn("exceeds configured history_length", model)
+
         for token in (
             "AdamW",
             "ReduceLROnPlateau",

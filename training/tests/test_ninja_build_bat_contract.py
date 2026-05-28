@@ -14,6 +14,12 @@ class NinjaBuildBatContractTests(unittest.TestCase):
         self.assertTrue(script_path.exists(), f"Missing Ninja build script: {script_path}")
         return script_path.read_text(encoding="utf-8")
 
+    def test_windows_batch_files_are_marked_crlf_in_git_attributes(self):
+        attributes = (REPO_ROOT / ".gitattributes").read_text(encoding="utf-8")
+
+        self.assertIn("*.bat text eol=crlf", attributes)
+        self.assertIn("*.cmd text eol=crlf", attributes)
+
     def test_batch_file_generates_repo_local_ninja_file(self):
         script = self.read_script().lower()
 

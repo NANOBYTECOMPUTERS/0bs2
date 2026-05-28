@@ -63,6 +63,13 @@ class CudaBuildIsolationContractTests(unittest.TestCase):
         self.assertIn("Test-Path", script)
         self.assertIn("TensorRT-*", script)
         self.assertIn("nvinfer_10.lib", script)
+        self.assertIn("vswhere.exe", script)
+        self.assertIn("Get-VisualStudioInstallRoots", script)
+        self.assertIn("Resolve-MSBuild", script)
+        self.assertIn("Resolve-CudaProps", script)
+        self.assertIn("VCTargetsPath", script)
+        self.assertNotIn(r"Visual Studio\18\Community\MSBuild\Current\Bin\MSBuild.exe", script)
+        self.assertNotIn(r"Visual Studio\18\Community\MSBuild\Microsoft\VC\v180\BuildCustomizations", script)
 
     def test_cuda_compatibility_headers_are_local_to_cuda_folder(self):
         self.assertTrue((REPO_ROOT / "cuda" / "include" / "nvinf.h").exists())

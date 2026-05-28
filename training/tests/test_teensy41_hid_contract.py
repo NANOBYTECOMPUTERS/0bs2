@@ -146,6 +146,8 @@ class Teensy41HidContractTest(unittest.TestCase):
         self.assert_contains(keyboard_cpp, "aimingActive()")
         self.assert_contains(keyboard_cpp, "shootingActive()")
         self.assert_contains(keyboard_cpp, "zoomingActive()")
+        self.assert_contains(keyboard_cpp, "return isTeensy41InputMethod() &&")
+        self.assert_not_contains(keyboard_cpp, "return (config.arduino_enable_keys || isTeensy41InputMethod()) &&")
 
     def test_gui_lists_hid_and_uses_hid_settings_instead_of_serial_settings(self):
         draw_mouse = self.read("overlay/draw_mouse.cpp")

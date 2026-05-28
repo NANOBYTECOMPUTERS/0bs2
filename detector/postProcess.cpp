@@ -144,6 +144,40 @@ namespace
         return true;
     }
 
+    void collectExplicitScoreLayout(
+        bool attributeMajor,
+        int64_t attributeCount,
+        int64_t boxCount,
+        int explicitClassCount,
+        YoloDecoderLayout& objectnessLayout,
+        bool& hasObjectnessLayout,
+        YoloDecoderLayout& plainLayout,
+        bool& hasPlainLayout)
+    {
+        YoloDecoderLayout candidate;
+        if (makeScoreLayout(attributeMajor, attributeCount, boxCount, explicitClassCount, candidate))
+        {
+            if (candidate.hasObjectness)
+            {
+                objectnessLayout = candidate;
+                hasObjectnessLayout = true;
+            }
+            else
+            {
+                plainLayout = candidate;
+                hasPlainLayout = true;
+            }
+        }
+
+        if (explicitClassCount > 1 &&
+            makeScoreLayout(attributeMajor, attributeCount, boxCount, explicitClassCount - 1, candidate) &&
+            candidate.hasObjectness)
+        {
+            objectnessLayout = candidate;
+            hasObjectnessLayout = true;
+        }
+    }
+
     bool resolveYoloDecoderLayout(
         const float* output,
         const std::vector<int64_t>& shape,
@@ -175,12 +209,38 @@ namespace
 
         if (explicitClassCount > 0)
         {
-            if (makeScoreLayout(true, rows, cols, explicitClassCount, layout))
+            YoloDecoderLayout objectnessLayout;
+            YoloDecoderLayout plainLayout;
+            bool hasObjectnessLayout = false;
+            bool hasPlainLayout = false;
+
+            collectExplicitScoreLayout(
+                true,
+                rows,
+                cols,
+                explicitClassCount,
+                objectnessLayout,
+                hasObjectnessLayout,
+                plainLayout,
+                hasPlainLayout);
+            collectExplicitScoreLayout(
+                false,
+                cols,
+                rows,
+                explicitClassCount,
+                objectnessLayout,
+                hasObjectnessLayout,
+                plainLayout,
+                hasPlainLayout);
+
+            if (hasObjectnessLayout)
             {
+                layout = objectnessLayout;
                 return true;
             }
-            if (makeScoreLayout(false, cols, rows, explicitClassCount, layout))
+            if (hasPlainLayout)
             {
+                layout = plainLayout;
                 return true;
             }
         }

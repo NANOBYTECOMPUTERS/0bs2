@@ -80,6 +80,14 @@ class RuntimeArchitectureContractTest(unittest.TestCase):
                 self.assertNotIn("sendWin32Move", body)
                 self.assertNotIn("sendWin32Click", body)
 
+    def test_ghub_release_uses_requested_button_key(self):
+        ghub_cpp = self.read("mouse/ghub.cpp")
+
+        self.assertIn("bool GhubMouse::mouse_up(int key)", ghub_cpp)
+        self.assertIn("reinterpret_cast<bool(*)(int)>", ghub_cpp)
+        self.assertIn("release(key)", ghub_cpp)
+        self.assertNotIn("reinterpret_cast<bool(*)()>(GetProcAddress(gm, \"release\"))", ghub_cpp)
+
     def test_runtime_threads_are_owned_by_supervisor(self):
         header_path = REPO_ROOT / "runtime" / "RuntimeSupervisor.h"
         impl_path = REPO_ROOT / "runtime" / "RuntimeSupervisor.cpp"

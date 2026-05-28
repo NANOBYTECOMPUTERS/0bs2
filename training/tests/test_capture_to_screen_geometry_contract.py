@@ -42,6 +42,18 @@ class CaptureToScreenGeometryContractTest(unittest.TestCase):
         self.assertNotIn("screenWidth / captureWidth", header)
         self.assertNotIn("screenHeight / captureHeight", header)
 
+    def test_geometry_inside_checks_use_half_open_pixel_bounds(self):
+        header = self.read("capture/capture_geometry.h")
+
+        self.assertIn("x < static_cast<double>(geometry.modelWidth)", header)
+        self.assertIn("y < static_cast<double>(geometry.modelHeight)", header)
+        self.assertIn("x < static_cast<double>(geometry.cropX + geometry.cropWidth)", header)
+        self.assertIn("y < static_cast<double>(geometry.cropY + geometry.cropHeight)", header)
+        self.assertNotIn("x <= static_cast<double>(geometry.modelWidth)", header)
+        self.assertNotIn("y <= static_cast<double>(geometry.modelHeight)", header)
+        self.assertNotIn("x <= static_cast<double>(geometry.cropX + geometry.cropWidth)", header)
+        self.assertNotIn("y <= static_cast<double>(geometry.cropY + geometry.cropHeight)", header)
+
     def test_synthetic_center_edge_resolution_and_accuracy_cases(self):
         def to_screen(x, y, model_w, model_h, crop_x, crop_y, crop_w, crop_h):
             return (

@@ -42,6 +42,8 @@ class TemporalPredictorNet(torch.nn.Module):
                 torch.nn.Linear(cfg.hidden_size, cfg.prediction_horizon * 2),
             )
         elif self.model_type == "transformer":
+            if cfg.hidden_size % 4 != 0:
+                raise ValueError("hidden_size must be divisible by 4 when model_type='transformer'")
             self.input_proj = torch.nn.Linear(cfg.feature_dim, cfg.hidden_size)
             self.position_embedding = torch.nn.Parameter(
                 torch.zeros(1, cfg.history_length, cfg.hidden_size)
@@ -69,6 +71,11 @@ class TemporalPredictorNet(torch.nn.Module):
             encoded = hidden[-1]
         else:
             steps = temporal_history.shape[1]
+            if steps > self.position_embedding.shape[1]:
+                raise ValueError(
+                    f"temporal_history length {steps} exceeds configured history_length "
+                    f"{self.position_embedding.shape[1]}"
+                )
             encoded_steps = self.input_proj(temporal_history)
             encoded_steps = encoded_steps + self.position_embedding[:, :steps, :]
             encoded = self.transformer(encoded_steps)[:, -1, :]

@@ -48,6 +48,19 @@ class DetectionTrackingContractTest(unittest.TestCase):
         self.assertIn("headingPenalty", target_cpp)
         self.assertIn("lockedBias", target_cpp)
 
+    def test_inner_aim_propagates_missed_frames_without_kalman(self):
+        target_cpp = self.read("mouse/BoxTarget.cpp")
+
+        assignment_branch = target_cpp[target_cpp.index("if (di >= 0)"):]
+        missed_branch = assignment_branch[
+            assignment_branch.index("else\n        {"):
+            assignment_branch.index("const float decay = (t.id == lockedTrackId_)")
+        ]
+        self.assertIn("if (config.kalman_enabled && t.innerAim.kalman.initialized())", missed_branch)
+        self.assertIn("else", missed_branch)
+        self.assertIn("t.innerAim.smoothX += t.velocity.x * dt;", missed_branch)
+        self.assertIn("t.innerAim.smoothY += t.velocity.y * dt;", missed_branch)
+
 
 if __name__ == "__main__":
     unittest.main()

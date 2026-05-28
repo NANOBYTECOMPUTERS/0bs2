@@ -136,16 +136,16 @@ public:
     bool isInsideModel(double x, double y) const
     {
         return x >= 0.0 && y >= 0.0 &&
-            x <= static_cast<double>(geometry.modelWidth) &&
-            y <= static_cast<double>(geometry.modelHeight);
+            x < static_cast<double>(geometry.modelWidth) &&
+            y < static_cast<double>(geometry.modelHeight);
     }
 
     bool isInsideScreenCrop(double x, double y) const
     {
         return x >= static_cast<double>(geometry.cropX) &&
             y >= static_cast<double>(geometry.cropY) &&
-            x <= static_cast<double>(geometry.cropX + geometry.cropWidth) &&
-            y <= static_cast<double>(geometry.cropY + geometry.cropHeight);
+            x < static_cast<double>(geometry.cropX + geometry.cropWidth) &&
+            y < static_cast<double>(geometry.cropY + geometry.cropHeight);
     }
 
     const CaptureFrameGeometry& frameGeometry() const
