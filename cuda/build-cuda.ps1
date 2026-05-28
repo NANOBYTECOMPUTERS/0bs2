@@ -98,10 +98,12 @@ function Resolve-CudaProps {
 $msbuild = Resolve-MSBuild
 $cudaProps = Resolve-CudaProps
 $vcTargetsPath = Split-Path -Path (Split-Path -Path $cudaProps -Parent) -Parent
-if (!$vcTargetsPath.EndsWith([System.IO.Path]::DirectorySeparatorChar)) {
-    $vcTargetsPath += [System.IO.Path]::DirectorySeparatorChar
+# Use forward slashes so a trailing separator cannot escape the quote boundary
+# when PowerShell invokes native MSBuild with a path containing spaces.
+$vcTargetsPathForMsBuild = ($vcTargetsPath -replace '\\', '/')
+if (!$vcTargetsPathForMsBuild.EndsWith('/')) {
+    $vcTargetsPathForMsBuild += '/'
 }
-$vcTargetsPathForMsBuild = $vcTargetsPath + [System.IO.Path]::DirectorySeparatorChar
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
 if ([string]::IsNullOrWhiteSpace($TensorRTDir)) {
