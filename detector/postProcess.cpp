@@ -161,18 +161,6 @@ namespace
             return false;
         }
 
-        if (explicitClassCount > 0)
-        {
-            if (makeScoreLayout(true, rows, cols, explicitClassCount, layout))
-            {
-                return true;
-            }
-            if (makeScoreLayout(false, cols, rows, explicitClassCount, layout))
-            {
-                return true;
-            }
-        }
-
         if (cols == 6)
         {
             layout = YoloDecoderLayout{ false, true, false, rows, cols, explicitClassCount };
@@ -183,6 +171,18 @@ namespace
         {
             layout = YoloDecoderLayout{ true, true, false, cols, rows, explicitClassCount };
             return true;
+        }
+
+        if (explicitClassCount > 0)
+        {
+            if (makeScoreLayout(true, rows, cols, explicitClassCount, layout))
+            {
+                return true;
+            }
+            if (makeScoreLayout(false, cols, rows, explicitClassCount, layout))
+            {
+                return true;
+            }
         }
 
         if (makeScoreLayout(true, rows, cols, explicitClassCount, layout))
