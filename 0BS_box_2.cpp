@@ -145,6 +145,11 @@ bool SaveRuntimeConfig(const std::string& filename)
     return config.saveConfig(filename);
 }
 
+// Precondition: caller must hold configMutex. RefreshRuntimeAfterConfigLoad
+// reads from the global `config` and calls MouseThread::updateConfig which
+// reads from `config` again via buildKalmanSettingsFromConfig /
+// buildPidMouseSettingsFromConfig. All current callers (keyboard_listener.cpp,
+// draw_overlay.cpp via overlay.cpp:931) hold the lock.
 void RefreshRuntimeAfterConfigLoad(const Config& previousConfig)
 {
     if (previousConfig.detection_resolution != config.detection_resolution)

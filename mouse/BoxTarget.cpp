@@ -267,10 +267,15 @@ void MultiTargetTracker::updateInnerAim(InnerAimTrack& track, const cv::Rect& de
     const double closeDistance = std::hypot(rawInnerX - track.smoothX, rawInnerY - track.smoothY);
     if (config.kalman_enabled && track.kalman.initialized() && closeDistance < 2.5 * scaleFactor() && track.consistencyScore > 0.70f)
     {
-        std::uniform_real_distribution<double> jitter(-0.4f * scaleFactor(), 0.4f * scaleFactor());
         const double jitterScale = 0.25 * (1.0 - std::clamp(static_cast<double>(track.consistencyScore), 0.0, 1.0));
-        rawInnerX += jitter(innerAimRng_) * jitterScale;
-        rawInnerY += jitter(innerAimRng_) * jitterScale;
+        // Skip the RNG draw entirely when jitterScale collapses to zero (perfect consistency)
+        // so the RNG sequence does not depend on how often this branch is reached.
+        if (jitterScale > 0.0)
+        {
+            std::uniform_real_distribution<double> jitter(-0.4f * scaleFactor(), 0.4f * scaleFactor());
+            rawInnerX += jitter(innerAimRng_) * jitterScale;
+            rawInnerY += jitter(innerAimRng_) * jitterScale;
+        }
     }
 
     if (!config.kalman_enabled)

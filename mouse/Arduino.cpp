@@ -114,6 +114,9 @@ void Arduino::press()
 {
     if (protocol_ == ArduinoProtocol::Teensy41)
     {
+        // Host only drives bit 0 (left/shoot). Zoom (bit 1, "aim" in Teensy
+        // terminology = button 2) and Aim (bit 4, button 5) flow read-only
+        // from the firmware to the host via incoming "BD:/BU:" events.
         button_mask_ |= 1;
         sendButtons();
         return;

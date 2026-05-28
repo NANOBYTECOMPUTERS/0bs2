@@ -280,7 +280,11 @@ PidMouseCommand PidMouseController::step(std::chrono::steady_clock::time_point n
         ? std::clamp(settings.governorMaxSpeedMultiple * command.governorSpeedScale, 0.0, settings.governorMaxSpeedMultiple)
         : 1.0;
     const double remainingObservationBudget = std::max(0.0, observationTravelBudget - observationTravelUsed);
-    if (remainingObservationBudget <= 1e-6)
+    // Only enter the "budget exhausted" decay branch when the controller has
+    // actually consumed travel. Without this guard, the first step() after a
+    // reset (budget=0, used=0) would decay integrals before any observation
+    // contributed, corrupting state on every target re-acquisition.
+    if (remainingObservationBudget <= 1e-6 && observationTravelUsed > 1e-9)
     {
         axisX.integral *= 0.94;
         axisY.integral *= 0.94;

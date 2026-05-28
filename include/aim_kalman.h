@@ -69,7 +69,9 @@ public:
         initialized_ = false;
         hasLastMeasurement_ = false;
         velocitySeeded_ = false;
-        warmupRemaining_ = settings_.warmup_frames;
+        warmupRemaining_ = settings_.runtimeLatencySweepEnabled
+            ? settings_.acquisitionFrames
+            : settings_.warmup_frames;
     }
 
     bool initialized() const
@@ -304,7 +306,11 @@ private:
         {
             const int acquisitionFrames = std::max(1, settings_.acquisitionFrames);
             const int completedFrames = std::clamp(acquisitionFrames - warmupRemaining_, 0, acquisitionFrames);
-            predictionWeight = static_cast<double>(completedFrames) / static_cast<double>(std::max(1, acquisitionFrames - 1));
+            // Divide by acquisitionFrames (not acquisitionFrames-1) so the ramp
+            // produces 0/N, 1/N, ..., (N-1)/N before snapping to 1.0 on the
+            // first post-warmup frame. With the old denominator the last ramp
+            // frame jumped straight to 1.0, skipping an intermediate step.
+            predictionWeight = static_cast<double>(completedFrames) / static_cast<double>(acquisitionFrames);
             predictionWeight = std::clamp(predictionWeight, 0.0, 1.0);
             --warmupRemaining_;
             telemetry.warmup_remaining = warmupRemaining_;

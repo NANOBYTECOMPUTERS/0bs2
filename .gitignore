@@ -6,6 +6,7 @@
 *.sln.docstates
 
 # Build outputs
+.ninja_log
 x64/
 dist/
 Debug/
