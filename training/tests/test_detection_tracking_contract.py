@@ -1,3 +1,4 @@
+import re
 import unittest
 from pathlib import Path
 
@@ -52,10 +53,13 @@ class DetectionTrackingContractTest(unittest.TestCase):
         target_cpp = self.read("mouse/BoxTarget.cpp")
 
         assignment_branch = target_cpp[target_cpp.index("if (di >= 0)"):]
-        missed_branch = assignment_branch[
-            assignment_branch.index("else\n        {"):
-            assignment_branch.index("const float decay = (t.id == lockedTrackId_)")
-        ]
+        match = re.search(
+            r"else\s*\{(?P<body>.*?)const float decay\s*=\s*\(t\.id == lockedTrackId_\)",
+            assignment_branch,
+            flags=re.S,
+        )
+        self.assertIsNotNone(match)
+        missed_branch = match.group("body")
         self.assertIn("if (config.kalman_enabled && t.innerAim.kalman.initialized())", missed_branch)
         self.assertIn("else", missed_branch)
         self.assertIn("t.innerAim.smoothX += t.velocity.x * dt;", missed_branch)

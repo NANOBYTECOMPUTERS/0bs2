@@ -97,6 +97,11 @@ function Resolve-CudaProps {
 
 $msbuild = Resolve-MSBuild
 $cudaProps = Resolve-CudaProps
+$vcTargetsPath = Split-Path -Path (Split-Path -Path $cudaProps -Parent) -Parent
+if (!$vcTargetsPath.EndsWith([System.IO.Path]::DirectorySeparatorChar)) {
+    $vcTargetsPath += [System.IO.Path]::DirectorySeparatorChar
+}
+$vcTargetsPathForMsBuild = $vcTargetsPath + [System.IO.Path]::DirectorySeparatorChar
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
 if ([string]::IsNullOrWhiteSpace($TensorRTDir)) {
@@ -127,7 +132,8 @@ if (!(Test-Path $tensorRTInclude)) {
 $properties = @(
     "/p:Configuration=$Configuration",
     "/p:Platform=$Platform",
-    "/p:TensorRTDir=$TensorRTDir"
+    "/p:TensorRTDir=$TensorRTDir",
+    "/p:VCTargetsPath=$vcTargetsPathForMsBuild"
 )
 
 & $msbuild $Project @properties /m /v:minimal

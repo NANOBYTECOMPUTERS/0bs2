@@ -68,6 +68,10 @@ class CudaBuildIsolationContractTests(unittest.TestCase):
         self.assertIn("Resolve-MSBuild", script)
         self.assertIn("Resolve-CudaProps", script)
         self.assertIn("VCTargetsPath", script)
+        self.assertIn("$vcTargetsPath = Split-Path", script)
+        self.assertIn("[System.IO.Path]::DirectorySeparatorChar", script)
+        self.assertIn("$vcTargetsPathForMsBuild", script)
+        self.assertIn("/p:VCTargetsPath=$vcTargetsPathForMsBuild", script)
         self.assertNotIn(r"Visual Studio\18\Community\MSBuild\Current\Bin\MSBuild.exe", script)
         self.assertNotIn(r"Visual Studio\18\Community\MSBuild\Microsoft\VC\v180\BuildCustomizations", script)
 
