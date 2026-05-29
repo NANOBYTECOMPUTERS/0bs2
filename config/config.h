@@ -41,6 +41,7 @@ public:
     int prediction_futurePositions;
     bool draw_futurePositions;
     bool runtime_latency_sweep_enabled;
+    std::string estimator_mode; // "kalman" or "imm"; IMM is opt-in and tracker-only in v1.
     bool kalman_enabled;
     float kalman_process_noise_position;
     float kalman_process_noise_velocity;

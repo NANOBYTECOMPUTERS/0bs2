@@ -87,6 +87,7 @@ bool Config::loadConfig(const std::string& filename)
         prediction_futurePositions = 20;
         draw_futurePositions = true;
         runtime_latency_sweep_enabled = false;
+        estimator_mode = "kalman";
         kalman_enabled = true;
         kalman_process_noise_position = 40.0f;
         kalman_process_noise_velocity = 1800.0f;
@@ -490,6 +491,7 @@ bool Config::loadConfig(const std::string& filename)
     prediction_futurePositions = get_long("prediction_futurePositions", 20);
     draw_futurePositions = get_bool("draw_futurePositions", true);
     runtime_latency_sweep_enabled = get_bool("runtime_latency_sweep_enabled", false);
+    estimator_mode = get_string("estimator_mode", "kalman");
     kalman_enabled = get_bool("kalman_enabled", true);
     kalman_process_noise_position = (float)get_double("kalman_process_noise_position", 40.0);
     kalman_process_noise_velocity = (float)get_double("kalman_process_noise_velocity", 1800.0);
@@ -775,6 +777,10 @@ bool Config::loadConfig(const std::string& filename)
     if (kalman_additional_prediction_ms > 120.0f) kalman_additional_prediction_ms = 120.0f;
     if (kalman_reset_timeout_sec < 0.05f) kalman_reset_timeout_sec = 0.05f;
     if (kalman_reset_timeout_sec > 3.0f) kalman_reset_timeout_sec = 3.0f;
+    std::transform(estimator_mode.begin(), estimator_mode.end(), estimator_mode.begin(),
+        [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    if (estimator_mode != "kalman" && estimator_mode != "imm")
+        estimator_mode = "kalman";
 
     if (aim_sim_width < 220) aim_sim_width = 220;
     if (aim_sim_width > 1920) aim_sim_width = 1920;
@@ -992,6 +998,7 @@ bool Config::loadConfigMerged(const std::string& filename)
     MERGE_FIELD("prediction_futurePositions", prediction_futurePositions);
     MERGE_FIELD("draw_futurePositions", draw_futurePositions);
     MERGE_FIELD("runtime_latency_sweep_enabled", runtime_latency_sweep_enabled);
+    MERGE_FIELD("estimator_mode", estimator_mode);
     MERGE_FIELD("kalman_enabled", kalman_enabled);
     MERGE_FIELD("kalman_process_noise_position", kalman_process_noise_position);
     MERGE_FIELD("kalman_process_noise_velocity", kalman_process_noise_velocity);
@@ -1347,6 +1354,7 @@ bool Config::saveConfig(const std::string& filename)
         << "prediction_futurePositions = " << prediction_futurePositions << "\n"
         << "draw_futurePositions = " << (draw_futurePositions ? "true" : "false") << "\n"
         << "runtime_latency_sweep_enabled = " << (runtime_latency_sweep_enabled ? "true" : "false") << "\n"
+        << "estimator_mode = " << estimator_mode << "\n"
         << std::fixed << std::setprecision(3)
         << "kalman_enabled = " << (kalman_enabled ? "true" : "false") << "\n"
         << "kalman_process_noise_position = " << kalman_process_noise_position << "\n"

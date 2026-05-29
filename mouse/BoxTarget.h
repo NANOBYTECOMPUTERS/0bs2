@@ -9,6 +9,7 @@
 #include <utility>
 
 #include "aim_kalman.h"
+#include "aim_imm.h"
 #include "neural/TemporalPredictor.h"
 
 class BoxTarget
@@ -64,6 +65,7 @@ struct InnerAimTrack {
     bool observedThisFrame = false;
 
     aim::AimKalman2D kalman;
+    aim::AimIMM2D imm;
 };
 
 struct LockedTargetInfo

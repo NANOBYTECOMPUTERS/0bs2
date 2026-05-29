@@ -24,6 +24,7 @@ namespace
 int prev_fovX = config.fovX;
 int prev_fovY = config.fovY;
 bool prev_runtime_latency_sweep_enabled = config.runtime_latency_sweep_enabled;
+std::string prev_estimator_mode = config.estimator_mode;
 bool prev_kalman_enabled = config.kalman_enabled;
 float prev_kalman_process_noise_position = config.kalman_process_noise_position;
 float prev_kalman_process_noise_velocity = config.kalman_process_noise_velocity;
@@ -582,6 +583,12 @@ void draw_mouse()
     if (OverlayUI::BeginSection("State Estimator", "mouse_section_state_estimator"))
     {
         ImGui::Checkbox("Runtime latency sweep", &config.runtime_latency_sweep_enabled);
+        const char* estimatorModes[] = { "kalman", "imm" };
+        int estimatorModeIndex = (config.estimator_mode == "imm") ? 1 : 0;
+        if (ImGui::Combo("Estimator mode", &estimatorModeIndex, estimatorModes, IM_ARRAYSIZE(estimatorModes)))
+        {
+            config.estimator_mode = estimatorModes[estimatorModeIndex];
+        }
         ImGui::Checkbox("Enable Kalman estimator", &config.kalman_enabled);
         ImGui::Checkbox("Seed velocity on acquire", &config.kalman_velocity_seed_enabled);
         ImGui::SliderInt("Acquisition frames", &config.kalman_acquisition_frames, 3, 5);
@@ -751,6 +758,7 @@ void draw_mouse()
     if (prev_fovX != config.fovX ||
         prev_fovY != config.fovY ||
         prev_runtime_latency_sweep_enabled != config.runtime_latency_sweep_enabled ||
+        prev_estimator_mode != config.estimator_mode ||
         prev_kalman_enabled != config.kalman_enabled ||
         prev_kalman_process_noise_position != config.kalman_process_noise_position ||
         prev_kalman_process_noise_velocity != config.kalman_process_noise_velocity ||
@@ -812,6 +820,7 @@ void draw_mouse()
         prev_fovX = config.fovX;
         prev_fovY = config.fovY;
         prev_runtime_latency_sweep_enabled = config.runtime_latency_sweep_enabled;
+        prev_estimator_mode = config.estimator_mode;
         prev_kalman_enabled = config.kalman_enabled;
         prev_kalman_process_noise_position = config.kalman_process_noise_position;
         prev_kalman_process_noise_velocity = config.kalman_process_noise_velocity;

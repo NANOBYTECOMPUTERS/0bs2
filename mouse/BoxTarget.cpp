@@ -148,6 +148,14 @@ float MultiTargetTracker::scaleFactor() const
     return std::clamp(config.detection_resolution / 320.0f, 0.5f, 2.5f);
 }
 
+namespace
+{
+bool useImmEstimator()
+{
+    return config.estimator_mode == "imm";
+}
+}
+
 cv::Point2d MultiTargetTracker::computeInnerAimPoint(const cv::Rect2f& box, int classId) const
 {
     const float smallBoxThreshold = 18.0f * scaleFactor();
@@ -278,14 +286,43 @@ void MultiTargetTracker::updateInnerAim(InnerAimTrack& track, const cv::Rect& de
         }
     }
 
+    const bool useImm = useImmEstimator();
+
     if (!config.kalman_enabled)
     {
         track.kalman.reset();
+        track.imm.reset();
         track.smoothX = rawInnerX;
         track.smoothY = rawInnerY;
     }
+    else if (useImm)
+    {
+        track.kalman.reset();
+        const auto velocity = track.imm.velocity();
+        const bool highSpeed =
+            std::abs(velocity.first) > 45.0 * scaleFactor() ||
+            std::abs(velocity.second) > 45.0 * scaleFactor();
+        track.imm.setSettings(buildInnerAimKalmanSettings(highSpeed));
+
+        const double lookahead = highSpeed ? 0.018 : 0.011;
+        const aim::AimKalmanTelemetry telemetry = track.imm.update(rawInnerX, rawInnerY, dt, lookahead);
+        const double velocityLeadSeconds = highSpeed ? 0.011 : 0.0;
+        double leadX = telemetry.velocity_x * velocityLeadSeconds;
+        double leadY = telemetry.velocity_y * velocityLeadSeconds;
+        const double maxLead = 2.5 * scaleFactor();
+        const double leadMag = std::hypot(leadX, leadY);
+        if (leadMag > maxLead && leadMag > 1e-9)
+        {
+            const double leadScale = maxLead / leadMag;
+            leadX *= leadScale;
+            leadY *= leadScale;
+        }
+        track.smoothX = telemetry.estimate_x + leadX;
+        track.smoothY = telemetry.estimate_y + leadY;
+    }
     else
     {
+        track.imm.reset();
         const auto velocity = track.kalman.velocity();
         const bool highSpeed =
             std::abs(velocity.first) > 45.0 * scaleFactor() ||
@@ -314,7 +351,7 @@ void MultiTargetTracker::updateInnerAim(InnerAimTrack& track, const cv::Rect& de
     track.smoothY = std::clamp(track.smoothY, det.y - 2.0 * scaleFactor(), det.y + det.height + 2.0 * scaleFactor());
 
     track.radius = (4.0f + (1.0f - track.confidence) * 14.0f) * scaleFactor();
-    if (config.kalman_enabled && track.kalman.initialized())
+    if (config.kalman_enabled && (useImm ? track.imm.initialized() : track.kalman.initialized()))
         track.radius = std::max(3.5f * scaleFactor(), track.radius * 0.65f);
 
     track.consistencyScore = std::min(1.0f, track.consistencyScore + 0.22f);
@@ -1159,7 +1196,13 @@ void MultiTargetTracker::update(
             t.box.height = std::max(1.0f, t.box.height + t.sizeVelocity.y * static_cast<float>(dt));
             t.pivotX += t.velocity.x * dt;
             t.pivotY += t.velocity.y * dt;
-            if (config.kalman_enabled && t.innerAim.kalman.initialized())
+            if (config.kalman_enabled && config.estimator_mode == "imm" && t.innerAim.imm.initialized())
+            {
+                const auto predicted = t.innerAim.imm.predict(std::clamp(dt + 0.011, 0.0, 0.08));
+                t.innerAim.smoothX = predicted.first;
+                t.innerAim.smoothY = predicted.second;
+            }
+            else if (config.kalman_enabled && t.innerAim.kalman.initialized())
             {
                 const auto predicted = t.innerAim.kalman.predict(std::clamp(dt + 0.011, 0.0, 0.08));
                 t.innerAim.smoothX = predicted.first;

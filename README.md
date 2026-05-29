@@ -16,9 +16,9 @@ Search by GUI label, config key, tab, section, or source file. Rows marked `CUDA
 
 Perfect Aim v1.0 keeps all neural systems advisory only and default OFF. The runtime path remains:
 
-`Video Frame -> Detector -> Tracker -> Kalman -> Temporal Predictor -> Neural Targeting Head -> Adaptive Influence + SmartBlender -> PID/Governor -> Mouse Output`
+`Video Frame -> Detector -> Tracker -> State Estimator (Kalman/IMM) -> Temporal Predictor -> Neural Targeting Head -> Adaptive Influence + SmartBlender -> PID/Governor -> Mouse Output`
 
-PID/Kalman remains the convergence owner. Temporal prediction and the neural targeting head can only add bounded feed-forward/refinement offsets; they do not replace the tracked target, modify the PID observation point, or write directly to final actuator deltas.
+PID/Kalman remains the convergence owner by default. Selecting IMM changes only the InnerAim tracker estimator in v1; temporal prediction and the neural targeting head can only add bounded feed-forward/refinement offsets, and they do not replace the tracked target, modify the PID observation point, or write directly to final actuator deltas.
 
 The Neural tab exposes Balanced, Aggressive, Smooth, and Sniper presets. Presets tune prediction influence, neural refinement range, and SmartBlender damping/jerk limits while retaining opt-in master toggles. Optional telemetry can show current adaptive influence, confidence, predicted lead, neural refinement, and SmartBlender jitter/oscillation state on the game overlay, or write a throttled CSV log for tuning.
 
@@ -95,6 +95,7 @@ The Neural tab exposes Balanced, Aggressive, Smooth, and Sniper presets. Presets
 | --- | --- | --- | --- | --- | --- |
 | FOV | FOV X | fovX | 10-120 | 70 | Horizontal field of view for the mouse controller. |
 | FOV | FOV Y | fovY | 10-120 | 70 | Vertical field of view for the mouse controller. |
+| State Estimator | Estimator mode | estimator_mode | kalman, imm | kalman | Selects the InnerAim tracker estimator. IMM is opt-in and does not replace the mouse-level PID/Kalman path in v1. |
 | State Estimator | Acquisition frames | kalman_acquisition_frames | 3-5 | n/a | Frames used to ramp prediction weight after target acquisition. |
 | State Estimator | Process noise position | kalman_process_noise_position | 0.0001-5000 | n/a | Position process noise. Higher values adapt faster to position changes. |
 | State Estimator | Process noise velocity | kalman_process_noise_velocity | 0.0001-50000 | n/a | Velocity process noise. Higher values adapt faster to speed changes. |

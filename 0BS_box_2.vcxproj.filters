@@ -77,6 +77,7 @@
   <ItemGroup>
     <ClInclude Include="include\other_tools.h" />
     <ClInclude Include="include\memory_images.h" />
+    <ClInclude Include="include\aim_imm.h" />
     <ClInclude Include="capture\capture.h" />
     <ClInclude Include="capture\capture_geometry.h" />
     <ClInclude Include="capture\capture_utils.h" />
