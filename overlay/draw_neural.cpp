@@ -187,6 +187,18 @@ void draw_neural()
             OverlayConfig_MarkDirty();
         }
 
+        if (ImGui::Checkbox("Adaptive prediction influence", &config.temporal_prediction_adaptive_influence_enabled))
+        {
+            OverlayConfig_MarkDirty();
+        }
+
+        if (ImGui::SliderFloat("Adaptive influence EMA", &config.temporal_prediction_adaptive_ema_alpha, 0.05f, 1.0f, "%.2f"))
+        {
+            config.temporal_prediction_adaptive_ema_alpha =
+                std::clamp(config.temporal_prediction_adaptive_ema_alpha, 0.05f, 1.0f);
+            OverlayConfig_MarkDirty();
+        }
+
         if (ImGui::SliderFloat("Max prediction lead (px)", &config.temporal_prediction_max_lead_px, 20.0f, 80.0f, "%.1f"))
         {
             config.temporal_prediction_max_lead_px = std::clamp(config.temporal_prediction_max_lead_px, 20.0f, 80.0f);

@@ -79,6 +79,8 @@ private:
     std::pair<double, double>     neuralTargetingRefinedAimPoint{ 0.0, 0.0 };
     bool                          neuralTargetingRefinedAimPointValid = false;
     mutable std::mutex            neuralTargetingDebugMutex;
+    double                        adaptivePredictionInfluenceEma = 0.0;
+    int                           adaptivePredictionTrackId = -1;
 
     void moveWorkerLoop();
     void queueMove(int dx, int dy);
@@ -103,6 +105,15 @@ private:
         const BoxTarget& target,
         const LockedTargetInfo& lockInfo);
     void setNeuralTargetingDebugPoint(const BoxTarget& target, const std::pair<double, double>& totalLead);
+    double computeAdaptivePredictionInfluence(
+        int trackId,
+        double distanceToCrosshair,
+        double measuredSpeed,
+        double directionCosine,
+        double confidence,
+        int predictionAgeFrames,
+        double baseInfluence);
+    void resetAdaptivePredictionInfluence();
     std::pair<double, double> pixelDeltaToCounts(double pixelDx, double pixelDy) const;
     void resetPid();
 

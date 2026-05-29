@@ -108,6 +108,14 @@ double smoothStep01(double t)
     return t * t * (3.0 - 2.0 * t);
 }
 
+double smoothStepRange(double edge0, double edge1, double value)
+{
+    if (edge1 <= edge0)
+        return value >= edge1 ? 1.0 : 0.0;
+
+    return smoothStep01((value - edge0) / (edge1 - edge0));
+}
+
 std::pair<double, double> clampVectorLength(double x, double y, double maxLength)
 {
     const double length = std::hypot(x, y);
@@ -757,20 +765,84 @@ void MouseThread::setNeuralTargetingDebugPoint(const BoxTarget& target, const st
         std::isfinite(neuralTargetingRefinedAimPoint.second);
 }
 
+double MouseThread::computeAdaptivePredictionInfluence(
+    int trackId,
+    double distanceToCrosshair,
+    double measuredSpeed,
+    double directionCosine,
+    double confidence,
+    int predictionAgeFrames,
+    double baseInfluence)
+{
+    if (!config.temporal_prediction_adaptive_influence_enabled)
+        return baseInfluence;
+
+    if (trackId != adaptivePredictionTrackId)
+    {
+        adaptivePredictionTrackId = trackId;
+        adaptivePredictionInfluenceEma = 0.0;
+    }
+
+    if (predictionAgeFrames > 5)
+    {
+        adaptivePredictionInfluenceEma *= 0.35;
+        return std::clamp(adaptivePredictionInfluenceEma, 0.0, 0.85);
+    }
+
+    const double distanceBand =
+        smoothStepRange(35.0, 90.0, distanceToCrosshair) *
+        (1.0 - smoothStepRange(180.0, 320.0, distanceToCrosshair));
+    const double adaptiveSpeedFactor = std::clamp(measuredSpeed / 1000.0, 0.0, 1.0);
+    const double direction_factor = (directionCosine < -0.35 && confidence < 0.82) ? 0.30 : 1.0;
+    const double age_factor = (predictionAgeFrames <= 3) ? 1.0 : 0.35;
+    double rawInfluence =
+        baseInfluence * distanceBand * adaptiveSpeedFactor * confidence * direction_factor * age_factor;
+    rawInfluence = std::clamp(rawInfluence, 0.0, 0.85);
+    const double emaAlpha = std::clamp(
+        static_cast<double>(config.temporal_prediction_adaptive_ema_alpha),
+        0.05,
+        1.0);
+
+    adaptivePredictionInfluenceEma += (rawInfluence - adaptivePredictionInfluenceEma) * emaAlpha;
+    return std::clamp(adaptivePredictionInfluenceEma, 0.0, 0.85);
+}
+
+void MouseThread::resetAdaptivePredictionInfluence()
+{
+    adaptivePredictionInfluenceEma = 0.0;
+    adaptivePredictionTrackId = -1;
+}
+
 std::pair<double, double> MouseThread::computePredictionFeedForwardLead(
     const BoxTarget& target,
     const LockedTargetInfo& lockInfo)
 {
     if (!config.temporal_prediction_enabled)
+    {
+        resetAdaptivePredictionInfluence();
         return { 0.0, 0.0 };
+    }
 
-    if (lockInfo.predictedFutureAgeFrames > 3 || lockInfo.predictedFuture.empty())
+    if (lockInfo.predictedFuture.empty())
+    {
+        resetAdaptivePredictionInfluence();
         return { 0.0, 0.0 };
+    }
+
+    if (lockInfo.predictedFutureAgeFrames > 3)
+    {
+        if (lockInfo.predictedFutureAgeFrames > 5)
+            adaptivePredictionInfluenceEma *= 0.35;
+        else
+            resetAdaptivePredictionInfluence();
+        return { 0.0, 0.0 };
+    }
 
     const auto first = lockInfo.predictedFuture.front();
     if (!std::isfinite(first.first) || !std::isfinite(first.second) ||
         !std::isfinite(target.smoothX) || !std::isfinite(target.smoothY))
     {
+        resetAdaptivePredictionInfluence();
         return { 0.0, 0.0 };
     }
 
@@ -778,7 +850,10 @@ std::pair<double, double> MouseThread::computePredictionFeedForwardLead(
     const double maxFirstPointDistance = highResolution ? 65.0 : 50.0;
     const double firstPointDistance = std::hypot(first.first - target.smoothX, first.second - target.smoothY);
     if (!std::isfinite(firstPointDistance) || firstPointDistance > maxFirstPointDistance)
+    {
+        resetAdaptivePredictionInfluence();
         return { 0.0, 0.0 };
+    }
 
     double predictionVx = first.first - target.smoothX;
     double predictionVy = first.second - target.smoothY;
@@ -792,31 +867,51 @@ std::pair<double, double> MouseThread::computePredictionFeedForwardLead(
     const double predictionSpeed = std::hypot(predictionVx, predictionVy) * predictionFps;
     const double maxPredictionSpeed = highResolution ? 1500.0 : 1200.0;
     if (!std::isfinite(predictionSpeed) || predictionSpeed > maxPredictionSpeed)
+    {
+        resetAdaptivePredictionInfluence();
         return { 0.0, 0.0 };
+    }
 
     const double confidenceFloor = highResolution ? 0.65 : 0.55;
     const double confidence = std::isfinite(target.confidence) ? std::clamp(target.confidence, 0.0, 1.0) : 0.0;
     if (confidence < confidenceFloor)
+    {
+        resetAdaptivePredictionInfluence();
         return { 0.0, 0.0 };
+    }
 
     const double measuredVx = lockInfo.targetVelocityX;
     const double measuredVy = lockInfo.targetVelocityY;
+    double directionCosine = 1.0;
     const double measuredSpeed = std::hypot(measuredVx, measuredVy);
     if (measuredSpeed > 100.0 && predictionSpeed > 100.0)
     {
         const double predMag = std::hypot(predictionVx, predictionVy);
-        const double directionCosine = (predictionVx * measuredVx + predictionVy * measuredVy) /
+        directionCosine = (predictionVx * measuredVx + predictionVy * measuredVy) /
             std::max(1e-6, predMag * measuredSpeed);
         if (directionCosine < -0.35 && confidence < 0.85)
+        {
+            resetAdaptivePredictionInfluence();
             return { 0.0, 0.0 };
+        }
     }
 
     std::pair<double, double> phase2Lead{ 0.0, 0.0 };
     const double distanceToCrosshair = std::hypot(target.smoothX - center_x, target.smoothY - center_y);
     const double near_damping = smoothStep01(distanceToCrosshair / 80.0);
     const double speed_weight = std::clamp(measuredSpeed / 1200.0, 0.0, 1.0);
-    const double influence = std::clamp(static_cast<double>(config.temporal_prediction_influence), 0.0, 1.0);
-    const double weight = influence * confidence * speed_weight * near_damping;
+    const double baseInfluence = std::clamp(static_cast<double>(config.temporal_prediction_influence), 0.0, 1.0);
+    const double influence = computeAdaptivePredictionInfluence(
+        lockInfo.trackId,
+        distanceToCrosshair,
+        measuredSpeed,
+        directionCosine,
+        confidence,
+        lockInfo.predictedFutureAgeFrames,
+        baseInfluence);
+    const double weight = config.temporal_prediction_adaptive_influence_enabled
+        ? influence
+        : influence * confidence * speed_weight * near_damping;
     if (config.temporal_prediction_feed_forward_enabled && weight > 1e-6)
     {
         const double rawLeadX = first.first - target.smoothX;
@@ -885,6 +980,7 @@ void MouseThread::releaseMouse()
 void MouseThread::resetPrediction()
 {
     clearQueuedMoves();
+    resetAdaptivePredictionInfluence();
     prev_time = std::chrono::steady_clock::time_point();
     prev_x = 0;
     prev_y = 0;
@@ -900,7 +996,10 @@ void MouseThread::setTargetDetected(bool detected)
 {
     const bool wasDetected = target_detected.exchange(detected);
     if (!detected && wasDetected)
+    {
         resetPid();
+        resetAdaptivePredictionInfluence();
+    }
 }
 
 void MouseThread::checkAndResetPredictions()
@@ -976,6 +1075,7 @@ void MouseThread::clearFuturePositions()
 {
     std::lock_guard<std::mutex> lock(futurePositionsMutex);
     futurePositions.clear();
+    resetAdaptivePredictionInfluence();
     {
         std::lock_guard<std::mutex> debugLock(neuralTargetingDebugMutex);
         neuralTargetingRefinedAimPointValid = false;

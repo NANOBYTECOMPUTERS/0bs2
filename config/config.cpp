@@ -179,6 +179,8 @@ bool Config::loadConfig(const std::string& filename)
         temporal_prediction_interval_frames = 2;
         temporal_prediction_feed_forward_enabled = false;
         temporal_prediction_influence = 0.35f;
+        temporal_prediction_adaptive_influence_enabled = false;
+        temporal_prediction_adaptive_ema_alpha = 0.62f;
         temporal_prediction_max_lead_px = 45.0f;
 
         // Neural targeting head
@@ -575,6 +577,8 @@ bool Config::loadConfig(const std::string& filename)
     temporal_prediction_interval_frames = get_long("temporal_prediction_interval_frames", 2);
     temporal_prediction_feed_forward_enabled = get_bool("temporal_prediction_feed_forward_enabled", false);
     temporal_prediction_influence = (float)get_double("temporal_prediction_influence", 0.35);
+    temporal_prediction_adaptive_influence_enabled = get_bool("temporal_prediction_adaptive_influence_enabled", false);
+    temporal_prediction_adaptive_ema_alpha = (float)get_double("temporal_prediction_adaptive_ema_alpha", 0.62);
     temporal_prediction_max_lead_px = (float)get_double("temporal_prediction_max_lead_px", 45.0);
 
     // Neural targeting head
@@ -882,6 +886,8 @@ bool Config::loadConfig(const std::string& filename)
     if (temporal_prediction_interval_frames > 16) temporal_prediction_interval_frames = 16;
     if (temporal_prediction_influence < 0.0f) temporal_prediction_influence = 0.0f;
     if (temporal_prediction_influence > 1.0f) temporal_prediction_influence = 1.0f;
+    if (temporal_prediction_adaptive_ema_alpha < 0.05f) temporal_prediction_adaptive_ema_alpha = 0.05f;
+    if (temporal_prediction_adaptive_ema_alpha > 1.0f) temporal_prediction_adaptive_ema_alpha = 1.0f;
     if (temporal_prediction_max_lead_px < 20.0f) temporal_prediction_max_lead_px = 20.0f;
     if (temporal_prediction_max_lead_px > 80.0f) temporal_prediction_max_lead_px = 80.0f;
     if (neural_targeting_model_path.empty()) neural_targeting_model_path = "models/neural_targeting_head.onnx";
@@ -1054,6 +1060,8 @@ bool Config::loadConfigMerged(const std::string& filename)
     MERGE_FIELD("temporal_prediction_interval_frames", temporal_prediction_interval_frames);
     MERGE_FIELD("temporal_prediction_feed_forward_enabled", temporal_prediction_feed_forward_enabled);
     MERGE_FIELD("temporal_prediction_influence", temporal_prediction_influence);
+    MERGE_FIELD("temporal_prediction_adaptive_influence_enabled", temporal_prediction_adaptive_influence_enabled);
+    MERGE_FIELD("temporal_prediction_adaptive_ema_alpha", temporal_prediction_adaptive_ema_alpha);
     MERGE_FIELD("temporal_prediction_max_lead_px", temporal_prediction_max_lead_px);
     MERGE_FIELD("neural_targeting_enabled", neural_targeting_enabled);
     MERGE_FIELD("neural_targeting_model_path", neural_targeting_model_path);
@@ -1399,6 +1407,8 @@ bool Config::saveConfig(const std::string& filename)
         << "temporal_prediction_feed_forward_enabled = " << (temporal_prediction_feed_forward_enabled ? "true" : "false") << "\n"
         << std::fixed << std::setprecision(3)
         << "temporal_prediction_influence = " << temporal_prediction_influence << "\n"
+        << "temporal_prediction_adaptive_influence_enabled = " << (temporal_prediction_adaptive_influence_enabled ? "true" : "false") << "\n"
+        << "temporal_prediction_adaptive_ema_alpha = " << temporal_prediction_adaptive_ema_alpha << "\n"
         << "temporal_prediction_max_lead_px = " << temporal_prediction_max_lead_px << "\n\n";
 
     file << "# Neural targeting head\n"

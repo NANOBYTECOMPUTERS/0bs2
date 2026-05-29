@@ -133,6 +133,8 @@ public:
     int temporal_prediction_interval_frames;
     bool temporal_prediction_feed_forward_enabled;
     float temporal_prediction_influence;
+    bool temporal_prediction_adaptive_influence_enabled;
+    float temporal_prediction_adaptive_ema_alpha;
     float temporal_prediction_max_lead_px;
 
     // Neural targeting head
