@@ -109,6 +109,10 @@ GUI_CONTROLS: list[dict[str, str]] = [
     row("Mouse", "State Estimator", "Compensate detection delay", "kalman_compensate_detection_delay", "Activate/deactivate", "true/false", "Accounts for detector latency in prediction.", "overlay/draw_mouse.cpp"),
     row("Mouse", "State Estimator", "Additional prediction (ms)", "kalman_additional_prediction_ms", "Slider", "-80.0-120.0", "Manual extra prediction offset in milliseconds.", "overlay/draw_mouse.cpp"),
     row("Mouse", "State Estimator", "Reset timeout (s)", "kalman_reset_timeout_sec", "Slider", "0.05-3.0", "Time without stable observations before estimator state resets.", "overlay/draw_mouse.cpp"),
+    row("Mouse", "State Estimator", "Ego-motion compensation", "ego_motion_compensation_enabled", "Activate/deactivate", "true/false", "Opt-in tracker-prior compensation from emitted mouse/view motion. Raw detections, PID observation, and final actuator output are unchanged.", "overlay/draw_mouse.cpp"),
+    row("Mouse", "State Estimator", "Ego compensation strength", "ego_motion_compensation_strength", "Slider", "0.0-1.0", "Fraction of recent emitted motion subtracted from tracker priors/history to reduce camera-motion jitter.", "overlay/draw_mouse.cpp"),
+    row("Mouse", "State Estimator", "Ego max shift (px @640)", "ego_motion_compensation_max_shift_px", "Slider", "1-128", "Per-frame compensation clamp at 640 detection resolution; scales with detection_resolution.", "overlay/draw_mouse.cpp"),
+    row("Mouse", "State Estimator", "Ego max age (ms)", "ego_motion_compensation_max_age_ms", "Slider", "16-500", "Drops stale emitted-motion samples so compensation fails closed.", "overlay/draw_mouse.cpp"),
     row("Mouse", "Pure PID Movement", "Actuator Hz", "pid_actuator_hz", "Slider", "30-2000", "PID update rate used by the mouse actuator.", "overlay/draw_mouse.cpp"),
     row("Mouse", "Pure PID Movement", "Kp", "pid_kp", "Slider", "0.0000-1.5000", "Proportional PID gain.", "overlay/draw_mouse.cpp"),
     row("Mouse", "Pure PID Movement", "Ki", "pid_ki", "Slider", "0.0000-0.5000", "Integral PID gain.", "overlay/draw_mouse.cpp"),
@@ -404,6 +408,18 @@ def generate_markdown() -> str:
     out.append("")
     out.append("Search by GUI label, config key, tab, section, or source file. Rows marked `CUDA GUI / DML config-only` appear as GUI controls only in CUDA builds; the current `x64/DML/config.ini` keeps those values as config-only settings.")
     out.append("")
+    out.append("## Perfect Aim v1.0")
+    out.append("")
+    out.append("Perfect Aim v1.0 keeps all neural systems advisory only and default OFF. The runtime path remains:")
+    out.append("")
+    out.append("`Video Frame -> Detector -> Tracker -> State Estimator (Kalman/IMM) -> Temporal Predictor -> Neural Targeting Head -> Adaptive Influence + SmartBlender -> PID/Governor -> Mouse Output`")
+    out.append("")
+    out.append("PID/Kalman remains the convergence owner by default. Selecting IMM changes only the InnerAim tracker estimator in v1; temporal prediction and the neural targeting head can only add bounded feed-forward/refinement offsets, and they do not replace the tracked target, modify the PID observation point, or write directly to final actuator deltas.")
+    out.append("")
+    out.append("Ego-motion compensation is an opt-in tracker stabilizer. It subtracts bounded, recent emitted mouse/view motion from tracker priors and temporal history only; raw detector boxes, PID observation points, and final actuator output remain unchanged.")
+    out.append("")
+    out.append("The Neural tab exposes Balanced, Aggressive, Smooth, and Sniper presets. Presets tune prediction influence, neural refinement range, and SmartBlender damping/jerk limits while retaining opt-in master toggles. Optional telemetry can show current adaptive influence, confidence, predicted lead, neural refinement, and SmartBlender jitter/oscillation state on the game overlay, or write a throttled CSV log for tuning.")
+    out.append("")
     out.append("## GUI Tab Order")
     out.append("")
     out.append(md_table(["Order", "Tab", "Notes"], [[i + 1, tab, "Read-only monitor tab" if tab == "Stats" else "Adjustable controls documented below"] for i, tab in enumerate(TAB_ORDER)]))
@@ -589,6 +605,9 @@ def write_pdf(path: Path) -> None:
     story.append(Spacer(1, 0.1 * inch))
     story.append(paragraph("Searchable Directory", h1))
     story.append(paragraph("Use PDF search for any GUI label, config key, tab, section, or source file. The companion CSV at docs/settings-reference/settings-index.csv contains the same searchable directory in row form.", body))
+    story.append(paragraph("Perfect Aim v1.0", h1))
+    story.append(paragraph("Perfect Aim v1.0 keeps neural systems advisory only and default OFF. PID/Kalman remains the convergence owner; temporal prediction, neural targeting, SmartBlender, and ego-motion compensation are bounded helper paths.", body))
+    story.append(paragraph("Ego-motion compensation subtracts bounded recent emitted mouse/view motion from tracker priors and temporal history only. It does not modify raw detections, PID observation points, or final actuator output.", body))
     story.append(Spacer(1, 0.08 * inch))
     story.append(pdf_table(
         ["Order", "Tab", "Notes"],

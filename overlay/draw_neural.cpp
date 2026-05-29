@@ -22,6 +22,7 @@ namespace
 char neuralModelPathBuf[260] = {};
 char temporalModelPathBuf[260] = {};
 char neuralTargetingModelPathBuf[260] = {};
+char neuralTelemetryLogPathBuf[260] = {};
 bool neuralUiInitialized = false;
 
 bool hasNeuralModelExtension(const std::filesystem::path& path)
@@ -69,13 +70,143 @@ void syncNeuralBuffers()
     strncpy_s(neuralModelPathBuf, config.neural_tracker_model_path.c_str(), _TRUNCATE);
     strncpy_s(temporalModelPathBuf, config.temporal_prediction_model_path.c_str(), _TRUNCATE);
     strncpy_s(neuralTargetingModelPathBuf, config.neural_targeting_model_path.c_str(), _TRUNCATE);
+    strncpy_s(neuralTelemetryLogPathBuf, config.neural_control_telemetry_log_path.c_str(), _TRUNCATE);
     neuralUiInitialized = true;
+}
+
+void refreshMouseThreadFromNeural()
+{
+    if (!globalMouseThread)
+        return;
+
+    globalMouseThread->updateConfig(
+        config.detection_resolution,
+        config.fovX,
+        config.fovY,
+        config.auto_shoot,
+        config.bScope_multiplier);
+}
+
+void applyPerfectAimPreset(const char* preset)
+{
+    config.neural_control_preset = preset ? preset : "Balanced";
+    config.temporal_prediction_feed_forward_enabled = true;
+    config.temporal_prediction_adaptive_influence_enabled = true;
+    config.pid_smart_blending_enabled = true;
+
+    if (config.neural_control_preset == "Aggressive")
+    {
+        config.temporal_prediction_influence = 0.50f;
+        config.temporal_prediction_max_lead_px = 60.0f;
+        config.neural_targeting_influence = 0.55f;
+        config.neural_targeting_max_refinement_px = 45.0f;
+        config.pid_smart_blending_aggression = 0.85f;
+        config.pid_smart_blending_near_damping = 0.45f;
+        config.pid_smart_blending_jerk_limit_px = 1.15f;
+        config.pid_smart_blending_confidence_floor = 0.40f;
+    }
+    else if (config.neural_control_preset == "Smooth")
+    {
+        config.temporal_prediction_influence = 0.22f;
+        config.temporal_prediction_max_lead_px = 38.0f;
+        config.neural_targeting_influence = 0.28f;
+        config.neural_targeting_max_refinement_px = 28.0f;
+        config.pid_smart_blending_aggression = 0.48f;
+        config.pid_smart_blending_near_damping = 0.92f;
+        config.pid_smart_blending_jerk_limit_px = 0.32f;
+        config.pid_smart_blending_confidence_floor = 0.50f;
+    }
+    else if (config.neural_control_preset == "Sniper")
+    {
+        config.temporal_prediction_influence = 0.18f;
+        config.temporal_prediction_max_lead_px = 28.0f;
+        config.neural_targeting_influence = 0.20f;
+        config.neural_targeting_max_refinement_px = 22.0f;
+        config.pid_smart_blending_aggression = 0.38f;
+        config.pid_smart_blending_near_damping = 0.95f;
+        config.pid_smart_blending_jerk_limit_px = 0.22f;
+        config.pid_smart_blending_confidence_floor = 0.60f;
+    }
+    else
+    {
+        config.neural_control_preset = "Balanced";
+        config.temporal_prediction_influence = 0.32f;
+        config.temporal_prediction_max_lead_px = 45.0f;
+        config.neural_targeting_influence = 0.40f;
+        config.neural_targeting_max_refinement_px = 35.0f;
+        config.pid_smart_blending_aggression = 0.65f;
+        config.pid_smart_blending_near_damping = 0.75f;
+        config.pid_smart_blending_jerk_limit_px = 0.65f;
+        config.pid_smart_blending_confidence_floor = 0.45f;
+    }
+
+    config.temporal_prediction_adaptive_ema_alpha = 0.62f;
+    config.pid_smart_blending_deadzone_px = 0.0f;
+    OverlayConfig_MarkDirty();
+    refreshMouseThreadFromNeural();
 }
 }
 
 void draw_neural()
 {
     syncNeuralBuffers();
+
+    if (OverlayUI::BeginSection("Perfect Aim v1.0 Presets", "neural_section_perfect_aim_presets"))
+    {
+        const char* presets[] = { "Balanced", "Aggressive", "Smooth", "Sniper" };
+        int presetIndex = 0;
+        for (int i = 0; i < IM_ARRAYSIZE(presets); ++i)
+        {
+            if (config.neural_control_preset == presets[i])
+            {
+                presetIndex = i;
+                break;
+            }
+        }
+
+        if (ImGui::Combo("Control preset", &presetIndex, presets, IM_ARRAYSIZE(presets)))
+        {
+            applyPerfectAimPreset(presets[presetIndex]);
+        }
+
+        if (ImGui::Checkbox("Neural telemetry overlay", &config.neural_control_telemetry_overlay_enabled))
+        {
+            OverlayConfig_MarkDirty();
+        }
+
+        if (ImGui::Checkbox("Neural telemetry logging", &config.neural_control_telemetry_logging_enabled))
+        {
+            OverlayConfig_MarkDirty();
+        }
+
+        ImGui::SetNextItemWidth(OverlayUI::AdaptiveItemWidth(0.78f));
+        if (ImGui::InputText("Telemetry log path", neuralTelemetryLogPathBuf, IM_ARRAYSIZE(neuralTelemetryLogPathBuf)))
+        {
+            config.neural_control_telemetry_log_path = neuralTelemetryLogPathBuf;
+            OverlayConfig_MarkDirty();
+        }
+
+        if (ImGui::SliderInt("Telemetry log interval (ms)", &config.neural_control_telemetry_log_interval_ms, 50, 5000))
+        {
+            config.neural_control_telemetry_log_interval_ms =
+                std::clamp(config.neural_control_telemetry_log_interval_ms, 50, 5000);
+            OverlayConfig_MarkDirty();
+        }
+
+        if (globalMouseThread)
+        {
+            NeuralControlTelemetry telemetry;
+            if (globalMouseThread->getNeuralControlTelemetry(telemetry))
+            {
+                ImGui::Text("Current influence: %.1f%%", telemetry.adaptiveInfluence * 100.0);
+                ImGui::Text("Prediction confidence: %.2f", telemetry.confidence);
+                ImGui::Text("Predicted lead: %.2f, %.2f", telemetry.predictionLeadX, telemetry.predictionLeadY);
+                ImGui::Text("Smart jitter: %.2f", telemetry.jitterScore);
+            }
+        }
+
+        OverlayUI::EndSection();
+    }
 
     if (OverlayUI::BeginSection("Neural Tracker", "neural_section_tracker"))
     {
@@ -181,9 +312,21 @@ void draw_neural()
             OverlayConfig_MarkDirty();
         }
 
-        if (ImGui::SliderFloat("Prediction influence", &config.temporal_prediction_influence, 0.0f, 1.0f, "%.2f"))
+        if (ImGui::SliderFloat("Base prediction influence##Prediction influence", &config.temporal_prediction_influence, 0.0f, 1.0f, "%.2f"))
         {
             config.temporal_prediction_influence = std::clamp(config.temporal_prediction_influence, 0.0f, 1.0f);
+            OverlayConfig_MarkDirty();
+        }
+
+        if (ImGui::Checkbox("Adaptive prediction influence", &config.temporal_prediction_adaptive_influence_enabled))
+        {
+            OverlayConfig_MarkDirty();
+        }
+
+        if (ImGui::SliderFloat("Adaptive influence EMA", &config.temporal_prediction_adaptive_ema_alpha, 0.05f, 1.0f, "%.2f"))
+        {
+            config.temporal_prediction_adaptive_ema_alpha =
+                std::clamp(config.temporal_prediction_adaptive_ema_alpha, 0.05f, 1.0f);
             OverlayConfig_MarkDirty();
         }
 

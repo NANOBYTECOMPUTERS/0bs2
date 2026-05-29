@@ -62,8 +62,9 @@ class DetectionTrackingContractTest(unittest.TestCase):
         missed_branch = match.group("body")
         self.assertIn("if (config.kalman_enabled && t.innerAim.kalman.initialized())", missed_branch)
         self.assertIn("else", missed_branch)
-        self.assertIn("t.innerAim.smoothX += t.velocity.x * dt;", missed_branch)
-        self.assertIn("t.innerAim.smoothY += t.velocity.y * dt;", missed_branch)
+        self.assertIn("applyInnerAimEgoMotion(t.innerAim, compensatedEgoMotion)", missed_branch)
+        self.assertIn("t.innerAim.smoothX += t.velocity.x * dt", missed_branch)
+        self.assertIn("t.innerAim.smoothY += t.velocity.y * dt", missed_branch)
 
 
 if __name__ == "__main__":

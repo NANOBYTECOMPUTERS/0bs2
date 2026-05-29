@@ -95,13 +95,14 @@ class NeuralTargetingHeadContractTest(unittest.TestCase):
         self.assertIn("models/neural_targeting_head.onnx", config_cpp)
         self.assertIn("neural_targeting_enabled = false", config_cpp)
 
-        for relative_path in ("x64/DML/config.ini", "x64/CUDA/config.ini"):
-            with self.subTest(relative_path=relative_path):
-                config = self.read(relative_path)
-                self.assertIn("neural_targeting_enabled = false", config)
-                self.assertIn("neural_targeting_model_path = models/neural_targeting_head.onnx", config)
-                self.assertIn("neural_targeting_influence = 0.400", config)
-                self.assertIn("neural_targeting_max_refinement_px = 35.000", config)
+        for token in (
+            "neural_targeting_enabled = false",
+            'neural_targeting_enabled = get_bool("neural_targeting_enabled", false)',
+            "neural_targeting_model_path = \"models/neural_targeting_head.onnx\"",
+            "neural_targeting_influence = 0.40f",
+            "neural_targeting_max_refinement_px = 35.0f",
+        ):
+            self.assertIn(token, config_cpp)
 
     def test_mouse_path_blends_targeting_head_into_feed_forward_only(self):
         mouse_h = self.read("mouse/mouse.h")

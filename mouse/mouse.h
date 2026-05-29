@@ -23,8 +23,25 @@
 #include "BoxTarget.h"
 #include "MouseInput.h"
 #include "aim_kalman.h"
+#include "ego_motion_compensator.h"
 #include "PidMouseController.h"
 #include "neural/targeting/NeuralTargetingHead.h"
+
+struct NeuralControlTelemetry
+{
+    double adaptiveInfluence = 0.0;
+    double confidence = 0.0;
+    double predictionLeadX = 0.0;
+    double predictionLeadY = 0.0;
+    double neuralRefinementX = 0.0;
+    double neuralRefinementY = 0.0;
+    double totalLeadX = 0.0;
+    double totalLeadY = 0.0;
+    double jitterScore = 0.0;
+    double oscillationPenalty = 0.0;
+    int trackId = -1;
+    bool valid = false;
+};
 
 class MouseThread
 {
@@ -79,6 +96,13 @@ private:
     std::pair<double, double>     neuralTargetingRefinedAimPoint{ 0.0, 0.0 };
     bool                          neuralTargetingRefinedAimPointValid = false;
     mutable std::mutex            neuralTargetingDebugMutex;
+    double                        adaptivePredictionInfluenceEma = 0.0;
+    int                           adaptivePredictionTrackId = -1;
+    bool                          adaptivePredictionInfluenceActive = false;
+    aim::EgoMotionCompensator     egoMotionCompensator;
+    NeuralControlTelemetry        neuralControlTelemetry;
+    mutable std::mutex            neuralControlTelemetryMutex;
+    std::chrono::steady_clock::time_point lastNeuralControlTelemetryLog{};
 
     void moveWorkerLoop();
     void queueMove(int dx, int dy);
@@ -103,6 +127,29 @@ private:
         const BoxTarget& target,
         const LockedTargetInfo& lockInfo);
     void setNeuralTargetingDebugPoint(const BoxTarget& target, const std::pair<double, double>& totalLead);
+    std::pair<double, double> rejectNeuralRefinementAgainstPidDirection(
+        const std::pair<double, double>& neuralRefinement,
+        double errorX,
+        double errorY,
+        double modelConfidence) const;
+    double computeAdaptivePredictionInfluence(
+        int trackId,
+        double distanceToCrosshair,
+        double measuredSpeed,
+        double directionCosine,
+        double confidence,
+        int predictionAgeFrames,
+        double baseInfluence);
+    void resetAdaptivePredictionInfluence();
+    void publishNeuralControlTelemetry(
+        int trackId,
+        double adaptiveInfluence,
+        double confidence,
+        const std::pair<double, double>& phase2Lead,
+        const std::pair<double, double>& neuralRefinement,
+        const std::pair<double, double>& totalLead);
+    void updateNeuralControlActuatorTelemetry(const aim::PidMouseCommand& command);
+    void recordEgoMotionDelta(double pixelDx, double pixelDy, std::chrono::steady_clock::time_point timestamp);
     std::pair<double, double> pixelDeltaToCounts(double pixelDx, double pixelDy) const;
     void resetPid();
 
@@ -176,6 +223,10 @@ public:
         double learnedPredictionLeadX = 0.0,
         double learnedPredictionLeadY = 0.0);
     void clearQueuedMoves();
+    std::pair<double, double> consumeEgoMotionCompensation(
+        std::chrono::steady_clock::time_point start,
+        std::chrono::steady_clock::time_point end);
+    void resetEgoMotionCompensation();
     std::pair<double, double> computePredictionFeedForwardLead(const BoxTarget& target, const LockedTargetInfo& lockInfo);
     std::pair<double, double> predict_target_position(double target_x, double target_y);
     void moveMouse(const BoxTarget& target);
@@ -191,6 +242,7 @@ public:
     void clearFuturePositions();
     std::vector<std::pair<double, double>> getFuturePositions();
     bool getNeuralTargetingRefinedAimPoint(std::pair<double, double>& point) const;
+    bool getNeuralControlTelemetry(NeuralControlTelemetry& telemetry) const;
     void clearWindDebugTrail();
     std::vector<std::pair<double, double>> getWindDebugTrail();
 

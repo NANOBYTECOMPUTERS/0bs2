@@ -13,6 +13,9 @@
 #include <random>
 #include <thread>
 #include <memory>
+#include <filesystem>
+#include <fstream>
+#include <iomanip>
 
 #include "mouse.h"
 #include "OnnxPidGovernor.h"
@@ -21,6 +24,12 @@
 
 namespace
 {
+constexpr double AdaptiveInfluenceActivateThreshold = 0.025;
+constexpr double AdaptiveInfluenceDeactivateThreshold = 0.010;
+constexpr double NeuralRefinementOpposingPidCosineThreshold = -0.25;
+constexpr double NeuralRefinementLowConfidenceThreshold = 0.85;
+constexpr double NeuralRefinementDisagreementScale = 0.25;
+
 aim::AimKalmanSettings buildKalmanSettingsFromConfig()
 {
     aim::AimKalmanSettings settings;
@@ -102,10 +111,30 @@ std::shared_ptr<aim::IPidGovernor> buildPidGovernorFromConfig()
     return aim::createOnnxPidGovernor(config.pid_governor_model_path);
 }
 
+aim::EgoMotionSettings buildEgoMotionSettingsFromConfig()
+{
+    aim::EgoMotionSettings settings;
+    settings.enabled = config.ego_motion_compensation_enabled;
+    settings.strength = static_cast<double>(config.ego_motion_compensation_strength);
+    const double resolutionScale = std::clamp(static_cast<double>(config.detection_resolution) / 640.0, 0.25, 2.0);
+    settings.maxShiftPx = static_cast<double>(config.ego_motion_compensation_max_shift_px) * resolutionScale;
+    settings.maxAgeMs = config.ego_motion_compensation_max_age_ms;
+    return settings;
+}
+
 double smoothStep01(double t)
 {
     t = std::clamp(t, 0.0, 1.0);
     return t * t * (3.0 - 2.0 * t);
+}
+
+double smoothStepRange(double edge0, double edge1, double value)
+{
+    // Degenerate or inverted ranges collapse to a binary step at edge1.
+    if (edge1 <= edge0)
+        return value >= edge1 ? 1.0 : 0.0;
+
+    return smoothStep01((value - edge0) / (edge1 - edge0));
 }
 
 std::pair<double, double> clampVectorLength(double x, double y, double maxLength)
@@ -152,6 +181,7 @@ MouseThread::MouseThread(
     lastPredictionLookaheadSec = 0.0;
     pidController.setSettings(buildPidMouseSettingsFromConfig(screen_width, screen_height, fov_x, fov_y));
     pidController.setGovernor(buildPidGovernorFromConfig());
+    egoMotionCompensator.setSettings(buildEgoMotionSettingsFromConfig());
 
     moveWorker = std::thread(&MouseThread::moveWorkerLoop, this);
     pidActuator = std::thread(&MouseThread::pidActuatorLoop, this);
@@ -178,6 +208,7 @@ void MouseThread::updateConfig(
     targetKalman.reset();
     lastKalmanTelemetry = {};
     lastPredictionLookaheadSec = 0.0;
+    resetEgoMotionCompensation();
 
     {
         std::lock_guard<std::mutex> lock(pidMtx);
@@ -260,9 +291,11 @@ void MouseThread::pidActuatorLoop()
                 actuatorHz = std::clamp(static_cast<double>(settings.actuatorHz), 30.0, 2000.0);
                 command = pidController.step(now);
             }
+            updateNeuralControlActuatorTelemetry(command);
 
             if (command.active)
             {
+                recordEgoMotionDelta(command.pixelDx, command.pixelDy, now);
                 std::pair<double, double> counts{ 0.0, 0.0 };
                 if (command.angularOutputActive)
                 {
@@ -531,6 +564,29 @@ std::pair<double, double> MouseThread::pixelDeltaToCounts(double pixelDx, double
     }
 }
 
+void MouseThread::recordEgoMotionDelta(double pixelDx, double pixelDy, std::chrono::steady_clock::time_point timestamp)
+{
+    egoMotionCompensator.setSettings(buildEgoMotionSettingsFromConfig());
+    egoMotionCompensator.recordDelta(pixelDx, pixelDy, timestamp);
+}
+
+std::pair<double, double> MouseThread::consumeEgoMotionCompensation(
+    std::chrono::steady_clock::time_point start,
+    std::chrono::steady_clock::time_point end)
+{
+    egoMotionCompensator.setSettings(buildEgoMotionSettingsFromConfig());
+    const auto shift = egoMotionCompensator.consume(start, end, std::chrono::steady_clock::now());
+    if (!shift.valid)
+        return { 0.0, 0.0 };
+    return { shift.dx, shift.dy };
+}
+
+void MouseThread::resetEgoMotionCompensation()
+{
+    egoMotionCompensator.setSettings(buildEgoMotionSettingsFromConfig());
+    egoMotionCompensator.reset();
+}
+
 void MouseThread::publishPidObservation(
     double pivotX,
     double pivotY,
@@ -691,11 +747,20 @@ std::pair<double, double> MouseThread::consumeNeuralTargetingResult(
         targetingResult.output.refinement_offset_x,
         targetingResult.output.refinement_offset_y,
         maxRefinement);
+    std::pair<double, double> neuralRefinement = clamped;
+    if (targetingResult.output.confidence < NeuralRefinementLowConfidenceThreshold)
+    {
+        neuralRefinement = rejectNeuralRefinementAgainstPidDirection(
+            clamped,
+            target.smoothX - center_x,
+            target.smoothY - center_y,
+            targetingResult.output.confidence);
+    }
     const double influence = std::clamp(static_cast<double>(config.neural_targeting_influence), 0.0, 1.0);
 
     neuralTargetingRefinement = {
-        clamped.first * influence,
-        clamped.second * influence
+        neuralRefinement.first * influence,
+        neuralRefinement.second * influence
     };
     neuralTargetingLastResultTrackId = lockInfo.trackId;
     neuralTargetingRefinementValid =
@@ -757,20 +822,203 @@ void MouseThread::setNeuralTargetingDebugPoint(const BoxTarget& target, const st
         std::isfinite(neuralTargetingRefinedAimPoint.second);
 }
 
+std::pair<double, double> MouseThread::rejectNeuralRefinementAgainstPidDirection(
+    const std::pair<double, double>& neuralRefinement,
+    double errorX,
+    double errorY,
+    double modelConfidence) const
+{
+    const double neuralMagnitude = std::hypot(neuralRefinement.first, neuralRefinement.second);
+    const double errorMagnitude = std::hypot(errorX, errorY);
+    if (neuralMagnitude <= 1e-6 || errorMagnitude <= 1e-6)
+        return neuralRefinement;
+
+    const double pidDirectionCosine =
+        (neuralRefinement.first * errorX + neuralRefinement.second * errorY) /
+        std::max(1e-6, neuralMagnitude * errorMagnitude);
+    if (pidDirectionCosine < NeuralRefinementOpposingPidCosineThreshold &&
+        modelConfidence < NeuralRefinementLowConfidenceThreshold)
+        return { 0.0, 0.0 };
+
+    return neuralRefinement;
+}
+
+double MouseThread::computeAdaptivePredictionInfluence(
+    int trackId,
+    double distanceToCrosshair,
+    double measuredSpeed,
+    double directionCosine,
+    double confidence,
+    int predictionAgeFrames,
+    double baseInfluence)
+{
+    if (!config.temporal_prediction_adaptive_influence_enabled)
+        return baseInfluence;
+
+    if (trackId != adaptivePredictionTrackId)
+    {
+        adaptivePredictionTrackId = trackId;
+        adaptivePredictionInfluenceEma = 0.0;
+        adaptivePredictionInfluenceActive = false;
+    }
+
+    if (predictionAgeFrames > 5)
+    {
+        adaptivePredictionInfluenceEma *= 0.35;
+        return std::clamp(adaptivePredictionInfluenceEma, 0.0, 0.85);
+    }
+
+    const double distanceBand =
+        smoothStepRange(35.0, 90.0, distanceToCrosshair) *
+        (1.0 - smoothStepRange(180.0, 320.0, distanceToCrosshair));
+    const double adaptiveSpeedFactor = std::clamp(measuredSpeed / 1000.0, 0.0, 1.0);
+    const double direction_factor = (directionCosine < -0.35 && confidence < 0.82) ? 0.30 : 1.0;
+    const double age_factor = (predictionAgeFrames <= 3) ? 1.0 : 0.35;
+    double rawInfluence =
+        baseInfluence * distanceBand * adaptiveSpeedFactor * confidence * direction_factor * age_factor;
+    rawInfluence = std::clamp(rawInfluence, 0.0, 0.85);
+    if (!adaptivePredictionInfluenceActive && rawInfluence >= AdaptiveInfluenceActivateThreshold)
+        adaptivePredictionInfluenceActive = true;
+    else if (adaptivePredictionInfluenceActive && rawInfluence <= AdaptiveInfluenceDeactivateThreshold)
+        adaptivePredictionInfluenceActive = false;
+
+    if (!adaptivePredictionInfluenceActive)
+        rawInfluence = 0.0;
+
+    const double emaAlpha = std::clamp(
+        static_cast<double>(config.temporal_prediction_adaptive_ema_alpha),
+        0.05,
+        1.0);
+
+    adaptivePredictionInfluenceEma += (rawInfluence - adaptivePredictionInfluenceEma) * emaAlpha;
+    return std::clamp(adaptivePredictionInfluenceEma, 0.0, 0.85);
+}
+
+void MouseThread::resetAdaptivePredictionInfluence()
+{
+    adaptivePredictionInfluenceEma = 0.0;
+    adaptivePredictionTrackId = -1;
+    adaptivePredictionInfluenceActive = false;
+    std::lock_guard<std::mutex> lock(neuralControlTelemetryMutex);
+    neuralControlTelemetry.valid = false;
+}
+
+void MouseThread::publishNeuralControlTelemetry(
+    int trackId,
+    double adaptiveInfluence,
+    double confidence,
+    const std::pair<double, double>& phase2Lead,
+    const std::pair<double, double>& neuralRefinement,
+    const std::pair<double, double>& totalLead)
+{
+    NeuralControlTelemetry next;
+    next.trackId = trackId;
+    next.adaptiveInfluence = std::isfinite(adaptiveInfluence) ? adaptiveInfluence : 0.0;
+    next.confidence = std::isfinite(confidence) ? confidence : 0.0;
+    next.predictionLeadX = std::isfinite(phase2Lead.first) ? phase2Lead.first : 0.0;
+    next.predictionLeadY = std::isfinite(phase2Lead.second) ? phase2Lead.second : 0.0;
+    next.neuralRefinementX = std::isfinite(neuralRefinement.first) ? neuralRefinement.first : 0.0;
+    next.neuralRefinementY = std::isfinite(neuralRefinement.second) ? neuralRefinement.second : 0.0;
+    next.totalLeadX = std::isfinite(totalLead.first) ? totalLead.first : 0.0;
+    next.totalLeadY = std::isfinite(totalLead.second) ? totalLead.second : 0.0;
+    next.valid = true;
+
+    {
+        std::lock_guard<std::mutex> lock(neuralControlTelemetryMutex);
+        next.jitterScore = neuralControlTelemetry.jitterScore;
+        next.oscillationPenalty = neuralControlTelemetry.oscillationPenalty;
+        neuralControlTelemetry = next;
+    }
+
+    if (!config.neural_control_telemetry_logging_enabled)
+        return;
+
+    const auto now = std::chrono::steady_clock::now();
+    const int intervalMs = std::clamp(config.neural_control_telemetry_log_interval_ms, 50, 5000);
+    if (lastNeuralControlTelemetryLog.time_since_epoch().count() != 0 &&
+        now - lastNeuralControlTelemetryLog < std::chrono::milliseconds(intervalMs))
+    {
+        return;
+    }
+    lastNeuralControlTelemetryLog = now;
+
+    const std::filesystem::path logPath(
+        config.neural_control_telemetry_log_path.empty()
+            ? std::string("logs/neural_control_telemetry.csv")
+            : config.neural_control_telemetry_log_path);
+    const std::filesystem::path parent = logPath.parent_path();
+    if (!parent.empty())
+    {
+        std::error_code ec;
+        std::filesystem::create_directories(parent, ec);
+    }
+
+    std::error_code existsError;
+    const bool writeHeader = !std::filesystem::exists(logPath, existsError);
+    std::ofstream file(logPath, std::ios::app);
+    if (!file.is_open())
+        return;
+
+    if (writeHeader)
+    {
+        file << "track_id,adaptive_influence,confidence,prediction_lead_x,prediction_lead_y,"
+             << "neural_refinement_x,neural_refinement_y,total_lead_x,total_lead_y,jitter_score,oscillation_penalty\n";
+    }
+
+    file << std::fixed << std::setprecision(5)
+         << next.trackId << ','
+         << next.adaptiveInfluence << ','
+         << next.confidence << ','
+         << next.predictionLeadX << ','
+         << next.predictionLeadY << ','
+         << next.neuralRefinementX << ','
+         << next.neuralRefinementY << ','
+         << next.totalLeadX << ','
+         << next.totalLeadY << ','
+         << next.jitterScore << ','
+         << next.oscillationPenalty << '\n';
+}
+
+void MouseThread::updateNeuralControlActuatorTelemetry(const aim::PidMouseCommand& command)
+{
+    std::lock_guard<std::mutex> lock(neuralControlTelemetryMutex);
+    if (!neuralControlTelemetry.valid)
+        return;
+
+    neuralControlTelemetry.jitterScore = command.smartBlendJitterScore;
+    neuralControlTelemetry.oscillationPenalty = command.smartBlendOscillationPenalty;
+}
+
 std::pair<double, double> MouseThread::computePredictionFeedForwardLead(
     const BoxTarget& target,
     const LockedTargetInfo& lockInfo)
 {
     if (!config.temporal_prediction_enabled)
+    {
+        resetAdaptivePredictionInfluence();
         return { 0.0, 0.0 };
+    }
 
-    if (lockInfo.predictedFutureAgeFrames > 3 || lockInfo.predictedFuture.empty())
+    if (lockInfo.predictedFuture.empty())
+    {
+        resetAdaptivePredictionInfluence();
         return { 0.0, 0.0 };
+    }
+
+    if (lockInfo.predictedFutureAgeFrames > 3)
+    {
+        if (lockInfo.predictedFutureAgeFrames > 5)
+            adaptivePredictionInfluenceEma *= 0.35;
+        else
+            resetAdaptivePredictionInfluence();
+        return { 0.0, 0.0 };
+    }
 
     const auto first = lockInfo.predictedFuture.front();
     if (!std::isfinite(first.first) || !std::isfinite(first.second) ||
         !std::isfinite(target.smoothX) || !std::isfinite(target.smoothY))
     {
+        resetAdaptivePredictionInfluence();
         return { 0.0, 0.0 };
     }
 
@@ -778,7 +1026,10 @@ std::pair<double, double> MouseThread::computePredictionFeedForwardLead(
     const double maxFirstPointDistance = highResolution ? 65.0 : 50.0;
     const double firstPointDistance = std::hypot(first.first - target.smoothX, first.second - target.smoothY);
     if (!std::isfinite(firstPointDistance) || firstPointDistance > maxFirstPointDistance)
+    {
+        resetAdaptivePredictionInfluence();
         return { 0.0, 0.0 };
+    }
 
     double predictionVx = first.first - target.smoothX;
     double predictionVy = first.second - target.smoothY;
@@ -792,31 +1043,51 @@ std::pair<double, double> MouseThread::computePredictionFeedForwardLead(
     const double predictionSpeed = std::hypot(predictionVx, predictionVy) * predictionFps;
     const double maxPredictionSpeed = highResolution ? 1500.0 : 1200.0;
     if (!std::isfinite(predictionSpeed) || predictionSpeed > maxPredictionSpeed)
+    {
+        resetAdaptivePredictionInfluence();
         return { 0.0, 0.0 };
+    }
 
     const double confidenceFloor = highResolution ? 0.65 : 0.55;
     const double confidence = std::isfinite(target.confidence) ? std::clamp(target.confidence, 0.0, 1.0) : 0.0;
     if (confidence < confidenceFloor)
+    {
+        resetAdaptivePredictionInfluence();
         return { 0.0, 0.0 };
+    }
 
     const double measuredVx = lockInfo.targetVelocityX;
     const double measuredVy = lockInfo.targetVelocityY;
+    double directionCosine = 1.0;
     const double measuredSpeed = std::hypot(measuredVx, measuredVy);
     if (measuredSpeed > 100.0 && predictionSpeed > 100.0)
     {
         const double predMag = std::hypot(predictionVx, predictionVy);
-        const double directionCosine = (predictionVx * measuredVx + predictionVy * measuredVy) /
+        directionCosine = (predictionVx * measuredVx + predictionVy * measuredVy) /
             std::max(1e-6, predMag * measuredSpeed);
         if (directionCosine < -0.35 && confidence < 0.85)
+        {
+            resetAdaptivePredictionInfluence();
             return { 0.0, 0.0 };
+        }
     }
 
     std::pair<double, double> phase2Lead{ 0.0, 0.0 };
     const double distanceToCrosshair = std::hypot(target.smoothX - center_x, target.smoothY - center_y);
     const double near_damping = smoothStep01(distanceToCrosshair / 80.0);
     const double speed_weight = std::clamp(measuredSpeed / 1200.0, 0.0, 1.0);
-    const double influence = std::clamp(static_cast<double>(config.temporal_prediction_influence), 0.0, 1.0);
-    const double weight = influence * confidence * speed_weight * near_damping;
+    const double baseInfluence = std::clamp(static_cast<double>(config.temporal_prediction_influence), 0.0, 1.0);
+    const double influence = computeAdaptivePredictionInfluence(
+        lockInfo.trackId,
+        distanceToCrosshair,
+        measuredSpeed,
+        directionCosine,
+        confidence,
+        lockInfo.predictedFutureAgeFrames,
+        baseInfluence);
+    const double weight = config.temporal_prediction_adaptive_influence_enabled
+        ? influence
+        : influence * confidence * speed_weight * near_damping;
     if (config.temporal_prediction_feed_forward_enabled && weight > 1e-6)
     {
         const double rawLeadX = first.first - target.smoothX;
@@ -837,10 +1108,11 @@ std::pair<double, double> MouseThread::computePredictionFeedForwardLead(
         const double disagreementCosine =
             (phase2Lead.first * neuralRefinement.first + phase2Lead.second * neuralRefinement.second) /
             std::max(1e-6, phase2Magnitude * neuralMagnitude);
-        if (disagreementCosine < 0.0 && confidence < 0.85)
+        if (disagreementCosine < 0.0 && confidence < NeuralRefinementLowConfidenceThreshold)
         {
-            neuralRefinement.first *= 0.25;
-            neuralRefinement.second *= 0.25;
+            // Low-confidence neural output gets reduced when it disagrees with the temporal lead.
+            neuralRefinement.first *= NeuralRefinementDisagreementScale;
+            neuralRefinement.second *= NeuralRefinementDisagreementScale;
         }
     }
 
@@ -857,6 +1129,7 @@ std::pair<double, double> MouseThread::computePredictionFeedForwardLead(
         phase2Lead.second + neuralRefinement.second,
         maxTotalLead);
     setNeuralTargetingDebugPoint(target, total);
+    publishNeuralControlTelemetry(lockInfo.trackId, weight, confidence, phase2Lead, neuralRefinement, total);
     return total;
 }
 
@@ -866,6 +1139,7 @@ void MouseThread::clearQueuedMoves()
     std::queue<Move> empty;
     moveQueue.swap(empty);
     resetWindState();
+    resetEgoMotionCompensation();
     resetPid();
 }
 
@@ -885,6 +1159,7 @@ void MouseThread::releaseMouse()
 void MouseThread::resetPrediction()
 {
     clearQueuedMoves();
+    resetAdaptivePredictionInfluence();
     prev_time = std::chrono::steady_clock::time_point();
     prev_x = 0;
     prev_y = 0;
@@ -893,6 +1168,7 @@ void MouseThread::resetPrediction()
     targetKalman.reset();
     lastKalmanTelemetry = {};
     lastPredictionLookaheadSec = 0.0;
+    resetEgoMotionCompensation();
     target_detected.store(false);
 }
 
@@ -900,7 +1176,10 @@ void MouseThread::setTargetDetected(bool detected)
 {
     const bool wasDetected = target_detected.exchange(detected);
     if (!detected && wasDetected)
+    {
         resetPid();
+        resetAdaptivePredictionInfluence();
+    }
 }
 
 void MouseThread::checkAndResetPredictions()
@@ -976,6 +1255,7 @@ void MouseThread::clearFuturePositions()
 {
     std::lock_guard<std::mutex> lock(futurePositionsMutex);
     futurePositions.clear();
+    resetAdaptivePredictionInfluence();
     {
         std::lock_guard<std::mutex> debugLock(neuralTargetingDebugMutex);
         neuralTargetingRefinedAimPointValid = false;
@@ -995,6 +1275,16 @@ bool MouseThread::getNeuralTargetingRefinedAimPoint(std::pair<double, double>& p
         return false;
 
     point = neuralTargetingRefinedAimPoint;
+    return true;
+}
+
+bool MouseThread::getNeuralControlTelemetry(NeuralControlTelemetry& telemetry) const
+{
+    std::lock_guard<std::mutex> lock(neuralControlTelemetryMutex);
+    if (!neuralControlTelemetry.valid)
+        return false;
+
+    telemetry = neuralControlTelemetry;
     return true;
 }
 

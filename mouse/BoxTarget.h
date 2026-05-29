@@ -9,6 +9,7 @@
 #include <utility>
 
 #include "aim_kalman.h"
+#include "aim_imm.h"
 #include "neural/TemporalPredictor.h"
 
 class BoxTarget
@@ -64,6 +65,7 @@ struct InnerAimTrack {
     bool observedThisFrame = false;
 
     aim::AimKalman2D kalman;
+    aim::AimIMM2D imm;
 };
 
 struct LockedTargetInfo
@@ -117,7 +119,8 @@ public:
         int screenWidth,
         int screenHeight,
         bool disableHeadshot,
-        bool keepCurrentLock
+        bool keepCurrentLock,
+        const cv::Point2d& egoMotionShift = cv::Point2d()
     );
     void update(
         const std::vector<cv::Rect>& boxes,
@@ -125,7 +128,8 @@ public:
         int screenWidth,
         int screenHeight,
         bool disableHeadshot,
-        bool keepCurrentLock
+        bool keepCurrentLock,
+        const cv::Point2d& egoMotionShift = cv::Point2d()
     );
     bool getLockedTarget(LockedTargetInfo& out) const;
     int getLockedTrackId() const { return lockedTrackId_; }
@@ -144,6 +148,8 @@ private:
             double vy = 0.0;
             double boxScaleVel = 0.0;
             double confidence = 1.0;
+            double egoMotionX = 0.0;
+            double egoMotionY = 0.0;
         };
 
         int id = -1;
@@ -200,7 +206,7 @@ private:
         const TrackState& t,
         int screenWidth,
         int screenHeight) const;
-    void appendTrackHistory(TrackState& t);
+    void appendTrackHistory(TrackState& t, const cv::Point2d& egoMotionShift = cv::Point2d());
     void updateTemporalPrediction(TrackState& t, int screenWidth, int screenHeight);
     bool shouldAcceptAsNewLock(const DetectionCandidate& det, const InnerAimTrack* current) const;
     int findTrackIndexById(int id) const;

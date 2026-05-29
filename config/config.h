@@ -41,6 +41,7 @@ public:
     int prediction_futurePositions;
     bool draw_futurePositions;
     bool runtime_latency_sweep_enabled;
+    std::string estimator_mode; // "kalman" or "imm"; IMM is opt-in and tracker-only in v1.
     bool kalman_enabled;
     float kalman_process_noise_position;
     float kalman_process_noise_velocity;
@@ -53,6 +54,10 @@ public:
     bool kalman_compensate_detection_delay;
     float kalman_additional_prediction_ms;
     float kalman_reset_timeout_sec;
+    bool ego_motion_compensation_enabled;
+    float ego_motion_compensation_strength;
+    float ego_motion_compensation_max_shift_px;
+    int ego_motion_compensation_max_age_ms;
 
     float snapRadius;
     float nearRadius;
@@ -133,6 +138,8 @@ public:
     int temporal_prediction_interval_frames;
     bool temporal_prediction_feed_forward_enabled;
     float temporal_prediction_influence;
+    bool temporal_prediction_adaptive_influence_enabled;
+    float temporal_prediction_adaptive_ema_alpha;
     float temporal_prediction_max_lead_px;
 
     // Neural targeting head
@@ -141,6 +148,11 @@ public:
     float neural_targeting_influence;
     float neural_targeting_max_refinement_px;
     int neural_targeting_max_iterations;
+    std::string neural_control_preset;
+    bool neural_control_telemetry_overlay_enabled;
+    bool neural_control_telemetry_logging_enabled;
+    std::string neural_control_telemetry_log_path;
+    int neural_control_telemetry_log_interval_ms;
 
     // Arduino
     int arduino_baudrate;

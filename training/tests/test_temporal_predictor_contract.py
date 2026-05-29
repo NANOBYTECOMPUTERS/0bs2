@@ -167,17 +167,19 @@ class TemporalPredictorContractTest(unittest.TestCase):
             self.assertIn("TemporalPredictor.cpp", project)
             self.assertIn("TemporalPredictor.h", project)
 
-    def test_runtime_configs_keep_temporal_prediction_opt_in(self):
-        for relative_path in ("x64/DML/config.ini", "x64/CUDA/config.ini"):
-            with self.subTest(relative_path=relative_path):
-                config = self.read(relative_path)
-                self.assertIn("temporal_prediction_enabled = false", config)
-                self.assertIn("temporal_prediction_history_length = 12", config)
-                self.assertIn("temporal_prediction_horizon = 16", config)
-                self.assertIn("temporal_prediction_interval_frames = 2", config)
-                self.assertIn("temporal_prediction_feed_forward_enabled = false", config)
-                self.assertIn("temporal_prediction_influence = 0.350", config)
-                self.assertIn("temporal_prediction_max_lead_px = 45.000", config)
+    def test_source_defaults_keep_temporal_prediction_opt_in(self):
+        config = self.read("config/config.cpp")
+        for token in (
+            "temporal_prediction_enabled = false",
+            'temporal_prediction_enabled = get_bool("temporal_prediction_enabled", false)',
+            "temporal_prediction_history_length = 12",
+            "temporal_prediction_horizon = 16",
+            "temporal_prediction_interval_frames = 2",
+            "temporal_prediction_feed_forward_enabled = false",
+            "temporal_prediction_influence = 0.35f",
+            "temporal_prediction_max_lead_px = 45.0f",
+        ):
+            self.assertIn(token, config)
 
     def test_prediction_feed_forward_is_safety_gated_before_pid(self):
         target_h = self.read("mouse/BoxTarget.h")
@@ -213,6 +215,48 @@ class TemporalPredictorContractTest(unittest.TestCase):
         self.assertIn("learnedPredictionLead", loop)
         self.assertIn("activeTarget->smoothX", loop)
         self.assertIn("activeTarget->smoothY", loop)
+
+    def test_adaptive_prediction_influence_is_opt_in_and_smoothed(self):
+        config_h = self.read("config/config.h")
+        config_cpp = self.read("config/config.cpp")
+        draw_neural = self.read("overlay/draw_neural.cpp")
+        mouse_h = self.read("mouse/mouse.h")
+        mouse_cpp = self.read("mouse/mouse.cpp")
+
+        for token in (
+            "temporal_prediction_adaptive_influence_enabled",
+            "temporal_prediction_adaptive_ema_alpha",
+        ):
+            self.assertIn(token, config_h)
+            self.assertIn(token, config_cpp)
+            self.assertIn(token, draw_neural)
+
+        self.assertIn("temporal_prediction_adaptive_influence_enabled = false", config_cpp)
+        self.assertIn("temporal_prediction_adaptive_ema_alpha = 0.62f", config_cpp)
+        self.assertIn("Adaptive prediction influence", draw_neural)
+        self.assertIn("Adaptive influence EMA", draw_neural)
+
+        for token in (
+            "adaptivePredictionInfluenceEma",
+            "adaptivePredictionTrackId",
+            "resetAdaptivePredictionInfluence",
+            "computeAdaptivePredictionInfluence",
+        ):
+            self.assertIn(token, mouse_h)
+            self.assertIn(token, mouse_cpp)
+
+        for token in (
+            "smoothStepRange(35.0, 90.0",
+            "1.0 - smoothStepRange(180.0, 320.0",
+            "measuredSpeed / 1000.0",
+            "direction_factor",
+            "age_factor",
+            "std::clamp(rawInfluence, 0.0, 0.85)",
+            "adaptivePredictionInfluenceEma += (rawInfluence - adaptivePredictionInfluenceEma) * emaAlpha",
+            "config.temporal_prediction_adaptive_influence_enabled",
+            "return baseInfluence",
+        ):
+            self.assertIn(token, mouse_cpp)
 
     def test_pid_uses_learned_prediction_only_inside_feed_forward(self):
         pid_h = self.read("mouse/PidMouseController.h")

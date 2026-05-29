@@ -148,6 +148,46 @@ float MultiTargetTracker::scaleFactor() const
     return std::clamp(config.detection_resolution / 320.0f, 0.5f, 2.5f);
 }
 
+namespace
+{
+bool useImmEstimator()
+{
+    return config.estimator_mode == "imm";
+}
+
+cv::Point2d sanitizeEgoMotionShift(const cv::Point2d& shift)
+{
+    if (!config.ego_motion_compensation_enabled ||
+        !std::isfinite(shift.x) ||
+        !std::isfinite(shift.y))
+    {
+        return {};
+    }
+
+    const double resolutionScale = std::clamp(static_cast<double>(config.detection_resolution) / 640.0, 0.25, 2.0);
+    const double maxShift = std::clamp(static_cast<double>(config.ego_motion_compensation_max_shift_px) * resolutionScale, 1.0, 128.0);
+    const double magnitude = std::hypot(shift.x, shift.y);
+    if (magnitude <= maxShift || magnitude <= 1e-9)
+        return shift;
+
+    const double scale = maxShift / magnitude;
+    return { shift.x * scale, shift.y * scale };
+}
+
+void applyInnerAimEgoMotion(InnerAimTrack& track, const cv::Point2d& egoMotion)
+{
+    if (egoMotion.x == 0.0 && egoMotion.y == 0.0)
+        return;
+
+    const double offsetX = -egoMotion.x;
+    const double offsetY = -egoMotion.y;
+    track.smoothX += offsetX;
+    track.smoothY += offsetY;
+    track.kalman.applyPositionOffset(offsetX, offsetY);
+    track.imm.applyPositionOffset(offsetX, offsetY);
+}
+}
+
 cv::Point2d MultiTargetTracker::computeInnerAimPoint(const cv::Rect2f& box, int classId) const
 {
     const float smallBoxThreshold = 18.0f * scaleFactor();
@@ -278,14 +318,43 @@ void MultiTargetTracker::updateInnerAim(InnerAimTrack& track, const cv::Rect& de
         }
     }
 
+    const bool useImm = useImmEstimator();
+
     if (!config.kalman_enabled)
     {
         track.kalman.reset();
+        track.imm.reset();
         track.smoothX = rawInnerX;
         track.smoothY = rawInnerY;
     }
+    else if (useImm)
+    {
+        track.kalman.reset();
+        const auto velocity = track.imm.velocity();
+        const bool highSpeed =
+            std::abs(velocity.first) > 45.0 * scaleFactor() ||
+            std::abs(velocity.second) > 45.0 * scaleFactor();
+        track.imm.setSettings(buildInnerAimKalmanSettings(highSpeed));
+
+        const double lookahead = highSpeed ? 0.018 : 0.011;
+        const aim::AimKalmanTelemetry telemetry = track.imm.update(rawInnerX, rawInnerY, dt, lookahead);
+        const double velocityLeadSeconds = highSpeed ? 0.011 : 0.0;
+        double leadX = telemetry.velocity_x * velocityLeadSeconds;
+        double leadY = telemetry.velocity_y * velocityLeadSeconds;
+        const double maxLead = 2.5 * scaleFactor();
+        const double leadMag = std::hypot(leadX, leadY);
+        if (leadMag > maxLead && leadMag > 1e-9)
+        {
+            const double leadScale = maxLead / leadMag;
+            leadX *= leadScale;
+            leadY *= leadScale;
+        }
+        track.smoothX = telemetry.estimate_x + leadX;
+        track.smoothY = telemetry.estimate_y + leadY;
+    }
     else
     {
+        track.imm.reset();
         const auto velocity = track.kalman.velocity();
         const bool highSpeed =
             std::abs(velocity.first) > 45.0 * scaleFactor() ||
@@ -314,7 +383,7 @@ void MultiTargetTracker::updateInnerAim(InnerAimTrack& track, const cv::Rect& de
     track.smoothY = std::clamp(track.smoothY, det.y - 2.0 * scaleFactor(), det.y + det.height + 2.0 * scaleFactor());
 
     track.radius = (4.0f + (1.0f - track.confidence) * 14.0f) * scaleFactor();
-    if (config.kalman_enabled && track.kalman.initialized())
+    if (config.kalman_enabled && (useImm ? track.imm.initialized() : track.kalman.initialized()))
         track.radius = std::max(3.5f * scaleFactor(), track.radius * 0.65f);
 
     track.consistencyScore = std::min(1.0f, track.consistencyScore + 0.22f);
@@ -352,11 +421,37 @@ aim::neural::TemporalPredictor::Input MultiTargetTracker::buildTemporalPredictor
     const size_t start = available > needed ? available - needed : 0;
     const auto& pad = t.history.front();
     const int padCount = static_cast<int>(needed - std::min(needed, available));
+    std::vector<TrackState::TrackHistorySample> selected;
+    selected.reserve(needed);
 
-    auto appendSample = [&](const TrackState::TrackHistorySample& s)
+    for (int i = 0; i < padCount; ++i)
+    {
+        auto padded = pad;
+        padded.egoMotionX = 0.0;
+        padded.egoMotionY = 0.0;
+        selected.push_back(padded);
+    }
+
+    for (size_t i = start; i < available; ++i)
+        selected.push_back(t.history[i]);
+
+    std::vector<cv::Point2d> compensatedPositions(selected.size());
+    double cumulativeEgoX = 0.0;
+    double cumulativeEgoY = 0.0;
+    for (int i = static_cast<int>(selected.size()) - 1; i >= 0; --i)
+    {
+        const auto& s = selected[static_cast<size_t>(i)];
+        compensatedPositions[static_cast<size_t>(i)] = config.ego_motion_compensation_enabled
+            ? cv::Point2d(s.x - cumulativeEgoX, s.y - cumulativeEgoY)
+            : cv::Point2d(s.x, s.y);
+        cumulativeEgoX += s.egoMotionX;
+        cumulativeEgoY += s.egoMotionY;
+    }
+
+    auto appendSample = [&](const TrackState::TrackHistorySample& s, const cv::Point2d& compensatedPosition)
         {
-            input.history.push_back(static_cast<float>(s.x));
-            input.history.push_back(static_cast<float>(s.y));
+            input.history.push_back(static_cast<float>(compensatedPosition.x));
+            input.history.push_back(static_cast<float>(compensatedPosition.y));
             input.history.push_back(static_cast<float>(s.w));
             input.history.push_back(static_cast<float>(s.h));
             input.history.push_back(static_cast<float>(s.vx));
@@ -365,18 +460,15 @@ aim::neural::TemporalPredictor::Input MultiTargetTracker::buildTemporalPredictor
             input.history.push_back(static_cast<float>(std::clamp(s.confidence, 0.0, 1.0)));
         };
 
-    for (int i = 0; i < padCount; ++i)
-        appendSample(pad);
-
-    for (size_t i = start; i < available; ++i)
-        appendSample(t.history[i]);
+    for (size_t i = 0; i < selected.size(); ++i)
+        appendSample(selected[i], compensatedPositions[i]);
 
     (void)screenWidth;
     (void)screenHeight;
     return input;
 }
 
-void MultiTargetTracker::appendTrackHistory(TrackState& t)
+void MultiTargetTracker::appendTrackHistory(TrackState& t, const cv::Point2d& egoMotionShift)
 {
     TrackState::TrackHistorySample sample;
     sample.x = t.innerAim.smoothX;
@@ -387,6 +479,8 @@ void MultiTargetTracker::appendTrackHistory(TrackState& t)
     sample.vy = t.velocity.y;
     sample.boxScaleVel = (static_cast<double>(t.sizeVelocity.x) + static_cast<double>(t.sizeVelocity.y)) * 0.5;
     sample.confidence = std::clamp(static_cast<double>(t.confidence), 0.0, 1.0);
+    sample.egoMotionX = egoMotionShift.x;
+    sample.egoMotionY = egoMotionShift.y;
 
     t.history.push_back(sample);
     const size_t maxHistory = static_cast<size_t>(std::clamp(config.temporal_prediction_history_length * 2, 8, 128));
@@ -558,10 +652,11 @@ void MultiTargetTracker::update(
     int screenWidth,
     int screenHeight,
     bool disableHeadshot,
-    bool keepCurrentLock)
+    bool keepCurrentLock,
+    const cv::Point2d& egoMotionShift)
 {
     static const std::vector<float> defaultConfidences;
-    update(boxes, classes, defaultConfidences, screenWidth, screenHeight, disableHeadshot, keepCurrentLock);
+    update(boxes, classes, defaultConfidences, screenWidth, screenHeight, disableHeadshot, keepCurrentLock, egoMotionShift);
 }
 
 void MultiTargetTracker::update(
@@ -571,10 +666,12 @@ void MultiTargetTracker::update(
     int screenWidth,
     int screenHeight,
     bool disableHeadshot,
-    bool keepCurrentLock)
+    bool keepCurrentLock,
+    const cv::Point2d& egoMotionShift)
 {
     const auto now = std::chrono::steady_clock::now();
     ++updateFrameCounter_;
+    const cv::Point2d compensatedEgoMotion = sanitizeEgoMotionShift(egoMotionShift);
 
     for (auto& t : tracks_)
     {
@@ -824,8 +921,8 @@ void MultiTargetTracker::update(
                 1e-4, 0.25
             );
 
-            const float predCx = t.box.x + t.box.width * 0.5f + t.velocity.x * static_cast<float>(dt);
-            const float predCy = t.box.y + t.box.height * 0.5f + t.velocity.y * static_cast<float>(dt);
+            const float predCx = t.box.x + t.box.width * 0.5f + t.velocity.x * static_cast<float>(dt) - static_cast<float>(compensatedEgoMotion.x);
+            const float predCy = t.box.y + t.box.height * 0.5f + t.velocity.y * static_cast<float>(dt) - static_cast<float>(compensatedEgoMotion.y);
             const float predW = std::max(1.0f, t.box.width + t.sizeVelocity.x * static_cast<float>(dt));
             const float predH = std::max(1.0f, t.box.height + t.sizeVelocity.y * static_cast<float>(dt));
             cv::Rect2f predictedBox(predCx - predW * 0.5f, predCy - predH * 0.5f, predW, predH);
@@ -865,8 +962,10 @@ void MultiTargetTracker::update(
 
             const double prevCx = t.box.x + t.box.width * 0.5;
             const double prevCy = t.box.y + t.box.height * 0.5;
-            const double moveX = detCx - prevCx;
-            const double moveY = detCy - prevCy;
+            const double compensatedPrevCx = prevCx - compensatedEgoMotion.x;
+            const double compensatedPrevCy = prevCy - compensatedEgoMotion.y;
+            const double moveX = detCx - compensatedPrevCx;
+            const double moveY = detCy - compensatedPrevCy;
             const double moveMag = std::hypot(moveX, moveY);
             double headingAlignment = 0.0;
             double headingPenalty = 0.0;
@@ -1080,11 +1179,13 @@ void MultiTargetTracker::update(
 
             const float oldCx = t.box.x + t.box.width * 0.5f;
             const float oldCy = t.box.y + t.box.height * 0.5f;
+            const float compensatedOldCx = oldCx - static_cast<float>(compensatedEgoMotion.x);
+            const float compensatedOldCy = oldCy - static_cast<float>(compensatedEgoMotion.y);
             const float newCx = d.box.x + d.box.width * 0.5f;
             const float newCy = d.box.y + d.box.height * 0.5f;
             const cv::Point2f rawVel(
-                static_cast<float>((newCx - oldCx) / dt),
-                static_cast<float>((newCy - oldCy) / dt)
+                static_cast<float>((newCx - compensatedOldCx) / dt),
+                static_cast<float>((newCy - compensatedOldCy) / dt)
             );
             const cv::Point2f rawSizeVel(
                 static_cast<float>((d.box.width - t.box.width) / dt),
@@ -1133,6 +1234,7 @@ void MultiTargetTracker::update(
             t.innerAim.trackId = t.id;
             t.innerAim.classId = d.innerAimClassId;
             t.innerAim.hits = t.hits;
+            applyInnerAimEgoMotion(t.innerAim, compensatedEgoMotion);
             updateInnerAim(
                 t.innerAim,
                 cv::Rect(
@@ -1153,13 +1255,20 @@ void MultiTargetTracker::update(
                 std::chrono::duration<double>(now - t.lastUpdate).count(),
                 0.0, 0.2
             );
-            t.box.x += t.velocity.x * static_cast<float>(dt);
-            t.box.y += t.velocity.y * static_cast<float>(dt);
+            t.box.x += t.velocity.x * static_cast<float>(dt) - static_cast<float>(compensatedEgoMotion.x);
+            t.box.y += t.velocity.y * static_cast<float>(dt) - static_cast<float>(compensatedEgoMotion.y);
             t.box.width = std::max(1.0f, t.box.width + t.sizeVelocity.x * static_cast<float>(dt));
             t.box.height = std::max(1.0f, t.box.height + t.sizeVelocity.y * static_cast<float>(dt));
-            t.pivotX += t.velocity.x * dt;
-            t.pivotY += t.velocity.y * dt;
-            if (config.kalman_enabled && t.innerAim.kalman.initialized())
+            t.pivotX += t.velocity.x * dt - compensatedEgoMotion.x;
+            t.pivotY += t.velocity.y * dt - compensatedEgoMotion.y;
+            applyInnerAimEgoMotion(t.innerAim, compensatedEgoMotion);
+            if (config.kalman_enabled && config.estimator_mode == "imm" && t.innerAim.imm.initialized())
+            {
+                const auto predicted = t.innerAim.imm.predict(std::clamp(dt + 0.011, 0.0, 0.08));
+                t.innerAim.smoothX = predicted.first;
+                t.innerAim.smoothY = predicted.second;
+            }
+            else if (config.kalman_enabled && t.innerAim.kalman.initialized())
             {
                 const auto predicted = t.innerAim.kalman.predict(std::clamp(dt + 0.011, 0.0, 0.08));
                 t.innerAim.smoothX = predicted.first;
@@ -1199,7 +1308,7 @@ void MultiTargetTracker::update(
             t.lastUpdate = now;
         }
 
-        appendTrackHistory(t);
+        appendTrackHistory(t, compensatedEgoMotion);
         updateTemporalPrediction(t, screenWidth, screenHeight);
     }
 
@@ -1249,7 +1358,7 @@ void MultiTargetTracker::update(
         t.lastNeuralEvaluated = false;
         t.lastUpdate = now;
         initializeInnerAim(t, d);
-        appendTrackHistory(t);
+        appendTrackHistory(t, cv::Point2d());
         updateTemporalPrediction(t, screenWidth, screenHeight);
         tracks_.push_back(t);
     }

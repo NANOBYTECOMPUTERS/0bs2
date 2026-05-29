@@ -99,6 +99,8 @@
     <ClInclude Include="imgui\imstb_rectpack.h" />
     <ClInclude Include="imgui\imstb_textedit.h" />
     <ClInclude Include="imgui\imstb_truetype.h" />
+    <ClInclude Include="include\aim_imm.h" />
+    <ClInclude Include="include\ego_motion_compensator.h" />
     <ClInclude Include="include\memory_images.h" />
     <ClInclude Include="include\other_tools.h" />
     <ClInclude Include="keyboard\keyboard_listener.h" />

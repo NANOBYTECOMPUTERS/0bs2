@@ -70,5 +70,11 @@
     <ClInclude Include="..\mouse\SmartBlender.h">
       <Filter>CUDA\Runtime</Filter>
     </ClInclude>
+    <ClInclude Include="..\include\aim_imm.h">
+      <Filter>CUDA\Runtime</Filter>
+    </ClInclude>
+    <ClInclude Include="..\include\ego_motion_compensator.h">
+      <Filter>CUDA\Runtime</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>

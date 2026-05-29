@@ -12,6 +12,18 @@ This reference is ordered by the GUI sidebar tabs in `overlay/overlay.cpp`. It l
 
 Search by GUI label, config key, tab, section, or source file. Rows marked `CUDA GUI / DML config-only` appear as GUI controls only in CUDA builds; the current `x64/DML/config.ini` keeps those values as config-only settings.
 
+## Perfect Aim v1.0
+
+Perfect Aim v1.0 keeps all neural systems advisory only and default OFF. The runtime path remains:
+
+`Video Frame -> Detector -> Tracker -> State Estimator (Kalman/IMM) -> Temporal Predictor -> Neural Targeting Head -> Adaptive Influence + SmartBlender -> PID/Governor -> Mouse Output`
+
+PID/Kalman remains the convergence owner by default. Selecting IMM changes only the InnerAim tracker estimator in v1; temporal prediction and the neural targeting head can only add bounded feed-forward/refinement offsets, and they do not replace the tracked target, modify the PID observation point, or write directly to final actuator deltas.
+
+Ego-motion compensation is an opt-in tracker stabilizer. It subtracts bounded, recent emitted mouse/view motion from tracker priors and temporal history only; raw detector boxes, PID observation points, and final actuator output remain unchanged.
+
+The Neural tab exposes Balanced, Aggressive, Smooth, and Sniper presets. Presets tune prediction influence, neural refinement range, and SmartBlender damping/jerk limits while retaining opt-in master toggles. Optional telemetry can show current adaptive influence, confidence, predicted lead, neural refinement, and SmartBlender jitter/oscillation state on the game overlay, or write a throttled CSV log for tuning.
+
 ## GUI Tab Order
 
 | Order | Tab | Notes |
@@ -85,6 +97,7 @@ Search by GUI label, config key, tab, section, or source file. Rows marked `CUDA
 | --- | --- | --- | --- | --- | --- |
 | FOV | FOV X | fovX | 10-120 | 70 | Horizontal field of view for the mouse controller. |
 | FOV | FOV Y | fovY | 10-120 | 70 | Vertical field of view for the mouse controller. |
+| State Estimator | Estimator mode | estimator_mode | kalman, imm | kalman | Selects the InnerAim tracker estimator. IMM is opt-in and does not replace the mouse-level PID/Kalman path in v1. |
 | State Estimator | Acquisition frames | kalman_acquisition_frames | 3-5 | n/a | Frames used to ramp prediction weight after target acquisition. |
 | State Estimator | Process noise position | kalman_process_noise_position | 0.0001-5000 | n/a | Position process noise. Higher values adapt faster to position changes. |
 | State Estimator | Process noise velocity | kalman_process_noise_velocity | 0.0001-50000 | n/a | Velocity process noise. Higher values adapt faster to speed changes. |
@@ -94,6 +107,9 @@ Search by GUI label, config key, tab, section, or source file. Rows marked `CUDA
 | State Estimator | Warmup frames | kalman_warmup_frames | 0-20 | n/a | Legacy warmup frames when latency sweep is off. |
 | State Estimator | Additional prediction (ms) | kalman_additional_prediction_ms | -80.0-120.0 | n/a | Manual extra prediction offset in milliseconds. |
 | State Estimator | Reset timeout (s) | kalman_reset_timeout_sec | 0.05-3.0 | n/a | Time without stable observations before estimator state resets. |
+| State Estimator | Ego compensation strength | ego_motion_compensation_strength | 0.0-1.0 | n/a | Fraction of recent emitted motion subtracted from tracker priors/history to reduce camera-motion jitter. |
+| State Estimator | Ego max shift (px @640) | ego_motion_compensation_max_shift_px | 1-128 | n/a | Per-frame compensation clamp at 640 detection resolution; scales with detection_resolution. |
+| State Estimator | Ego max age (ms) | ego_motion_compensation_max_age_ms | 16-500 | n/a | Drops stale emitted-motion samples so compensation fails closed. |
 | Pure PID Movement | Actuator Hz | pid_actuator_hz | 30-2000 | 2000 | PID update rate used by the mouse actuator. |
 | Pure PID Movement | Kp | pid_kp | 0.0000-1.5000 | 0.0115 | Proportional PID gain. |
 | Pure PID Movement | Ki | pid_ki | 0.0000-0.5000 | 0.0003 | Integral PID gain. |
@@ -140,6 +156,7 @@ Search by GUI label, config key, tab, section, or source file. Rows marked `CUDA
 | State Estimator | Enable Kalman estimator | kalman_enabled | true/false | n/a | Enables Kalman filtering for target motion estimation. |
 | State Estimator | Seed velocity on acquire | kalman_velocity_seed_enabled | true/false | n/a | Seeds velocity from early measurement deltas during acquisition. |
 | State Estimator | Compensate detection delay | kalman_compensate_detection_delay | true/false | n/a | Accounts for detector latency in prediction. |
+| State Estimator | Ego-motion compensation | ego_motion_compensation_enabled | true/false | n/a | Opt-in tracker-prior compensation from emitted mouse/view motion. Raw detections, PID observation, and final actuator output are unchanged. |
 | Pure PID Movement | Feed-forward prediction | pid_feed_forward_enabled | true/false | true | Adds velocity-based prediction ahead of pure PID output. |
 | Pure PID Movement | Conditional integration | pid_conditional_integration_enabled | true/false | n/a | Prevents integral windup when latency sweep is enabled and error/output conditions are unsafe. |
 | Pure PID Movement | Adaptive output scaling | pid_adaptive_output_scaling_enabled | true/false | n/a | Enables error-magnitude output scaling when latency sweep is enabled. |

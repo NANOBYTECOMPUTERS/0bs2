@@ -87,6 +87,7 @@ bool Config::loadConfig(const std::string& filename)
         prediction_futurePositions = 20;
         draw_futurePositions = true;
         runtime_latency_sweep_enabled = false;
+        estimator_mode = "kalman";
         kalman_enabled = true;
         kalman_process_noise_position = 40.0f;
         kalman_process_noise_velocity = 1800.0f;
@@ -99,6 +100,10 @@ bool Config::loadConfig(const std::string& filename)
         kalman_compensate_detection_delay = true;
         kalman_additional_prediction_ms = 0.0f;
         kalman_reset_timeout_sec = 0.5f;
+        ego_motion_compensation_enabled = false;
+        ego_motion_compensation_strength = 0.80f;
+        ego_motion_compensation_max_shift_px = 32.0f;
+        ego_motion_compensation_max_age_ms = 120;
 
         snapRadius = 1.5f;
         nearRadius = 25.0f;
@@ -179,6 +184,8 @@ bool Config::loadConfig(const std::string& filename)
         temporal_prediction_interval_frames = 2;
         temporal_prediction_feed_forward_enabled = false;
         temporal_prediction_influence = 0.35f;
+        temporal_prediction_adaptive_influence_enabled = false;
+        temporal_prediction_adaptive_ema_alpha = 0.62f;
         temporal_prediction_max_lead_px = 45.0f;
 
         // Neural targeting head
@@ -187,6 +194,11 @@ bool Config::loadConfig(const std::string& filename)
         neural_targeting_influence = 0.40f;
         neural_targeting_max_refinement_px = 35.0f;
         neural_targeting_max_iterations = 2;
+        neural_control_preset = "Balanced";
+        neural_control_telemetry_overlay_enabled = false;
+        neural_control_telemetry_logging_enabled = false;
+        neural_control_telemetry_log_path = "logs/neural_control_telemetry.csv";
+        neural_control_telemetry_log_interval_ms = 250;
 
         // Arduino
         arduino_baudrate = 115200;
@@ -483,6 +495,7 @@ bool Config::loadConfig(const std::string& filename)
     prediction_futurePositions = get_long("prediction_futurePositions", 20);
     draw_futurePositions = get_bool("draw_futurePositions", true);
     runtime_latency_sweep_enabled = get_bool("runtime_latency_sweep_enabled", false);
+    estimator_mode = get_string("estimator_mode", "kalman");
     kalman_enabled = get_bool("kalman_enabled", true);
     kalman_process_noise_position = (float)get_double("kalman_process_noise_position", 40.0);
     kalman_process_noise_velocity = (float)get_double("kalman_process_noise_velocity", 1800.0);
@@ -495,6 +508,10 @@ bool Config::loadConfig(const std::string& filename)
     kalman_compensate_detection_delay = get_bool("kalman_compensate_detection_delay", true);
     kalman_additional_prediction_ms = (float)get_double("kalman_additional_prediction_ms", 0.0);
     kalman_reset_timeout_sec = (float)get_double("kalman_reset_timeout_sec", 0.5);
+    ego_motion_compensation_enabled = get_bool("ego_motion_compensation_enabled", false);
+    ego_motion_compensation_strength = (float)get_double("ego_motion_compensation_strength", 0.80);
+    ego_motion_compensation_max_shift_px = (float)get_double("ego_motion_compensation_max_shift_px", 32.0);
+    ego_motion_compensation_max_age_ms = get_long("ego_motion_compensation_max_age_ms", 120);
     
     snapRadius = (float)get_double("snapRadius", 1.5);
     nearRadius = (float)get_double("nearRadius", 25.0);
@@ -575,6 +592,8 @@ bool Config::loadConfig(const std::string& filename)
     temporal_prediction_interval_frames = get_long("temporal_prediction_interval_frames", 2);
     temporal_prediction_feed_forward_enabled = get_bool("temporal_prediction_feed_forward_enabled", false);
     temporal_prediction_influence = (float)get_double("temporal_prediction_influence", 0.35);
+    temporal_prediction_adaptive_influence_enabled = get_bool("temporal_prediction_adaptive_influence_enabled", false);
+    temporal_prediction_adaptive_ema_alpha = (float)get_double("temporal_prediction_adaptive_ema_alpha", 0.62);
     temporal_prediction_max_lead_px = (float)get_double("temporal_prediction_max_lead_px", 45.0);
 
     // Neural targeting head
@@ -583,6 +602,11 @@ bool Config::loadConfig(const std::string& filename)
     neural_targeting_influence = (float)get_double("neural_targeting_influence", 0.40);
     neural_targeting_max_refinement_px = (float)get_double("neural_targeting_max_refinement_px", 35.0);
     neural_targeting_max_iterations = get_long("neural_targeting_max_iterations", 2);
+    neural_control_preset = get_string("neural_control_preset", "Balanced");
+    neural_control_telemetry_overlay_enabled = get_bool("neural_control_telemetry_overlay_enabled", false);
+    neural_control_telemetry_logging_enabled = get_bool("neural_control_telemetry_logging_enabled", false);
+    neural_control_telemetry_log_path = get_string("neural_control_telemetry_log_path", "logs/neural_control_telemetry.csv");
+    neural_control_telemetry_log_interval_ms = get_long("neural_control_telemetry_log_interval_ms", 250);
 
     // Arduino
     arduino_baudrate = get_long("arduino_baudrate", 115200);
@@ -761,6 +785,16 @@ bool Config::loadConfig(const std::string& filename)
     if (kalman_additional_prediction_ms > 120.0f) kalman_additional_prediction_ms = 120.0f;
     if (kalman_reset_timeout_sec < 0.05f) kalman_reset_timeout_sec = 0.05f;
     if (kalman_reset_timeout_sec > 3.0f) kalman_reset_timeout_sec = 3.0f;
+    if (ego_motion_compensation_strength < 0.0f) ego_motion_compensation_strength = 0.0f;
+    if (ego_motion_compensation_strength > 1.0f) ego_motion_compensation_strength = 1.0f;
+    if (ego_motion_compensation_max_shift_px < 1.0f) ego_motion_compensation_max_shift_px = 1.0f;
+    if (ego_motion_compensation_max_shift_px > 128.0f) ego_motion_compensation_max_shift_px = 128.0f;
+    if (ego_motion_compensation_max_age_ms < 16) ego_motion_compensation_max_age_ms = 16;
+    if (ego_motion_compensation_max_age_ms > 500) ego_motion_compensation_max_age_ms = 500;
+    std::transform(estimator_mode.begin(), estimator_mode.end(), estimator_mode.begin(),
+        [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    if (estimator_mode != "kalman" && estimator_mode != "imm")
+        estimator_mode = "kalman";
 
     if (aim_sim_width < 220) aim_sim_width = 220;
     if (aim_sim_width > 1920) aim_sim_width = 1920;
@@ -882,6 +916,8 @@ bool Config::loadConfig(const std::string& filename)
     if (temporal_prediction_interval_frames > 16) temporal_prediction_interval_frames = 16;
     if (temporal_prediction_influence < 0.0f) temporal_prediction_influence = 0.0f;
     if (temporal_prediction_influence > 1.0f) temporal_prediction_influence = 1.0f;
+    if (temporal_prediction_adaptive_ema_alpha < 0.05f) temporal_prediction_adaptive_ema_alpha = 0.05f;
+    if (temporal_prediction_adaptive_ema_alpha > 1.0f) temporal_prediction_adaptive_ema_alpha = 1.0f;
     if (temporal_prediction_max_lead_px < 20.0f) temporal_prediction_max_lead_px = 20.0f;
     if (temporal_prediction_max_lead_px > 80.0f) temporal_prediction_max_lead_px = 80.0f;
     if (neural_targeting_model_path.empty()) neural_targeting_model_path = "models/neural_targeting_head.onnx";
@@ -891,6 +927,14 @@ bool Config::loadConfig(const std::string& filename)
     if (neural_targeting_max_refinement_px > 80.0f) neural_targeting_max_refinement_px = 80.0f;
     if (neural_targeting_max_iterations < 1) neural_targeting_max_iterations = 1;
     if (neural_targeting_max_iterations > 2) neural_targeting_max_iterations = 2;
+    if (neural_control_preset.empty()) neural_control_preset = "Balanced";
+    if (neural_control_preset != "Balanced" &&
+        neural_control_preset != "Aggressive" &&
+        neural_control_preset != "Smooth" &&
+        neural_control_preset != "Sniper") neural_control_preset = "Balanced";
+    if (neural_control_telemetry_log_path.empty()) neural_control_telemetry_log_path = "logs/neural_control_telemetry.csv";
+    if (neural_control_telemetry_log_interval_ms < 50) neural_control_telemetry_log_interval_ms = 50;
+    if (neural_control_telemetry_log_interval_ms > 5000) neural_control_telemetry_log_interval_ms = 5000;
 
     // Classes
     class_player = get_long("class_player", 0);
@@ -968,6 +1012,7 @@ bool Config::loadConfigMerged(const std::string& filename)
     MERGE_FIELD("prediction_futurePositions", prediction_futurePositions);
     MERGE_FIELD("draw_futurePositions", draw_futurePositions);
     MERGE_FIELD("runtime_latency_sweep_enabled", runtime_latency_sweep_enabled);
+    MERGE_FIELD("estimator_mode", estimator_mode);
     MERGE_FIELD("kalman_enabled", kalman_enabled);
     MERGE_FIELD("kalman_process_noise_position", kalman_process_noise_position);
     MERGE_FIELD("kalman_process_noise_velocity", kalman_process_noise_velocity);
@@ -980,6 +1025,10 @@ bool Config::loadConfigMerged(const std::string& filename)
     MERGE_FIELD("kalman_compensate_detection_delay", kalman_compensate_detection_delay);
     MERGE_FIELD("kalman_additional_prediction_ms", kalman_additional_prediction_ms);
     MERGE_FIELD("kalman_reset_timeout_sec", kalman_reset_timeout_sec);
+    MERGE_FIELD("ego_motion_compensation_enabled", ego_motion_compensation_enabled);
+    MERGE_FIELD("ego_motion_compensation_strength", ego_motion_compensation_strength);
+    MERGE_FIELD("ego_motion_compensation_max_shift_px", ego_motion_compensation_max_shift_px);
+    MERGE_FIELD("ego_motion_compensation_max_age_ms", ego_motion_compensation_max_age_ms);
 
     MERGE_FIELD("snapRadius", snapRadius);
     MERGE_FIELD("nearRadius", nearRadius);
@@ -1054,12 +1103,19 @@ bool Config::loadConfigMerged(const std::string& filename)
     MERGE_FIELD("temporal_prediction_interval_frames", temporal_prediction_interval_frames);
     MERGE_FIELD("temporal_prediction_feed_forward_enabled", temporal_prediction_feed_forward_enabled);
     MERGE_FIELD("temporal_prediction_influence", temporal_prediction_influence);
+    MERGE_FIELD("temporal_prediction_adaptive_influence_enabled", temporal_prediction_adaptive_influence_enabled);
+    MERGE_FIELD("temporal_prediction_adaptive_ema_alpha", temporal_prediction_adaptive_ema_alpha);
     MERGE_FIELD("temporal_prediction_max_lead_px", temporal_prediction_max_lead_px);
     MERGE_FIELD("neural_targeting_enabled", neural_targeting_enabled);
     MERGE_FIELD("neural_targeting_model_path", neural_targeting_model_path);
     MERGE_FIELD("neural_targeting_influence", neural_targeting_influence);
     MERGE_FIELD("neural_targeting_max_refinement_px", neural_targeting_max_refinement_px);
     MERGE_FIELD("neural_targeting_max_iterations", neural_targeting_max_iterations);
+    MERGE_FIELD("neural_control_preset", neural_control_preset);
+    MERGE_FIELD("neural_control_telemetry_overlay_enabled", neural_control_telemetry_overlay_enabled);
+    MERGE_FIELD("neural_control_telemetry_logging_enabled", neural_control_telemetry_logging_enabled);
+    MERGE_FIELD("neural_control_telemetry_log_path", neural_control_telemetry_log_path);
+    MERGE_FIELD("neural_control_telemetry_log_interval_ms", neural_control_telemetry_log_interval_ms);
 
     MERGE_FIELD("arduino_baudrate", arduino_baudrate);
     MERGE_FIELD("arduino_port", arduino_port);
@@ -1316,6 +1372,7 @@ bool Config::saveConfig(const std::string& filename)
         << "prediction_futurePositions = " << prediction_futurePositions << "\n"
         << "draw_futurePositions = " << (draw_futurePositions ? "true" : "false") << "\n"
         << "runtime_latency_sweep_enabled = " << (runtime_latency_sweep_enabled ? "true" : "false") << "\n"
+        << "estimator_mode = " << estimator_mode << "\n"
         << std::fixed << std::setprecision(3)
         << "kalman_enabled = " << (kalman_enabled ? "true" : "false") << "\n"
         << "kalman_process_noise_position = " << kalman_process_noise_position << "\n"
@@ -1329,6 +1386,10 @@ bool Config::saveConfig(const std::string& filename)
         << "kalman_compensate_detection_delay = " << (kalman_compensate_detection_delay ? "true" : "false") << "\n"
         << "kalman_additional_prediction_ms = " << kalman_additional_prediction_ms << "\n"
         << "kalman_reset_timeout_sec = " << kalman_reset_timeout_sec << "\n"
+        << "ego_motion_compensation_enabled = " << (ego_motion_compensation_enabled ? "true" : "false") << "\n"
+        << "ego_motion_compensation_strength = " << ego_motion_compensation_strength << "\n"
+        << "ego_motion_compensation_max_shift_px = " << ego_motion_compensation_max_shift_px << "\n"
+        << "ego_motion_compensation_max_age_ms = " << ego_motion_compensation_max_age_ms << "\n"
         << "# WIN32, GHUB, RAZER, ARDUINO, TEENSY41, TEENSY41_HID, KMBOX_NET, KMBOX_A, MAKCU\n"
         << "input_method = " << input_method << "\n\n";
 
@@ -1399,6 +1460,8 @@ bool Config::saveConfig(const std::string& filename)
         << "temporal_prediction_feed_forward_enabled = " << (temporal_prediction_feed_forward_enabled ? "true" : "false") << "\n"
         << std::fixed << std::setprecision(3)
         << "temporal_prediction_influence = " << temporal_prediction_influence << "\n"
+        << "temporal_prediction_adaptive_influence_enabled = " << (temporal_prediction_adaptive_influence_enabled ? "true" : "false") << "\n"
+        << "temporal_prediction_adaptive_ema_alpha = " << temporal_prediction_adaptive_ema_alpha << "\n"
         << "temporal_prediction_max_lead_px = " << temporal_prediction_max_lead_px << "\n\n";
 
     file << "# Neural targeting head\n"
@@ -1407,7 +1470,12 @@ bool Config::saveConfig(const std::string& filename)
         << std::fixed << std::setprecision(3)
         << "neural_targeting_influence = " << neural_targeting_influence << "\n"
         << "neural_targeting_max_refinement_px = " << neural_targeting_max_refinement_px << "\n"
-        << "neural_targeting_max_iterations = " << neural_targeting_max_iterations << "\n\n";
+        << "neural_targeting_max_iterations = " << neural_targeting_max_iterations << "\n"
+        << "neural_control_preset = " << neural_control_preset << "\n"
+        << "neural_control_telemetry_overlay_enabled = " << (neural_control_telemetry_overlay_enabled ? "true" : "false") << "\n"
+        << "neural_control_telemetry_logging_enabled = " << (neural_control_telemetry_logging_enabled ? "true" : "false") << "\n"
+        << "neural_control_telemetry_log_path = " << neural_control_telemetry_log_path << "\n"
+        << "neural_control_telemetry_log_interval_ms = " << neural_control_telemetry_log_interval_ms << "\n\n";
 
     // Arduino
     file << "# Arduino\n"
