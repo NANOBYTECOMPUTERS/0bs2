@@ -61,8 +61,11 @@ class PerfectAimV1ContractTest(unittest.TestCase):
 
         self.assertIn("rejectNeuralRefinementAgainstPidDirection", mouse_h)
         self.assertIn("rejectNeuralRefinementAgainstPidDirection", mouse_cpp)
-        self.assertIn("pidDirectionCosine < -0.25", mouse_cpp)
-        self.assertIn("targetingResult.output.confidence < 0.85", mouse_cpp)
+        self.assertIn("NeuralRefinementOpposingPidCosineThreshold", mouse_cpp)
+        self.assertIn("NeuralRefinementLowConfidenceThreshold", mouse_cpp)
+        self.assertIn("NeuralRefinementDisagreementScale", mouse_cpp)
+        self.assertIn("pidDirectionCosine < NeuralRefinementOpposingPidCosineThreshold", mouse_cpp)
+        self.assertIn("targetingResult.output.confidence < NeuralRefinementLowConfidenceThreshold", mouse_cpp)
         self.assertIn("neuralRefinement = rejectNeuralRefinementAgainstPidDirection", mouse_cpp)
 
     def test_smart_blender_tracks_jitter_and_penalizes_oscillation(self):

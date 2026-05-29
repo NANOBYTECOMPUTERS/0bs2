@@ -26,6 +26,9 @@ namespace
 {
 constexpr double AdaptiveInfluenceActivateThreshold = 0.025;
 constexpr double AdaptiveInfluenceDeactivateThreshold = 0.010;
+constexpr double NeuralRefinementOpposingPidCosineThreshold = -0.25;
+constexpr double NeuralRefinementLowConfidenceThreshold = 0.85;
+constexpr double NeuralRefinementDisagreementScale = 0.25;
 
 aim::AimKalmanSettings buildKalmanSettingsFromConfig()
 {
@@ -127,6 +130,7 @@ double smoothStep01(double t)
 
 double smoothStepRange(double edge0, double edge1, double value)
 {
+    // Degenerate or inverted ranges collapse to a binary step at edge1.
     if (edge1 <= edge0)
         return value >= edge1 ? 1.0 : 0.0;
 
@@ -744,7 +748,7 @@ std::pair<double, double> MouseThread::consumeNeuralTargetingResult(
         targetingResult.output.refinement_offset_y,
         maxRefinement);
     std::pair<double, double> neuralRefinement = clamped;
-    if (targetingResult.output.confidence < 0.85)
+    if (targetingResult.output.confidence < NeuralRefinementLowConfidenceThreshold)
     {
         neuralRefinement = rejectNeuralRefinementAgainstPidDirection(
             clamped,
@@ -832,7 +836,8 @@ std::pair<double, double> MouseThread::rejectNeuralRefinementAgainstPidDirection
     const double pidDirectionCosine =
         (neuralRefinement.first * errorX + neuralRefinement.second * errorY) /
         std::max(1e-6, neuralMagnitude * errorMagnitude);
-    if (pidDirectionCosine < -0.25 && modelConfidence < 0.85)
+    if (pidDirectionCosine < NeuralRefinementOpposingPidCosineThreshold &&
+        modelConfidence < NeuralRefinementLowConfidenceThreshold)
         return { 0.0, 0.0 };
 
     return neuralRefinement;
@@ -1103,10 +1108,11 @@ std::pair<double, double> MouseThread::computePredictionFeedForwardLead(
         const double disagreementCosine =
             (phase2Lead.first * neuralRefinement.first + phase2Lead.second * neuralRefinement.second) /
             std::max(1e-6, phase2Magnitude * neuralMagnitude);
-        if (disagreementCosine < 0.0 && confidence < 0.85)
+        if (disagreementCosine < 0.0 && confidence < NeuralRefinementLowConfidenceThreshold)
         {
-            neuralRefinement.first *= 0.25;
-            neuralRefinement.second *= 0.25;
+            // Low-confidence neural output gets reduced when it disagrees with the temporal lead.
+            neuralRefinement.first *= NeuralRefinementDisagreementScale;
+            neuralRefinement.second *= NeuralRefinementDisagreementScale;
         }
     }
 
