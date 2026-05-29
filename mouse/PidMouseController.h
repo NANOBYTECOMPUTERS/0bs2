@@ -112,6 +112,8 @@ struct PidMouseCommand
     double smartBlendAlpha = 1.0;
     double smartBlendJerkLimitPx = 0.0;
     double smartBlendNearAmount = 0.0;
+    double smartBlendJitterScore = 0.0;
+    double smartBlendOscillationPenalty = 0.0;
     bool governorActive = false;
     bool feedForwardActive = false;
     bool smartBlendActive = false;

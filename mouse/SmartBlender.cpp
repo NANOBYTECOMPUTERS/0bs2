@@ -20,6 +20,9 @@ void SmartBlender::reset()
 {
     previousX = 0.0;
     previousY = 0.0;
+    previousDeltaX = 0.0;
+    previousDeltaY = 0.0;
+    jitterScore = 0.0;
     hasPrevious = false;
 }
 
@@ -44,6 +47,10 @@ SmartBlendOutput SmartBlender::apply(const SmartBlendInput& input)
     {
         previousX = output.x;
         previousY = output.y;
+        previousDeltaX = 0.0;
+        previousDeltaY = 0.0;
+        jitterScore *= 0.90;
+        output.jitterScore = jitterScore;
         hasPrevious = true;
         return output;
     }
@@ -60,6 +67,7 @@ SmartBlendOutput SmartBlender::apply(const SmartBlendInput& input)
         output.alpha = 0.0;
         output.nearAmount = 1.0;
         output.jerkLimitPx = settings.jerkLimitPx;
+        output.jitterScore = jitterScore;
         return output;
     }
 
@@ -81,6 +89,17 @@ SmartBlendOutput SmartBlender::apply(const SmartBlendInput& input)
     dampingScale = std::clamp(dampingScale, 0.12, 1.0);
     double candidateX = input.desiredX * dampingScale;
     double candidateY = input.desiredY * dampingScale;
+    updateJitterScore(candidateX, candidateY, input);
+
+    const double advisoryMagnitude =
+        std::hypot(input.feedForwardX + input.learnedFeedForwardX + input.neuralRefinementX,
+            input.feedForwardY + input.learnedFeedForwardY + input.neuralRefinementY);
+    const double advisoryBlend = smoothStep(advisoryMagnitude / std::max(0.25, settings.jerkLimitPx * 4.0));
+    const double oscillationPenalty = std::clamp(jitterScore * (0.35 + 0.65 * advisoryBlend), 0.0, 0.75);
+    alpha *= 1.0 - 0.55 * oscillationPenalty;
+    dampingScale *= 1.0 - 0.45 * oscillationPenalty;
+    candidateX = input.desiredX * dampingScale;
+    candidateY = input.desiredY * dampingScale;
 
     if (!hasPrevious)
     {
@@ -95,6 +114,7 @@ SmartBlendOutput SmartBlender::apply(const SmartBlendInput& input)
     double jerkLimit = settings.jerkLimitPx;
     jerkLimit *= 0.55 + 0.45 * speedFactor;
     jerkLimit *= 1.0 - 0.30 * nearAmount;
+    jerkLimit *= 1.0 - 0.35 * oscillationPenalty;
     jerkLimit = std::max(0.01, jerkLimit);
 
     const double changeX = blendedX - previousX;
@@ -134,7 +154,39 @@ SmartBlendOutput SmartBlender::apply(const SmartBlendInput& input)
     output.alpha = alpha;
     output.jerkLimitPx = jerkLimit;
     output.nearAmount = nearAmount;
+    output.jitterScore = jitterScore;
+    output.oscillationPenalty = oscillationPenalty;
     return output;
+}
+
+void SmartBlender::updateJitterScore(double nextX, double nextY, const SmartBlendInput& input)
+{
+    if (!hasPrevious)
+    {
+        previousDeltaX = 0.0;
+        previousDeltaY = 0.0;
+        jitterScore *= 0.90;
+        return;
+    }
+
+    const double deltaX = nextX - previousX;
+    const double deltaY = nextY - previousY;
+    const double deltaMag = std::hypot(deltaX, deltaY);
+    const double previousDeltaMag = std::hypot(previousDeltaX, previousDeltaY);
+    const double reversalDot = deltaX * previousDeltaX + deltaY * previousDeltaY;
+
+    jitterScore *= 0.90;
+    if (deltaMag > 0.01 && previousDeltaMag > 0.01 && reversalDot < 0.0)
+        jitterScore += std::clamp(deltaMag / std::max(0.25, settings.jerkLimitPx * 3.0), 0.0, 0.40);
+
+    const double learnedMag = std::hypot(input.learnedFeedForwardX, input.learnedFeedForwardY);
+    const double neuralMag = std::hypot(input.neuralRefinementX, input.neuralRefinementY);
+    if (input.distance < input.targetSize * 0.75 && (learnedMag + neuralMag) > settings.jerkLimitPx)
+        jitterScore += 0.08;
+
+    jitterScore = std::clamp(jitterScore, 0.0, 1.0);
+    previousDeltaX = deltaX;
+    previousDeltaY = deltaY;
 }
 
 double SmartBlender::clampFinite(double value, double lo, double hi, double fallback)

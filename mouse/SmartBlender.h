@@ -24,6 +24,12 @@ struct SmartBlendInput
     double targetSpeed = 0.0;
     double confidence = 1.0;
     double dtSeconds = 1.0 / 240.0;
+    double feedForwardX = 0.0;
+    double feedForwardY = 0.0;
+    double learnedFeedForwardX = 0.0;
+    double learnedFeedForwardY = 0.0;
+    double neuralRefinementX = 0.0;
+    double neuralRefinementY = 0.0;
 };
 
 struct SmartBlendOutput
@@ -33,6 +39,8 @@ struct SmartBlendOutput
     double alpha = 1.0;
     double jerkLimitPx = 0.0;
     double nearAmount = 0.0;
+    double jitterScore = 0.0;
+    double oscillationPenalty = 0.0;
     bool active = false;
 };
 
@@ -47,8 +55,12 @@ private:
     SmartBlenderSettings settings;
     double previousX = 0.0;
     double previousY = 0.0;
+    double previousDeltaX = 0.0;
+    double previousDeltaY = 0.0;
+    double jitterScore = 0.0;
     bool hasPrevious = false;
 
+    void updateJitterScore(double nextX, double nextY, const SmartBlendInput& input);
     static double clampFinite(double value, double lo, double hi, double fallback);
     static double smoothStep(double value);
 };

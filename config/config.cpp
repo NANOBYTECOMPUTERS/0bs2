@@ -189,6 +189,11 @@ bool Config::loadConfig(const std::string& filename)
         neural_targeting_influence = 0.40f;
         neural_targeting_max_refinement_px = 35.0f;
         neural_targeting_max_iterations = 2;
+        neural_control_preset = "Balanced";
+        neural_control_telemetry_overlay_enabled = false;
+        neural_control_telemetry_logging_enabled = false;
+        neural_control_telemetry_log_path = "logs/neural_control_telemetry.csv";
+        neural_control_telemetry_log_interval_ms = 250;
 
         // Arduino
         arduino_baudrate = 115200;
@@ -587,6 +592,11 @@ bool Config::loadConfig(const std::string& filename)
     neural_targeting_influence = (float)get_double("neural_targeting_influence", 0.40);
     neural_targeting_max_refinement_px = (float)get_double("neural_targeting_max_refinement_px", 35.0);
     neural_targeting_max_iterations = get_long("neural_targeting_max_iterations", 2);
+    neural_control_preset = get_string("neural_control_preset", "Balanced");
+    neural_control_telemetry_overlay_enabled = get_bool("neural_control_telemetry_overlay_enabled", false);
+    neural_control_telemetry_logging_enabled = get_bool("neural_control_telemetry_logging_enabled", false);
+    neural_control_telemetry_log_path = get_string("neural_control_telemetry_log_path", "logs/neural_control_telemetry.csv");
+    neural_control_telemetry_log_interval_ms = get_long("neural_control_telemetry_log_interval_ms", 250);
 
     // Arduino
     arduino_baudrate = get_long("arduino_baudrate", 115200);
@@ -897,6 +907,14 @@ bool Config::loadConfig(const std::string& filename)
     if (neural_targeting_max_refinement_px > 80.0f) neural_targeting_max_refinement_px = 80.0f;
     if (neural_targeting_max_iterations < 1) neural_targeting_max_iterations = 1;
     if (neural_targeting_max_iterations > 2) neural_targeting_max_iterations = 2;
+    if (neural_control_preset.empty()) neural_control_preset = "Balanced";
+    if (neural_control_preset != "Balanced" &&
+        neural_control_preset != "Aggressive" &&
+        neural_control_preset != "Smooth" &&
+        neural_control_preset != "Sniper") neural_control_preset = "Balanced";
+    if (neural_control_telemetry_log_path.empty()) neural_control_telemetry_log_path = "logs/neural_control_telemetry.csv";
+    if (neural_control_telemetry_log_interval_ms < 50) neural_control_telemetry_log_interval_ms = 50;
+    if (neural_control_telemetry_log_interval_ms > 5000) neural_control_telemetry_log_interval_ms = 5000;
 
     // Classes
     class_player = get_long("class_player", 0);
@@ -1068,6 +1086,11 @@ bool Config::loadConfigMerged(const std::string& filename)
     MERGE_FIELD("neural_targeting_influence", neural_targeting_influence);
     MERGE_FIELD("neural_targeting_max_refinement_px", neural_targeting_max_refinement_px);
     MERGE_FIELD("neural_targeting_max_iterations", neural_targeting_max_iterations);
+    MERGE_FIELD("neural_control_preset", neural_control_preset);
+    MERGE_FIELD("neural_control_telemetry_overlay_enabled", neural_control_telemetry_overlay_enabled);
+    MERGE_FIELD("neural_control_telemetry_logging_enabled", neural_control_telemetry_logging_enabled);
+    MERGE_FIELD("neural_control_telemetry_log_path", neural_control_telemetry_log_path);
+    MERGE_FIELD("neural_control_telemetry_log_interval_ms", neural_control_telemetry_log_interval_ms);
 
     MERGE_FIELD("arduino_baudrate", arduino_baudrate);
     MERGE_FIELD("arduino_port", arduino_port);
@@ -1417,7 +1440,12 @@ bool Config::saveConfig(const std::string& filename)
         << std::fixed << std::setprecision(3)
         << "neural_targeting_influence = " << neural_targeting_influence << "\n"
         << "neural_targeting_max_refinement_px = " << neural_targeting_max_refinement_px << "\n"
-        << "neural_targeting_max_iterations = " << neural_targeting_max_iterations << "\n\n";
+        << "neural_targeting_max_iterations = " << neural_targeting_max_iterations << "\n"
+        << "neural_control_preset = " << neural_control_preset << "\n"
+        << "neural_control_telemetry_overlay_enabled = " << (neural_control_telemetry_overlay_enabled ? "true" : "false") << "\n"
+        << "neural_control_telemetry_logging_enabled = " << (neural_control_telemetry_logging_enabled ? "true" : "false") << "\n"
+        << "neural_control_telemetry_log_path = " << neural_control_telemetry_log_path << "\n"
+        << "neural_control_telemetry_log_interval_ms = " << neural_control_telemetry_log_interval_ms << "\n\n";
 
     // Arduino
     file << "# Arduino\n"

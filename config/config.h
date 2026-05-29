@@ -143,6 +143,11 @@ public:
     float neural_targeting_influence;
     float neural_targeting_max_refinement_px;
     int neural_targeting_max_iterations;
+    std::string neural_control_preset;
+    bool neural_control_telemetry_overlay_enabled;
+    bool neural_control_telemetry_logging_enabled;
+    std::string neural_control_telemetry_log_path;
+    int neural_control_telemetry_log_interval_ms;
 
     // Arduino
     int arduino_baudrate;

@@ -262,6 +262,10 @@ PidMouseCommand PidMouseController::step(std::chrono::steady_clock::time_point n
     blendInput.targetSpeed = std::hypot(targetVx, targetVy);
     blendInput.confidence = std::isfinite(latest.confidence) ? latest.confidence : 0.0;
     blendInput.dtSeconds = dtSeconds;
+    blendInput.feedForwardX = command.feedForwardX;
+    blendInput.feedForwardY = command.feedForwardY;
+    blendInput.learnedFeedForwardX = command.learnedFeedForwardX;
+    blendInput.learnedFeedForwardY = command.learnedFeedForwardY;
     const SmartBlendOutput blendOutput = smartBlender.apply(blendInput);
     outX = blendOutput.x;
     outY = blendOutput.y;
@@ -269,6 +273,8 @@ PidMouseCommand PidMouseController::step(std::chrono::steady_clock::time_point n
     command.smartBlendAlpha = blendOutput.alpha;
     command.smartBlendJerkLimitPx = blendOutput.jerkLimitPx;
     command.smartBlendNearAmount = blendOutput.nearAmount;
+    command.smartBlendJitterScore = blendOutput.jitterScore;
+    command.smartBlendOscillationPenalty = blendOutput.oscillationPenalty;
     applyConvergenceDirectionGuard(outX, outY, distance, precisionRadius);
 
     const double outputMag = std::hypot(outX, outY);

@@ -13,6 +13,9 @@
 #include <random>
 #include <thread>
 #include <memory>
+#include <filesystem>
+#include <fstream>
+#include <iomanip>
 
 #include "mouse.h"
 #include "OnnxPidGovernor.h"
@@ -21,6 +24,9 @@
 
 namespace
 {
+constexpr double AdaptiveInfluenceActivateThreshold = 0.025;
+constexpr double AdaptiveInfluenceDeactivateThreshold = 0.010;
+
 aim::AimKalmanSettings buildKalmanSettingsFromConfig()
 {
     aim::AimKalmanSettings settings;
@@ -268,6 +274,7 @@ void MouseThread::pidActuatorLoop()
                 actuatorHz = std::clamp(static_cast<double>(settings.actuatorHz), 30.0, 2000.0);
                 command = pidController.step(now);
             }
+            updateNeuralControlActuatorTelemetry(command);
 
             if (command.active)
             {
@@ -699,11 +706,20 @@ std::pair<double, double> MouseThread::consumeNeuralTargetingResult(
         targetingResult.output.refinement_offset_x,
         targetingResult.output.refinement_offset_y,
         maxRefinement);
+    std::pair<double, double> neuralRefinement = clamped;
+    if (targetingResult.output.confidence < 0.85)
+    {
+        neuralRefinement = rejectNeuralRefinementAgainstPidDirection(
+            clamped,
+            target.smoothX - center_x,
+            target.smoothY - center_y,
+            targetingResult.output.confidence);
+    }
     const double influence = std::clamp(static_cast<double>(config.neural_targeting_influence), 0.0, 1.0);
 
     neuralTargetingRefinement = {
-        clamped.first * influence,
-        clamped.second * influence
+        neuralRefinement.first * influence,
+        neuralRefinement.second * influence
     };
     neuralTargetingLastResultTrackId = lockInfo.trackId;
     neuralTargetingRefinementValid =
@@ -765,6 +781,26 @@ void MouseThread::setNeuralTargetingDebugPoint(const BoxTarget& target, const st
         std::isfinite(neuralTargetingRefinedAimPoint.second);
 }
 
+std::pair<double, double> MouseThread::rejectNeuralRefinementAgainstPidDirection(
+    const std::pair<double, double>& neuralRefinement,
+    double errorX,
+    double errorY,
+    double modelConfidence) const
+{
+    const double neuralMagnitude = std::hypot(neuralRefinement.first, neuralRefinement.second);
+    const double errorMagnitude = std::hypot(errorX, errorY);
+    if (neuralMagnitude <= 1e-6 || errorMagnitude <= 1e-6)
+        return neuralRefinement;
+
+    const double pidDirectionCosine =
+        (neuralRefinement.first * errorX + neuralRefinement.second * errorY) /
+        std::max(1e-6, neuralMagnitude * errorMagnitude);
+    if (pidDirectionCosine < -0.25 && modelConfidence < 0.85)
+        return { 0.0, 0.0 };
+
+    return neuralRefinement;
+}
+
 double MouseThread::computeAdaptivePredictionInfluence(
     int trackId,
     double distanceToCrosshair,
@@ -781,6 +817,7 @@ double MouseThread::computeAdaptivePredictionInfluence(
     {
         adaptivePredictionTrackId = trackId;
         adaptivePredictionInfluenceEma = 0.0;
+        adaptivePredictionInfluenceActive = false;
     }
 
     if (predictionAgeFrames > 5)
@@ -798,6 +835,14 @@ double MouseThread::computeAdaptivePredictionInfluence(
     double rawInfluence =
         baseInfluence * distanceBand * adaptiveSpeedFactor * confidence * direction_factor * age_factor;
     rawInfluence = std::clamp(rawInfluence, 0.0, 0.85);
+    if (!adaptivePredictionInfluenceActive && rawInfluence >= AdaptiveInfluenceActivateThreshold)
+        adaptivePredictionInfluenceActive = true;
+    else if (adaptivePredictionInfluenceActive && rawInfluence <= AdaptiveInfluenceDeactivateThreshold)
+        adaptivePredictionInfluenceActive = false;
+
+    if (!adaptivePredictionInfluenceActive)
+        rawInfluence = 0.0;
+
     const double emaAlpha = std::clamp(
         static_cast<double>(config.temporal_prediction_adaptive_ema_alpha),
         0.05,
@@ -811,6 +856,95 @@ void MouseThread::resetAdaptivePredictionInfluence()
 {
     adaptivePredictionInfluenceEma = 0.0;
     adaptivePredictionTrackId = -1;
+    adaptivePredictionInfluenceActive = false;
+    std::lock_guard<std::mutex> lock(neuralControlTelemetryMutex);
+    neuralControlTelemetry.valid = false;
+}
+
+void MouseThread::publishNeuralControlTelemetry(
+    int trackId,
+    double adaptiveInfluence,
+    double confidence,
+    const std::pair<double, double>& phase2Lead,
+    const std::pair<double, double>& neuralRefinement,
+    const std::pair<double, double>& totalLead)
+{
+    NeuralControlTelemetry next;
+    next.trackId = trackId;
+    next.adaptiveInfluence = std::isfinite(adaptiveInfluence) ? adaptiveInfluence : 0.0;
+    next.confidence = std::isfinite(confidence) ? confidence : 0.0;
+    next.predictionLeadX = std::isfinite(phase2Lead.first) ? phase2Lead.first : 0.0;
+    next.predictionLeadY = std::isfinite(phase2Lead.second) ? phase2Lead.second : 0.0;
+    next.neuralRefinementX = std::isfinite(neuralRefinement.first) ? neuralRefinement.first : 0.0;
+    next.neuralRefinementY = std::isfinite(neuralRefinement.second) ? neuralRefinement.second : 0.0;
+    next.totalLeadX = std::isfinite(totalLead.first) ? totalLead.first : 0.0;
+    next.totalLeadY = std::isfinite(totalLead.second) ? totalLead.second : 0.0;
+    next.valid = true;
+
+    {
+        std::lock_guard<std::mutex> lock(neuralControlTelemetryMutex);
+        next.jitterScore = neuralControlTelemetry.jitterScore;
+        next.oscillationPenalty = neuralControlTelemetry.oscillationPenalty;
+        neuralControlTelemetry = next;
+    }
+
+    if (!config.neural_control_telemetry_logging_enabled)
+        return;
+
+    const auto now = std::chrono::steady_clock::now();
+    const int intervalMs = std::clamp(config.neural_control_telemetry_log_interval_ms, 50, 5000);
+    if (lastNeuralControlTelemetryLog.time_since_epoch().count() != 0 &&
+        now - lastNeuralControlTelemetryLog < std::chrono::milliseconds(intervalMs))
+    {
+        return;
+    }
+    lastNeuralControlTelemetryLog = now;
+
+    const std::filesystem::path logPath(
+        config.neural_control_telemetry_log_path.empty()
+            ? std::string("logs/neural_control_telemetry.csv")
+            : config.neural_control_telemetry_log_path);
+    const std::filesystem::path parent = logPath.parent_path();
+    if (!parent.empty())
+    {
+        std::error_code ec;
+        std::filesystem::create_directories(parent, ec);
+    }
+
+    std::error_code existsError;
+    const bool writeHeader = !std::filesystem::exists(logPath, existsError);
+    std::ofstream file(logPath, std::ios::app);
+    if (!file.is_open())
+        return;
+
+    if (writeHeader)
+    {
+        file << "track_id,adaptive_influence,confidence,prediction_lead_x,prediction_lead_y,"
+             << "neural_refinement_x,neural_refinement_y,total_lead_x,total_lead_y,jitter_score,oscillation_penalty\n";
+    }
+
+    file << std::fixed << std::setprecision(5)
+         << next.trackId << ','
+         << next.adaptiveInfluence << ','
+         << next.confidence << ','
+         << next.predictionLeadX << ','
+         << next.predictionLeadY << ','
+         << next.neuralRefinementX << ','
+         << next.neuralRefinementY << ','
+         << next.totalLeadX << ','
+         << next.totalLeadY << ','
+         << next.jitterScore << ','
+         << next.oscillationPenalty << '\n';
+}
+
+void MouseThread::updateNeuralControlActuatorTelemetry(const aim::PidMouseCommand& command)
+{
+    std::lock_guard<std::mutex> lock(neuralControlTelemetryMutex);
+    if (!neuralControlTelemetry.valid)
+        return;
+
+    neuralControlTelemetry.jitterScore = command.smartBlendJitterScore;
+    neuralControlTelemetry.oscillationPenalty = command.smartBlendOscillationPenalty;
 }
 
 std::pair<double, double> MouseThread::computePredictionFeedForwardLead(
@@ -952,6 +1086,7 @@ std::pair<double, double> MouseThread::computePredictionFeedForwardLead(
         phase2Lead.second + neuralRefinement.second,
         maxTotalLead);
     setNeuralTargetingDebugPoint(target, total);
+    publishNeuralControlTelemetry(lockInfo.trackId, weight, confidence, phase2Lead, neuralRefinement, total);
     return total;
 }
 
@@ -1095,6 +1230,16 @@ bool MouseThread::getNeuralTargetingRefinedAimPoint(std::pair<double, double>& p
         return false;
 
     point = neuralTargetingRefinedAimPoint;
+    return true;
+}
+
+bool MouseThread::getNeuralControlTelemetry(NeuralControlTelemetry& telemetry) const
+{
+    std::lock_guard<std::mutex> lock(neuralControlTelemetryMutex);
+    if (!neuralControlTelemetry.valid)
+        return false;
+
+    telemetry = neuralControlTelemetry;
     return true;
 }
 

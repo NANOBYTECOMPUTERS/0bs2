@@ -1194,6 +1194,12 @@ void gameOverlayRenderLoop()
             neuralTargetingRefinedAimPointValid =
                 globalMouseThread->getNeuralTargetingRefinedAimPoint(neuralTargetingRefinedAimPoint);
 
+        NeuralControlTelemetry neuralControlTelemetry;
+        bool neuralControlTelemetryValid = false;
+        if (config.neural_control_telemetry_overlay_enabled && globalMouseThread)
+            neuralControlTelemetryValid =
+                globalMouseThread->getNeuralControlTelemetry(neuralControlTelemetry);
+
         std::vector<std::pair<double, double>> windTailPts;
         if (config.game_overlay_draw_wind_tail && globalMouseThread)
             windTailPts = globalMouseThread->getWindDebugTrail();
@@ -1780,6 +1786,38 @@ void gameOverlayRenderLoop()
                 gameOverlayPtr->AddCircle({ rx, ry, 7.0f }, ARGB(235, 255, 90, 220), 1.5f);
                 gameOverlayPtr->FillCircle({ rx, ry, 2.6f }, ARGB(235, 255, 90, 220));
             }
+        }
+
+        if (config.neural_control_telemetry_overlay_enabled && neuralControlTelemetryValid)
+        {
+            wchar_t line[192] = {};
+            const float tx = static_cast<float>(baseX + 8.0f);
+            float ty = static_cast<float>(baseY + 10.0f);
+
+            swprintf_s(
+                line,
+                L"Adaptive influence %.1f%%  Confidence %.2f",
+                neuralControlTelemetry.adaptiveInfluence * 100.0,
+                neuralControlTelemetry.confidence);
+            gameOverlayPtr->AddText(tx, ty, line, 13.0f, ARGB(225, 210, 245, 255));
+            ty += 17.0f;
+
+            swprintf_s(
+                line,
+                L"Predicted lead %.1f, %.1f  Neural %.1f, %.1f",
+                neuralControlTelemetry.predictionLeadX,
+                neuralControlTelemetry.predictionLeadY,
+                neuralControlTelemetry.neuralRefinementX,
+                neuralControlTelemetry.neuralRefinementY);
+            gameOverlayPtr->AddText(tx, ty, line, 13.0f, ARGB(210, 180, 230, 255));
+            ty += 17.0f;
+
+            swprintf_s(
+                line,
+                L"Smart jitter %.2f  Oscillation %.2f",
+                neuralControlTelemetry.jitterScore,
+                neuralControlTelemetry.oscillationPenalty);
+            gameOverlayPtr->AddText(tx, ty, line, 13.0f, ARGB(210, 180, 230, 255));
         }
 
         // WIND DEBUG TAIL

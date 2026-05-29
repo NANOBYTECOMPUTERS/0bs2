@@ -12,6 +12,16 @@ This reference is ordered by the GUI sidebar tabs in `overlay/overlay.cpp`. It l
 
 Search by GUI label, config key, tab, section, or source file. Rows marked `CUDA GUI / DML config-only` appear as GUI controls only in CUDA builds; the current `x64/DML/config.ini` keeps those values as config-only settings.
 
+## Perfect Aim v1.0
+
+Perfect Aim v1.0 keeps all neural systems advisory only and default OFF. The runtime path remains:
+
+`Video Frame -> Detector -> Tracker -> Kalman -> Temporal Predictor -> Neural Targeting Head -> Adaptive Influence + SmartBlender -> PID/Governor -> Mouse Output`
+
+PID/Kalman remains the convergence owner. Temporal prediction and the neural targeting head can only add bounded feed-forward/refinement offsets; they do not replace the tracked target, modify the PID observation point, or write directly to final actuator deltas.
+
+The Neural tab exposes Balanced, Aggressive, Smooth, and Sniper presets. Presets tune prediction influence, neural refinement range, and SmartBlender damping/jerk limits while retaining opt-in master toggles. Optional telemetry can show current adaptive influence, confidence, predicted lead, neural refinement, and SmartBlender jitter/oscillation state on the game overlay, or write a throttled CSV log for tuning.
+
 ## GUI Tab Order
 
 | Order | Tab | Notes |
