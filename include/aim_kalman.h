@@ -89,6 +89,20 @@ public:
         return { xAxis_.velocity, yAxis_.velocity };
     }
 
+    void applyPositionOffset(double dx, double dy)
+    {
+        if (!initialized_ || (!std::isfinite(dx) || !std::isfinite(dy)))
+            return;
+
+        xAxis_.position += dx;
+        yAxis_.position += dy;
+        if (hasLastMeasurement_)
+        {
+            lastMeasurementX_ += dx;
+            lastMeasurementY_ += dy;
+        }
+    }
+
     std::pair<double, double> predict(double lookaheadSec) const
     {
         if (!initialized_)

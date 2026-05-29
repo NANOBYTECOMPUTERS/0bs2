@@ -66,6 +66,25 @@ public:
         };
     }
 
+    void applyPositionOffset(double dx, double dy)
+    {
+        if (!initialized_ || (!std::isfinite(dx) || !std::isfinite(dy)))
+            return;
+
+        for (auto& mode : modes_)
+        {
+            mode.x.position += dx;
+            mode.y.position += dy;
+        }
+        combinedX_.position += dx;
+        combinedY_.position += dy;
+        if (hasLastMeasurement_)
+        {
+            lastMeasurementX_ += dx;
+            lastMeasurementY_ += dy;
+        }
+    }
+
     std::pair<double, double> predict(double lookaheadSec) const
     {
         if (!initialized_)

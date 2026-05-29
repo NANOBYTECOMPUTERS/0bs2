@@ -27,6 +27,10 @@ Slider,Mouse,State Estimator,Warmup frames,kalman_warmup_frames,0-20,n/a,GUI,Leg
 Activate/deactivate,Mouse,State Estimator,Compensate detection delay,kalman_compensate_detection_delay,true/false,n/a,GUI,Accounts for detector latency in prediction.,overlay/draw_mouse.cpp
 Slider,Mouse,State Estimator,Additional prediction (ms),kalman_additional_prediction_ms,-80.0-120.0,n/a,GUI,Manual extra prediction offset in milliseconds.,overlay/draw_mouse.cpp
 Slider,Mouse,State Estimator,Reset timeout (s),kalman_reset_timeout_sec,0.05-3.0,n/a,GUI,Time without stable observations before estimator state resets.,overlay/draw_mouse.cpp
+Activate/deactivate,Mouse,State Estimator,Ego-motion compensation,ego_motion_compensation_enabled,true/false,n/a,GUI,"Opt-in tracker-prior compensation from emitted mouse/view motion. Raw detections, PID observation, and final actuator output are unchanged.",overlay/draw_mouse.cpp
+Slider,Mouse,State Estimator,Ego compensation strength,ego_motion_compensation_strength,0.0-1.0,n/a,GUI,Fraction of recent emitted motion subtracted from tracker priors/history to reduce camera-motion jitter.,overlay/draw_mouse.cpp
+Slider,Mouse,State Estimator,Ego max shift (px @640),ego_motion_compensation_max_shift_px,1-128,n/a,GUI,Per-frame compensation clamp at 640 detection resolution; scales with detection_resolution.,overlay/draw_mouse.cpp
+Slider,Mouse,State Estimator,Ego max age (ms),ego_motion_compensation_max_age_ms,16-500,n/a,GUI,Drops stale emitted-motion samples so compensation fails closed.,overlay/draw_mouse.cpp
 Slider,Mouse,Pure PID Movement,Actuator Hz,pid_actuator_hz,30-2000,2000,GUI,PID update rate used by the mouse actuator.,overlay/draw_mouse.cpp
 Slider,Mouse,Pure PID Movement,Kp,pid_kp,0.0000-1.5000,0.0115,GUI,Proportional PID gain.,overlay/draw_mouse.cpp
 Slider,Mouse,Pure PID Movement,Ki,pid_ki,0.0000-0.5000,0.0003,GUI,Integral PID gain.,overlay/draw_mouse.cpp

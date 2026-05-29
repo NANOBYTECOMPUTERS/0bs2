@@ -23,6 +23,7 @@
 #include "BoxTarget.h"
 #include "MouseInput.h"
 #include "aim_kalman.h"
+#include "ego_motion_compensator.h"
 #include "PidMouseController.h"
 #include "neural/targeting/NeuralTargetingHead.h"
 
@@ -98,6 +99,7 @@ private:
     double                        adaptivePredictionInfluenceEma = 0.0;
     int                           adaptivePredictionTrackId = -1;
     bool                          adaptivePredictionInfluenceActive = false;
+    aim::EgoMotionCompensator     egoMotionCompensator;
     NeuralControlTelemetry        neuralControlTelemetry;
     mutable std::mutex            neuralControlTelemetryMutex;
     std::chrono::steady_clock::time_point lastNeuralControlTelemetryLog{};
@@ -147,6 +149,7 @@ private:
         const std::pair<double, double>& neuralRefinement,
         const std::pair<double, double>& totalLead);
     void updateNeuralControlActuatorTelemetry(const aim::PidMouseCommand& command);
+    void recordEgoMotionDelta(double pixelDx, double pixelDy, std::chrono::steady_clock::time_point timestamp);
     std::pair<double, double> pixelDeltaToCounts(double pixelDx, double pixelDy) const;
     void resetPid();
 
@@ -220,6 +223,10 @@ public:
         double learnedPredictionLeadX = 0.0,
         double learnedPredictionLeadY = 0.0);
     void clearQueuedMoves();
+    std::pair<double, double> consumeEgoMotionCompensation(
+        std::chrono::steady_clock::time_point start,
+        std::chrono::steady_clock::time_point end);
+    void resetEgoMotionCompensation();
     std::pair<double, double> computePredictionFeedForwardLead(const BoxTarget& target, const LockedTargetInfo& lockInfo);
     std::pair<double, double> predict_target_position(double target_x, double target_y);
     void moveMouse(const BoxTarget& target);

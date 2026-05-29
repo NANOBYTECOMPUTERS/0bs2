@@ -54,6 +54,10 @@ public:
     bool kalman_compensate_detection_delay;
     float kalman_additional_prediction_ms;
     float kalman_reset_timeout_sec;
+    bool ego_motion_compensation_enabled;
+    float ego_motion_compensation_strength;
+    float ego_motion_compensation_max_shift_px;
+    int ego_motion_compensation_max_age_ms;
 
     float snapRadius;
     float nearRadius;

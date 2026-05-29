@@ -100,6 +100,10 @@ bool Config::loadConfig(const std::string& filename)
         kalman_compensate_detection_delay = true;
         kalman_additional_prediction_ms = 0.0f;
         kalman_reset_timeout_sec = 0.5f;
+        ego_motion_compensation_enabled = false;
+        ego_motion_compensation_strength = 0.80f;
+        ego_motion_compensation_max_shift_px = 32.0f;
+        ego_motion_compensation_max_age_ms = 120;
 
         snapRadius = 1.5f;
         nearRadius = 25.0f;
@@ -504,6 +508,10 @@ bool Config::loadConfig(const std::string& filename)
     kalman_compensate_detection_delay = get_bool("kalman_compensate_detection_delay", true);
     kalman_additional_prediction_ms = (float)get_double("kalman_additional_prediction_ms", 0.0);
     kalman_reset_timeout_sec = (float)get_double("kalman_reset_timeout_sec", 0.5);
+    ego_motion_compensation_enabled = get_bool("ego_motion_compensation_enabled", false);
+    ego_motion_compensation_strength = (float)get_double("ego_motion_compensation_strength", 0.80);
+    ego_motion_compensation_max_shift_px = (float)get_double("ego_motion_compensation_max_shift_px", 32.0);
+    ego_motion_compensation_max_age_ms = get_long("ego_motion_compensation_max_age_ms", 120);
     
     snapRadius = (float)get_double("snapRadius", 1.5);
     nearRadius = (float)get_double("nearRadius", 25.0);
@@ -777,6 +785,12 @@ bool Config::loadConfig(const std::string& filename)
     if (kalman_additional_prediction_ms > 120.0f) kalman_additional_prediction_ms = 120.0f;
     if (kalman_reset_timeout_sec < 0.05f) kalman_reset_timeout_sec = 0.05f;
     if (kalman_reset_timeout_sec > 3.0f) kalman_reset_timeout_sec = 3.0f;
+    if (ego_motion_compensation_strength < 0.0f) ego_motion_compensation_strength = 0.0f;
+    if (ego_motion_compensation_strength > 1.0f) ego_motion_compensation_strength = 1.0f;
+    if (ego_motion_compensation_max_shift_px < 1.0f) ego_motion_compensation_max_shift_px = 1.0f;
+    if (ego_motion_compensation_max_shift_px > 128.0f) ego_motion_compensation_max_shift_px = 128.0f;
+    if (ego_motion_compensation_max_age_ms < 16) ego_motion_compensation_max_age_ms = 16;
+    if (ego_motion_compensation_max_age_ms > 500) ego_motion_compensation_max_age_ms = 500;
     std::transform(estimator_mode.begin(), estimator_mode.end(), estimator_mode.begin(),
         [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
     if (estimator_mode != "kalman" && estimator_mode != "imm")
@@ -1011,6 +1025,10 @@ bool Config::loadConfigMerged(const std::string& filename)
     MERGE_FIELD("kalman_compensate_detection_delay", kalman_compensate_detection_delay);
     MERGE_FIELD("kalman_additional_prediction_ms", kalman_additional_prediction_ms);
     MERGE_FIELD("kalman_reset_timeout_sec", kalman_reset_timeout_sec);
+    MERGE_FIELD("ego_motion_compensation_enabled", ego_motion_compensation_enabled);
+    MERGE_FIELD("ego_motion_compensation_strength", ego_motion_compensation_strength);
+    MERGE_FIELD("ego_motion_compensation_max_shift_px", ego_motion_compensation_max_shift_px);
+    MERGE_FIELD("ego_motion_compensation_max_age_ms", ego_motion_compensation_max_age_ms);
 
     MERGE_FIELD("snapRadius", snapRadius);
     MERGE_FIELD("nearRadius", nearRadius);
@@ -1368,6 +1386,10 @@ bool Config::saveConfig(const std::string& filename)
         << "kalman_compensate_detection_delay = " << (kalman_compensate_detection_delay ? "true" : "false") << "\n"
         << "kalman_additional_prediction_ms = " << kalman_additional_prediction_ms << "\n"
         << "kalman_reset_timeout_sec = " << kalman_reset_timeout_sec << "\n"
+        << "ego_motion_compensation_enabled = " << (ego_motion_compensation_enabled ? "true" : "false") << "\n"
+        << "ego_motion_compensation_strength = " << ego_motion_compensation_strength << "\n"
+        << "ego_motion_compensation_max_shift_px = " << ego_motion_compensation_max_shift_px << "\n"
+        << "ego_motion_compensation_max_age_ms = " << ego_motion_compensation_max_age_ms << "\n"
         << "# WIN32, GHUB, RAZER, ARDUINO, TEENSY41, TEENSY41_HID, KMBOX_NET, KMBOX_A, MAKCU\n"
         << "input_method = " << input_method << "\n\n";
 

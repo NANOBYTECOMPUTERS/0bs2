@@ -88,6 +88,7 @@ void mouseThreadFunction(MouseThread& mouseThread)
                 );
             }
             targetTracker.reset();
+            mouseThread.resetEgoMotionCompensation();
             {
                 std::lock_guard<std::mutex> lk(g_trackerDebugMutex);
                 g_trackerDebugTracks.clear();
@@ -113,6 +114,24 @@ void mouseThreadFunction(MouseThread& mouseThread)
 
         if (hasNewDetection)
         {
+            const auto trackerFrameTimestamp =
+                (bufferCaptureTimestamp.time_since_epoch().count() != 0)
+                ? bufferCaptureTimestamp
+                : ((bufferPublishTimestamp.time_since_epoch().count() != 0)
+                    ? bufferPublishTimestamp
+                    : std::chrono::steady_clock::now());
+            std::pair<double, double> egoMotionShift{ 0.0, 0.0 };
+            if (lastTrackerUpdate.time_since_epoch().count() != 0)
+            {
+                egoMotionShift = mouseThread.consumeEgoMotionCompensation(
+                    lastTrackerUpdate,
+                    trackerFrameTimestamp);
+            }
+            else
+            {
+                mouseThread.resetEgoMotionCompensation();
+            }
+
             targetTracker.update(
                 boxes,
                 classes,
@@ -120,12 +139,10 @@ void mouseThreadFunction(MouseThread& mouseThread)
                 config.detection_resolution,
                 config.detection_resolution,
                 config.disable_headshot,
-                aiming.load()
+                aiming.load(),
+                cv::Point2d(egoMotionShift.first, egoMotionShift.second)
             );
-            lastTrackerUpdate =
-                (bufferCaptureTimestamp.time_since_epoch().count() != 0)
-                ? bufferCaptureTimestamp
-                : bufferPublishTimestamp;
+            lastTrackerUpdate = trackerFrameTimestamp;
             {
                 std::lock_guard<std::mutex> lk(g_trackerDebugMutex);
                 g_trackerDebugTracks = targetTracker.getDebugTracks();

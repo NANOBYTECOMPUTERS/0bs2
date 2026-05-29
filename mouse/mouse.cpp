@@ -108,6 +108,17 @@ std::shared_ptr<aim::IPidGovernor> buildPidGovernorFromConfig()
     return aim::createOnnxPidGovernor(config.pid_governor_model_path);
 }
 
+aim::EgoMotionSettings buildEgoMotionSettingsFromConfig()
+{
+    aim::EgoMotionSettings settings;
+    settings.enabled = config.ego_motion_compensation_enabled;
+    settings.strength = static_cast<double>(config.ego_motion_compensation_strength);
+    const double resolutionScale = std::clamp(static_cast<double>(config.detection_resolution) / 640.0, 0.25, 2.0);
+    settings.maxShiftPx = static_cast<double>(config.ego_motion_compensation_max_shift_px) * resolutionScale;
+    settings.maxAgeMs = config.ego_motion_compensation_max_age_ms;
+    return settings;
+}
+
 double smoothStep01(double t)
 {
     t = std::clamp(t, 0.0, 1.0);
@@ -166,6 +177,7 @@ MouseThread::MouseThread(
     lastPredictionLookaheadSec = 0.0;
     pidController.setSettings(buildPidMouseSettingsFromConfig(screen_width, screen_height, fov_x, fov_y));
     pidController.setGovernor(buildPidGovernorFromConfig());
+    egoMotionCompensator.setSettings(buildEgoMotionSettingsFromConfig());
 
     moveWorker = std::thread(&MouseThread::moveWorkerLoop, this);
     pidActuator = std::thread(&MouseThread::pidActuatorLoop, this);
@@ -192,6 +204,7 @@ void MouseThread::updateConfig(
     targetKalman.reset();
     lastKalmanTelemetry = {};
     lastPredictionLookaheadSec = 0.0;
+    resetEgoMotionCompensation();
 
     {
         std::lock_guard<std::mutex> lock(pidMtx);
@@ -278,6 +291,7 @@ void MouseThread::pidActuatorLoop()
 
             if (command.active)
             {
+                recordEgoMotionDelta(command.pixelDx, command.pixelDy, now);
                 std::pair<double, double> counts{ 0.0, 0.0 };
                 if (command.angularOutputActive)
                 {
@@ -544,6 +558,29 @@ std::pair<double, double> MouseThread::pixelDeltaToCounts(double pixelDx, double
     {
         return { 0.0, 0.0 };
     }
+}
+
+void MouseThread::recordEgoMotionDelta(double pixelDx, double pixelDy, std::chrono::steady_clock::time_point timestamp)
+{
+    egoMotionCompensator.setSettings(buildEgoMotionSettingsFromConfig());
+    egoMotionCompensator.recordDelta(pixelDx, pixelDy, timestamp);
+}
+
+std::pair<double, double> MouseThread::consumeEgoMotionCompensation(
+    std::chrono::steady_clock::time_point start,
+    std::chrono::steady_clock::time_point end)
+{
+    egoMotionCompensator.setSettings(buildEgoMotionSettingsFromConfig());
+    const auto shift = egoMotionCompensator.consume(start, end, std::chrono::steady_clock::now());
+    if (!shift.valid)
+        return { 0.0, 0.0 };
+    return { shift.dx, shift.dy };
+}
+
+void MouseThread::resetEgoMotionCompensation()
+{
+    egoMotionCompensator.setSettings(buildEgoMotionSettingsFromConfig());
+    egoMotionCompensator.reset();
 }
 
 void MouseThread::publishPidObservation(
@@ -1096,6 +1133,7 @@ void MouseThread::clearQueuedMoves()
     std::queue<Move> empty;
     moveQueue.swap(empty);
     resetWindState();
+    resetEgoMotionCompensation();
     resetPid();
 }
 
@@ -1124,6 +1162,7 @@ void MouseThread::resetPrediction()
     targetKalman.reset();
     lastKalmanTelemetry = {};
     lastPredictionLookaheadSec = 0.0;
+    resetEgoMotionCompensation();
     target_detected.store(false);
 }
 

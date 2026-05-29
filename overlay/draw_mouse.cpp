@@ -37,6 +37,10 @@ int prev_kalman_acquisition_frames = config.kalman_acquisition_frames;
 bool prev_kalman_compensate_detection_delay = config.kalman_compensate_detection_delay;
 float prev_kalman_additional_prediction_ms = config.kalman_additional_prediction_ms;
 float prev_kalman_reset_timeout_sec = config.kalman_reset_timeout_sec;
+bool prev_ego_motion_compensation_enabled = config.ego_motion_compensation_enabled;
+float prev_ego_motion_compensation_strength = config.ego_motion_compensation_strength;
+float prev_ego_motion_compensation_max_shift_px = config.ego_motion_compensation_max_shift_px;
+int prev_ego_motion_compensation_max_age_ms = config.ego_motion_compensation_max_age_ms;
 int prev_pid_actuator_hz = config.pid_actuator_hz;
 float prev_pid_kp = config.pid_kp;
 float prev_pid_ki = config.pid_ki;
@@ -601,6 +605,11 @@ void draw_mouse()
         ImGui::Checkbox("Compensate detection delay", &config.kalman_compensate_detection_delay);
         ImGui::SliderFloat("Additional prediction (ms)", &config.kalman_additional_prediction_ms, -80.0f, 120.0f, "%.1f");
         ImGui::SliderFloat("Reset timeout (s)", &config.kalman_reset_timeout_sec, 0.05f, 3.0f, "%.2f");
+        ImGui::Separator();
+        ImGui::Checkbox("Ego-motion compensation", &config.ego_motion_compensation_enabled);
+        ImGui::SliderFloat("Ego compensation strength", &config.ego_motion_compensation_strength, 0.0f, 1.0f, "%.2f");
+        ImGui::SliderFloat("Ego max shift (px @640)", &config.ego_motion_compensation_max_shift_px, 1.0f, 128.0f, "%.1f");
+        ImGui::SliderInt("Ego max age (ms)", &config.ego_motion_compensation_max_age_ms, 16, 500);
         OverlayUI::EndSection();
     }
 
@@ -771,6 +780,10 @@ void draw_mouse()
         prev_kalman_compensate_detection_delay != config.kalman_compensate_detection_delay ||
         prev_kalman_additional_prediction_ms != config.kalman_additional_prediction_ms ||
         prev_kalman_reset_timeout_sec != config.kalman_reset_timeout_sec ||
+        prev_ego_motion_compensation_enabled != config.ego_motion_compensation_enabled ||
+        prev_ego_motion_compensation_strength != config.ego_motion_compensation_strength ||
+        prev_ego_motion_compensation_max_shift_px != config.ego_motion_compensation_max_shift_px ||
+        prev_ego_motion_compensation_max_age_ms != config.ego_motion_compensation_max_age_ms ||
         prev_pid_actuator_hz != config.pid_actuator_hz ||
         prev_pid_kp != config.pid_kp ||
         prev_pid_ki != config.pid_ki ||
@@ -833,6 +846,10 @@ void draw_mouse()
         prev_kalman_compensate_detection_delay = config.kalman_compensate_detection_delay;
         prev_kalman_additional_prediction_ms = config.kalman_additional_prediction_ms;
         prev_kalman_reset_timeout_sec = config.kalman_reset_timeout_sec;
+        prev_ego_motion_compensation_enabled = config.ego_motion_compensation_enabled;
+        prev_ego_motion_compensation_strength = config.ego_motion_compensation_strength;
+        prev_ego_motion_compensation_max_shift_px = config.ego_motion_compensation_max_shift_px;
+        prev_ego_motion_compensation_max_age_ms = config.ego_motion_compensation_max_age_ms;
         prev_pid_actuator_hz = config.pid_actuator_hz;
         prev_pid_kp = config.pid_kp;
         prev_pid_ki = config.pid_ki;
