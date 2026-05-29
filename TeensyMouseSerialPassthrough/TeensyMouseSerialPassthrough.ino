@@ -24,7 +24,7 @@ void setup() {
   pinMode(LED_BUILTIN, OUTPUT);
   Serial.begin(2000000);        // Increased for better performance with your C++ code
   delay(500);
-  
+
   myusb.begin();
   Mouse.begin();
 

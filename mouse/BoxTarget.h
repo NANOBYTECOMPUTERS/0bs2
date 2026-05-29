@@ -3,10 +3,13 @@
 
 #include <opencv2/opencv.hpp>
 #include <vector>
+#include <deque>
 #include <chrono>
 #include <random>
+#include <utility>
 
 #include "aim_kalman.h"
+#include "neural/TemporalPredictor.h"
 
 class BoxTarget
 {
@@ -69,6 +72,11 @@ struct LockedTargetInfo
     bool observedThisFrame = false;
     int missedFrames = 0;
     BoxTarget target;
+    std::vector<std::pair<double, double>> predictedFuture;
+    int predictedFutureAgeFrames = 9999;
+    double targetVelocityX = 0.0;
+    double targetVelocityY = 0.0;
+    double targetBoxScaleVelocity = 0.0;
 };
 
 struct TrackDebugInfo
@@ -94,6 +102,8 @@ struct TrackDebugInfo
     double lastNeuralScore = 0.5;
     double lastNeuralBonus = 0.0;
     bool lastNeuralEvaluated = false;
+    std::vector<std::pair<double, double>> temporalFuture;
+    bool temporalPredictionValid = false;
 };
 
 class MultiTargetTracker
@@ -124,6 +134,18 @@ public:
 private:
     struct TrackState
     {
+        struct TrackHistorySample
+        {
+            double x = 0.0;
+            double y = 0.0;
+            double w = 0.0;
+            double h = 0.0;
+            double vx = 0.0;
+            double vy = 0.0;
+            double boxScaleVel = 0.0;
+            double confidence = 1.0;
+        };
+
         int id = -1;
         cv::Rect2f box;
         cv::Point2f velocity = { 0.0f, 0.0f };
@@ -144,6 +166,12 @@ private:
         double lastNeuralBonus = 0.0;
         bool lastNeuralEvaluated = false;
         InnerAimTrack innerAim;
+        std::deque<TrackHistorySample> history;
+        std::vector<std::pair<double, double>> temporalPrediction;
+        int lastTemporalPredictionFrame = -1;
+        int lastTemporalPredictionRequestFrame = -1;
+        bool temporalPredictionValid = false;
+        bool temporalPredictionPending = false;
         std::chrono::steady_clock::time_point lastUpdate;
     };
 
@@ -168,6 +196,12 @@ private:
     void updateInnerAim(InnerAimTrack& track, const cv::Rect& det, float conf, double dt);
     void updateInnerAim(InnerAimTrack& track, const cv::Rect& det, float conf, double dt, double rawInnerX, double rawInnerY);
     void decayInnerAim(InnerAimTrack& track);
+    aim::neural::TemporalPredictor::Input buildTemporalPredictorInput(
+        const TrackState& t,
+        int screenWidth,
+        int screenHeight) const;
+    void appendTrackHistory(TrackState& t);
+    void updateTemporalPrediction(TrackState& t, int screenWidth, int screenHeight);
     bool shouldAcceptAsNewLock(const DetectionCandidate& det, const InnerAimTrack* current) const;
     int findTrackIndexById(int id) const;
     int chooseBestTrack(int screenWidth, int screenHeight) const;
@@ -178,6 +212,7 @@ private:
     int nextId_ = 1;
     int lockedTrackId_ = -1;
     int maxMissedFrames_ = 6;
+    int updateFrameCounter_ = 0;
     std::mt19937 innerAimRng_{ std::random_device{}() };
 };
 

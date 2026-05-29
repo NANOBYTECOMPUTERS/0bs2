@@ -420,15 +420,38 @@ void DirectMLDetector::processFrame(
     uint64_t frameId,
     std::chrono::steady_clock::time_point captureTimestamp)
 {
+    processFrame(
+        frame,
+        frameId,
+        captureTimestamp,
+        CaptureFrameGeometry::FromCrop(
+            0,
+            0,
+            frame.cols,
+            frame.rows,
+            frame.cols,
+            frame.rows,
+            frame.cols,
+            frame.rows,
+            false));
+}
+
+void DirectMLDetector::processFrame(
+    const cv::Mat& frame,
+    uint64_t frameId,
+    std::chrono::steady_clock::time_point captureTimestamp,
+    const CaptureFrameGeometry& frameGeometry)
+{
     if (detectionPaused)
     {
-        detectionBuffer.clear(frameId, captureTimestamp);
+        detectionBuffer.clear(frameId, captureTimestamp, frameGeometry);
         return;
     }
     std::unique_lock<std::mutex> lock(inferenceMutex);
     currentFrame = frame;
     currentFrameId = frameId;
     currentFrameCaptureTimestamp = captureTimestamp;
+    currentFrameGeometry = frameGeometry;
     frameReady = true;
     inferenceCV.notify_one();
 }
@@ -458,6 +481,7 @@ void DirectMLDetector::dmlInferenceThread()
             cv::Mat frame;
             uint64_t frameId = 0;
             std::chrono::steady_clock::time_point frameCaptureTimestamp{};
+            CaptureFrameGeometry frameGeometry;
             bool hasNewFrame = false;
             {
                 std::unique_lock<std::mutex> lock(inferenceMutex);
@@ -471,6 +495,7 @@ void DirectMLDetector::dmlInferenceThread()
                     frame = std::move(currentFrame);
                     frameId = currentFrameId;
                     frameCaptureTimestamp = currentFrameCaptureTimestamp;
+                    frameGeometry = currentFrameGeometry;
                     frameReady = false;
                     hasNewFrame = true;
                 }
@@ -487,7 +512,8 @@ void DirectMLDetector::dmlInferenceThread()
                         std::vector<int>{},
                         std::vector<float>{},
                         frameId,
-                        frameCaptureTimestamp);
+                        frameCaptureTimestamp,
+                        frameGeometry);
                     continue;
                 }
                 std::vector<Detection> filteredDetections = std::move(detectionsBatch.back());
@@ -510,7 +536,8 @@ void DirectMLDetector::dmlInferenceThread()
                     std::move(classes),
                     std::move(confidences),
                     frameId,
-                    frameCaptureTimestamp);
+                    frameCaptureTimestamp,
+                    frameGeometry);
             }
         }
     }

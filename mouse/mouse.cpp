@@ -86,6 +86,12 @@ aim::PidMouseSettings buildPidMouseSettingsFromConfig(
     settings.governorEnabled = config.pid_governor_enabled;
     settings.governorBlend = static_cast<double>(config.pid_governor_blend);
     settings.governorMaxSpeedMultiple = static_cast<double>(config.pid_governor_max_speed_multiple);
+    settings.pid_smart_blending_enabled = config.pid_smart_blending_enabled;
+    settings.pid_smart_blending_aggression = static_cast<double>(config.pid_smart_blending_aggression);
+    settings.pid_smart_blending_near_damping = static_cast<double>(config.pid_smart_blending_near_damping);
+    settings.pid_smart_blending_deadzone_px = static_cast<double>(config.pid_smart_blending_deadzone_px);
+    settings.pid_smart_blending_jerk_limit_px = static_cast<double>(config.pid_smart_blending_jerk_limit_px);
+    settings.pid_smart_blending_confidence_floor = static_cast<double>(config.pid_smart_blending_confidence_floor);
     return settings;
 }
 
@@ -94,6 +100,22 @@ std::shared_ptr<aim::IPidGovernor> buildPidGovernorFromConfig()
     if (!config.pid_governor_enabled)
         return nullptr;
     return aim::createOnnxPidGovernor(config.pid_governor_model_path);
+}
+
+double smoothStep01(double t)
+{
+    t = std::clamp(t, 0.0, 1.0);
+    return t * t * (3.0 - 2.0 * t);
+}
+
+std::pair<double, double> clampVectorLength(double x, double y, double maxLength)
+{
+    const double length = std::hypot(x, y);
+    if (!std::isfinite(length) || length <= maxLength || length <= 1e-9)
+        return { x, y };
+
+    const double scale = maxLength / length;
+    return { x * scale, y * scale };
 }
 }
 
@@ -326,7 +348,7 @@ void MouseThread::appendWindDebugStep(int dx, int dy)
     double deltaPxY = static_cast<double>(dy);
 
     {
-        std::lock_guard<std::mutex> cfgLock(configMutex);
+        std::lock_guard<std::recursive_mutex> cfgLock(configMutex);
         const Config::GameProfile* gpPtr = nullptr;
 
         auto activeIt = config.game_profiles.find(config.active_game);
@@ -516,7 +538,9 @@ void MouseThread::publishPidObservation(
     double targetHeight,
     double confidence,
     double targetOffsetX,
-    double targetOffsetY)
+    double targetOffsetY,
+    double learnedPredictionLeadX,
+    double learnedPredictionLeadY)
 {
     aim::PidMouseObservation observation;
     observation.x = pivotX;
@@ -525,6 +549,9 @@ void MouseThread::publishPidObservation(
     observation.height = targetHeight;
     observation.targetOffsetX = std::isfinite(targetOffsetX) ? targetOffsetX : 0.0;
     observation.targetOffsetY = std::isfinite(targetOffsetY) ? targetOffsetY : 0.0;
+    observation.learnedPredictionLeadX = std::isfinite(learnedPredictionLeadX) ? learnedPredictionLeadX : 0.0;
+    observation.learnedPredictionLeadY = std::isfinite(learnedPredictionLeadY) ? learnedPredictionLeadY : 0.0;
+    observation.learnedPredictionLeadValid = std::hypot(observation.learnedPredictionLeadX, observation.learnedPredictionLeadY) > 1e-6;
     observation.confidence = std::isfinite(confidence) ? std::clamp(confidence, 0.0, 1.0) : 0.0;
     observation.timestamp = std::chrono::steady_clock::now();
     observation.valid = true;
@@ -586,9 +613,251 @@ void MouseThread::moveMousePivot(
     double targetHeight,
     double confidence,
     double targetOffsetX,
-    double targetOffsetY)
+    double targetOffsetY,
+    double learnedPredictionLeadX,
+    double learnedPredictionLeadY)
 {
-    publishPidObservation(pivotX, pivotY, targetWidth, targetHeight, confidence, targetOffsetX, targetOffsetY);
+    publishPidObservation(
+        pivotX,
+        pivotY,
+        targetWidth,
+        targetHeight,
+        confidence,
+        targetOffsetX,
+        targetOffsetY,
+        learnedPredictionLeadX,
+        learnedPredictionLeadY);
+}
+
+aim::neural::NeuralTargetingHead::Input MouseThread::computeNeuralTargetingInput(
+    const BoxTarget& target,
+    const LockedTargetInfo& lockInfo) const
+{
+    aim::neural::NeuralTargetingHead::Input input;
+    input.center_x = static_cast<float>(target.smoothX);
+    input.center_y = static_cast<float>(target.smoothY);
+    input.width = static_cast<float>(target.w);
+    input.height = static_cast<float>(target.h);
+    input.vx = static_cast<float>(lockInfo.targetVelocityX);
+    input.vy = static_cast<float>(lockInfo.targetVelocityY);
+    input.box_scale_vel = static_cast<float>(lockInfo.targetBoxScaleVelocity);
+    input.confidence = static_cast<float>(std::clamp(target.confidence, 0.0, 1.0));
+
+    input.predicted_x.reserve(lockInfo.predictedFuture.size());
+    input.predicted_y.reserve(lockInfo.predictedFuture.size());
+    for (const auto& p : lockInfo.predictedFuture)
+    {
+        if (!std::isfinite(p.first) || !std::isfinite(p.second))
+            continue;
+        input.predicted_x.push_back(static_cast<float>(p.first));
+        input.predicted_y.push_back(static_cast<float>(p.second));
+    }
+
+    return input;
+}
+
+std::pair<double, double> MouseThread::consumeNeuralTargetingResult(
+    const BoxTarget& target,
+    const LockedTargetInfo& lockInfo)
+{
+    if (!config.neural_targeting_enabled)
+        return { 0.0, 0.0 };
+
+    aim::neural::NeuralTargetingWorker::Result targetingResult;
+    if (!aim::neural::NeuralTargetingWorker::instance().tryGet(lockInfo.trackId, targetingResult))
+        return neuralTargetingRefinementValid && neuralTargetingLastResultTrackId == lockInfo.trackId
+            ? neuralTargetingRefinement
+            : std::pair<double, double>{ 0.0, 0.0 };
+
+    neuralTargetingPending = false;
+    neuralTargetingPendingTrackId = -1;
+
+    const bool highResolution = config.detection_resolution >= 640;
+    const double confidenceFloor = highResolution ? 0.60 : 0.50;
+    if (!targetingResult.valid ||
+        targetingResult.track_id != lockInfo.trackId ||
+        targetingResult.output.confidence < confidenceFloor)
+    {
+        neuralTargetingRefinementValid = false;
+        neuralTargetingRefinement = { 0.0, 0.0 };
+        return { 0.0, 0.0 };
+    }
+
+    const double maxRefinement = std::clamp(
+        static_cast<double>(config.neural_targeting_max_refinement_px),
+        1.0,
+        80.0);
+    const auto clamped = clampVectorLength(
+        targetingResult.output.refinement_offset_x,
+        targetingResult.output.refinement_offset_y,
+        maxRefinement);
+    const double influence = std::clamp(static_cast<double>(config.neural_targeting_influence), 0.0, 1.0);
+
+    neuralTargetingRefinement = {
+        clamped.first * influence,
+        clamped.second * influence
+    };
+    neuralTargetingLastResultTrackId = lockInfo.trackId;
+    neuralTargetingRefinementValid =
+        std::isfinite(neuralTargetingRefinement.first) &&
+        std::isfinite(neuralTargetingRefinement.second) &&
+        std::hypot(neuralTargetingRefinement.first, neuralTargetingRefinement.second) > 1e-6;
+
+    if (!neuralTargetingRefinementValid)
+        neuralTargetingRefinement = { 0.0, 0.0 };
+
+    return neuralTargetingRefinement;
+}
+
+void MouseThread::submitNeuralTargetingRequest(
+    const BoxTarget& target,
+    const LockedTargetInfo& lockInfo)
+{
+    if (!config.neural_targeting_enabled)
+    {
+        aim::neural::NeuralTargetingWorker::instance().clear();
+        neuralTargetingPending = false;
+        neuralTargetingPendingTrackId = -1;
+        neuralTargetingRefinementValid = false;
+        return;
+    }
+
+    const auto now = std::chrono::steady_clock::now();
+    if (neuralTargetingPending &&
+        neuralTargetingPendingTrackId == lockInfo.trackId &&
+        now - neuralTargetingLastSubmit < std::chrono::milliseconds(33))
+    {
+        return;
+    }
+
+    aim::neural::NeuralTargetingWorker::Request request;
+    request.track_id = lockInfo.trackId;
+    request.frame_id = lockInfo.predictedFutureAgeFrames;
+    request.model_path = config.neural_targeting_model_path;
+    request.max_refinement_px = std::clamp(config.neural_targeting_max_refinement_px, 1.0f, 80.0f);
+    request.max_iterations = std::clamp(config.neural_targeting_max_iterations, 1, 2);
+    request.input = computeNeuralTargetingInput(target, lockInfo);
+    aim::neural::NeuralTargetingWorker::instance().submit(request);
+
+    neuralTargetingPending = true;
+    neuralTargetingPendingTrackId = lockInfo.trackId;
+    neuralTargetingLastSubmit = now;
+}
+
+void MouseThread::setNeuralTargetingDebugPoint(const BoxTarget& target, const std::pair<double, double>& totalLead)
+{
+    std::lock_guard<std::mutex> lock(neuralTargetingDebugMutex);
+    neuralTargetingRefinedAimPoint = {
+        target.smoothX + totalLead.first,
+        target.smoothY + totalLead.second
+    };
+    neuralTargetingRefinedAimPointValid =
+        config.neural_targeting_enabled &&
+        std::isfinite(neuralTargetingRefinedAimPoint.first) &&
+        std::isfinite(neuralTargetingRefinedAimPoint.second);
+}
+
+std::pair<double, double> MouseThread::computePredictionFeedForwardLead(
+    const BoxTarget& target,
+    const LockedTargetInfo& lockInfo)
+{
+    if (!config.temporal_prediction_enabled)
+        return { 0.0, 0.0 };
+
+    if (lockInfo.predictedFutureAgeFrames > 3 || lockInfo.predictedFuture.empty())
+        return { 0.0, 0.0 };
+
+    const auto first = lockInfo.predictedFuture.front();
+    if (!std::isfinite(first.first) || !std::isfinite(first.second) ||
+        !std::isfinite(target.smoothX) || !std::isfinite(target.smoothY))
+    {
+        return { 0.0, 0.0 };
+    }
+
+    const bool highResolution = config.detection_resolution >= 640;
+    const double maxFirstPointDistance = highResolution ? 65.0 : 50.0;
+    const double firstPointDistance = std::hypot(first.first - target.smoothX, first.second - target.smoothY);
+    if (!std::isfinite(firstPointDistance) || firstPointDistance > maxFirstPointDistance)
+        return { 0.0, 0.0 };
+
+    double predictionVx = first.first - target.smoothX;
+    double predictionVy = first.second - target.smoothY;
+    if (lockInfo.predictedFuture.size() > 1)
+    {
+        predictionVx = lockInfo.predictedFuture[1].first - first.first;
+        predictionVy = lockInfo.predictedFuture[1].second - first.second;
+    }
+
+    const double predictionFps = 60.0;
+    const double predictionSpeed = std::hypot(predictionVx, predictionVy) * predictionFps;
+    const double maxPredictionSpeed = highResolution ? 1500.0 : 1200.0;
+    if (!std::isfinite(predictionSpeed) || predictionSpeed > maxPredictionSpeed)
+        return { 0.0, 0.0 };
+
+    const double confidenceFloor = highResolution ? 0.65 : 0.55;
+    const double confidence = std::isfinite(target.confidence) ? std::clamp(target.confidence, 0.0, 1.0) : 0.0;
+    if (confidence < confidenceFloor)
+        return { 0.0, 0.0 };
+
+    const double measuredVx = lockInfo.targetVelocityX;
+    const double measuredVy = lockInfo.targetVelocityY;
+    const double measuredSpeed = std::hypot(measuredVx, measuredVy);
+    if (measuredSpeed > 100.0 && predictionSpeed > 100.0)
+    {
+        const double predMag = std::hypot(predictionVx, predictionVy);
+        const double directionCosine = (predictionVx * measuredVx + predictionVy * measuredVy) /
+            std::max(1e-6, predMag * measuredSpeed);
+        if (directionCosine < -0.35 && confidence < 0.85)
+            return { 0.0, 0.0 };
+    }
+
+    std::pair<double, double> phase2Lead{ 0.0, 0.0 };
+    const double distanceToCrosshair = std::hypot(target.smoothX - center_x, target.smoothY - center_y);
+    const double near_damping = smoothStep01(distanceToCrosshair / 80.0);
+    const double speed_weight = std::clamp(measuredSpeed / 1200.0, 0.0, 1.0);
+    const double influence = std::clamp(static_cast<double>(config.temporal_prediction_influence), 0.0, 1.0);
+    const double weight = influence * confidence * speed_weight * near_damping;
+    if (config.temporal_prediction_feed_forward_enabled && weight > 1e-6)
+    {
+        const double rawLeadX = first.first - target.smoothX;
+        const double rawLeadY = first.second - target.smoothY;
+        phase2Lead = clampVectorLength(
+            rawLeadX * weight,
+            rawLeadY * weight,
+            std::clamp(static_cast<double>(config.temporal_prediction_max_lead_px), 20.0, 80.0));
+    }
+
+    std::pair<double, double> neuralRefinement = consumeNeuralTargetingResult(target, lockInfo);
+    submitNeuralTargetingRequest(target, lockInfo);
+
+    const double phase2Magnitude = std::hypot(phase2Lead.first, phase2Lead.second);
+    const double neuralMagnitude = std::hypot(neuralRefinement.first, neuralRefinement.second);
+    if (phase2Magnitude > 1e-6 && neuralMagnitude > 1e-6)
+    {
+        const double disagreementCosine =
+            (phase2Lead.first * neuralRefinement.first + phase2Lead.second * neuralRefinement.second) /
+            std::max(1e-6, phase2Magnitude * neuralMagnitude);
+        if (disagreementCosine < 0.0 && confidence < 0.85)
+        {
+            neuralRefinement.first *= 0.25;
+            neuralRefinement.second *= 0.25;
+        }
+    }
+
+    const double phase2MaxLead = std::clamp(static_cast<double>(config.temporal_prediction_max_lead_px), 20.0, 80.0);
+    const double neuralMaxLead = config.neural_targeting_enabled
+        ? std::clamp(static_cast<double>(config.neural_targeting_max_refinement_px), 1.0, 80.0)
+        : 0.0;
+    const double conservativeMaxTotalLead = highResolution ? 48.0 : 38.0;
+    const double maxTotalLead = config.neural_targeting_enabled
+        ? std::min(phase2MaxLead + neuralMaxLead, conservativeMaxTotalLead)
+        : phase2MaxLead;
+    auto total = clampVectorLength(
+        phase2Lead.first + neuralRefinement.first,
+        phase2Lead.second + neuralRefinement.second,
+        maxTotalLead);
+    setNeuralTargetingDebugPoint(target, total);
+    return total;
 }
 
 void MouseThread::clearQueuedMoves()
@@ -707,12 +976,26 @@ void MouseThread::clearFuturePositions()
 {
     std::lock_guard<std::mutex> lock(futurePositionsMutex);
     futurePositions.clear();
+    {
+        std::lock_guard<std::mutex> debugLock(neuralTargetingDebugMutex);
+        neuralTargetingRefinedAimPointValid = false;
+    }
 }
 
 std::vector<std::pair<double, double>> MouseThread::getFuturePositions()
 {
     std::lock_guard<std::mutex> lock(futurePositionsMutex);
     return futurePositions;
+}
+
+bool MouseThread::getNeuralTargetingRefinedAimPoint(std::pair<double, double>& point) const
+{
+    std::lock_guard<std::mutex> lock(neuralTargetingDebugMutex);
+    if (!neuralTargetingRefinedAimPointValid)
+        return false;
+
+    point = neuralTargetingRefinedAimPoint;
+    return true;
 }
 
 void MouseThread::clearWindDebugTrail()

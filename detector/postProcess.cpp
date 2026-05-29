@@ -1,18 +1,24 @@
 #include <algorithm>
 #include <numeric>
 #include <chrono>
+#include <cmath>
 #include <limits>
 
 #include "postProcess.h"
+#ifndef YOLO_ANNOTATION_WORKER
 #include "0BS_box_2.h"
 #ifdef USE_CUDA
 #include "trt_detector.h"
+#endif
 #endif
 
 namespace
 {
     void limitDetectionsForNms(std::vector<Detection>& detections)
     {
+#ifdef YOLO_ANNOTATION_WORKER
+        (void)detections;
+#else
         const int maxDetectionsConfig = config.max_detections;
         if (maxDetectionsConfig <= 0)
         {
@@ -33,7 +39,233 @@ namespace
             }
         );
         detections.resize(maxDetections);
+#endif
     }
+
+#ifdef USE_CUDA
+    struct YoloDecoderLayout
+    {
+        bool attributeMajor = false;
+        bool nmsOutput = false;
+        bool hasObjectness = false;
+        int64_t boxCount = 0;
+        int64_t attributeCount = 0;
+        int classCount = 0;
+    };
+
+    bool squeezeYoloShape(const std::vector<int64_t>& shape, int64_t& rows, int64_t& cols)
+    {
+        if (shape.size() == 3 && shape[0] == 1)
+        {
+            rows = shape[1];
+            cols = shape[2];
+            return rows > 0 && cols > 0;
+        }
+        if (shape.size() == 2)
+        {
+            rows = shape[0];
+            cols = shape[1];
+            return rows > 0 && cols > 0;
+        }
+        return false;
+    }
+
+    float readYoloAttribute(const float* output, const YoloDecoderLayout& layout, int64_t boxIndex, int64_t attributeIndex)
+    {
+        return layout.attributeMajor
+            ? output[attributeIndex * layout.boxCount + boxIndex]
+            : output[boxIndex * layout.attributeCount + attributeIndex];
+    }
+
+    bool looksIntegerLike(float value)
+    {
+        return std::isfinite(value) && std::fabs(value - std::round(value)) <= 0.001f;
+    }
+
+    bool looksLikeClassIdRow(const float* output, int64_t boxCount, int explicitClassCount)
+    {
+        if (boxCount <= 0) return false;
+
+        const int64_t samples = std::min<int64_t>(boxCount, 64);
+        int checked = 0;
+        int classIdLike = 0;
+        for (int64_t i = 0; i < samples; ++i)
+        {
+            const int64_t boxIndex = (samples == boxCount) ? i : (i * boxCount / samples);
+            const float confidence = output[4 * boxCount + boxIndex];
+            const float classValue = output[5 * boxCount + boxIndex];
+            if (!std::isfinite(confidence) || !std::isfinite(classValue))
+            {
+                continue;
+            }
+            if (confidence < 0.0f || confidence > 1.5f || classValue < 0.0f)
+            {
+                continue;
+            }
+
+            ++checked;
+            const bool inClassRange = explicitClassCount <= 0 || classValue < static_cast<float>(explicitClassCount);
+            if (inClassRange && looksIntegerLike(classValue))
+            {
+                ++classIdLike;
+            }
+        }
+
+        return checked > 0 && classIdLike * 4 >= checked * 3;
+    }
+
+    bool makeScoreLayout(
+        bool attributeMajor,
+        int64_t attributeCount,
+        int64_t boxCount,
+        int explicitClassCount,
+        YoloDecoderLayout& layout)
+    {
+        if (attributeCount < 5 || boxCount <= 0) return false;
+
+        if (explicitClassCount > 0)
+        {
+            if (attributeCount == 4 + explicitClassCount)
+            {
+                layout = YoloDecoderLayout{ attributeMajor, false, false, boxCount, attributeCount, explicitClassCount };
+                return true;
+            }
+            if (attributeCount == 5 + explicitClassCount)
+            {
+                layout = YoloDecoderLayout{ attributeMajor, false, true, boxCount, attributeCount, explicitClassCount };
+                return true;
+            }
+            return false;
+        }
+
+        const int fallbackClassCount = static_cast<int>(attributeCount - 4);
+        if (fallbackClassCount <= 0) return false;
+        layout = YoloDecoderLayout{ attributeMajor, false, false, boxCount, attributeCount, fallbackClassCount };
+        return true;
+    }
+
+    void collectExplicitScoreLayout(
+        bool attributeMajor,
+        int64_t attributeCount,
+        int64_t boxCount,
+        int explicitClassCount,
+        YoloDecoderLayout& objectnessLayout,
+        bool& hasObjectnessLayout,
+        YoloDecoderLayout& plainLayout,
+        bool& hasPlainLayout)
+    {
+        YoloDecoderLayout candidate;
+        if (makeScoreLayout(attributeMajor, attributeCount, boxCount, explicitClassCount, candidate))
+        {
+            if (candidate.hasObjectness)
+            {
+                objectnessLayout = candidate;
+                hasObjectnessLayout = true;
+            }
+            else
+            {
+                plainLayout = candidate;
+                hasPlainLayout = true;
+            }
+        }
+
+        if (explicitClassCount > 1 &&
+            makeScoreLayout(attributeMajor, attributeCount, boxCount, explicitClassCount - 1, candidate) &&
+            candidate.hasObjectness)
+        {
+            objectnessLayout = candidate;
+            hasObjectnessLayout = true;
+        }
+    }
+
+    bool resolveYoloDecoderLayout(
+        const float* output,
+        const std::vector<int64_t>& shape,
+        int explicitClassCount,
+        YoloDecoderLayout& layout)
+    {
+        int64_t rows = 0;
+        int64_t cols = 0;
+        if (!squeezeYoloShape(shape, rows, cols))
+        {
+            return false;
+        }
+        if (rows > std::numeric_limits<int>::max() || cols > std::numeric_limits<int>::max())
+        {
+            return false;
+        }
+
+        if (cols == 6)
+        {
+            layout = YoloDecoderLayout{ false, true, false, rows, cols, explicitClassCount };
+            return true;
+        }
+
+        if (rows == 6 && looksLikeClassIdRow(output, cols, explicitClassCount))
+        {
+            layout = YoloDecoderLayout{ true, true, false, cols, rows, explicitClassCount };
+            return true;
+        }
+
+        if (explicitClassCount > 0)
+        {
+            YoloDecoderLayout objectnessLayout;
+            YoloDecoderLayout plainLayout;
+            bool hasObjectnessLayout = false;
+            bool hasPlainLayout = false;
+
+            collectExplicitScoreLayout(
+                true,
+                rows,
+                cols,
+                explicitClassCount,
+                objectnessLayout,
+                hasObjectnessLayout,
+                plainLayout,
+                hasPlainLayout);
+            collectExplicitScoreLayout(
+                false,
+                cols,
+                rows,
+                explicitClassCount,
+                objectnessLayout,
+                hasObjectnessLayout,
+                plainLayout,
+                hasPlainLayout);
+
+            if (hasObjectnessLayout)
+            {
+                layout = objectnessLayout;
+                return true;
+            }
+            if (hasPlainLayout)
+            {
+                layout = plainLayout;
+                return true;
+            }
+        }
+
+        if (makeScoreLayout(true, rows, cols, explicitClassCount, layout))
+        {
+            return true;
+        }
+        if (makeScoreLayout(false, cols, rows, explicitClassCount, layout))
+        {
+            return true;
+        }
+
+        if (rows >= 5 && rows <= cols && makeScoreLayout(true, rows, cols, 0, layout))
+        {
+            return true;
+        }
+        if (cols >= 5 && makeScoreLayout(false, cols, rows, 0, layout))
+        {
+            return true;
+        }
+
+        return false;
+    }
+#endif
 }
 
 void NMS(std::vector<Detection>& detections, float nmsThreshold, std::chrono::duration<double, std::milli>* nmsTime)
@@ -115,69 +347,64 @@ void NMS(std::vector<Detection>& detections, float nmsThreshold, std::chrono::du
 }
 
 #ifdef USE_CUDA
-std::vector<Detection> postProcessYolo(
+std::vector<Detection> postProcessYoloScaled(
     const float* output,
     const std::vector<int64_t>& shape,
     int numClasses,
     float confThreshold,
     float nmsThreshold,
+    float imgScale,
     std::chrono::duration<double, std::milli>* nmsTime
 )
 {
     std::vector<Detection> detections;
     detections.reserve(256);
 
-    if (shape.size() < 3) return detections;
-
-    int64_t rows = shape[1];
-    int64_t cols = shape[2];
-    const float img_scale = trt_detector.img_scale;
-
-    if (cols == 6)
+    YoloDecoderLayout layout;
+    if (!resolveYoloDecoderLayout(output, shape, numClasses, layout))
     {
-        int64_t numDetections = rows;
-        for (int i = 0; i < numDetections; ++i)
+        return detections;
+    }
+
+    if (layout.nmsOutput)
+    {
+        for (int64_t i = 0; i < layout.boxCount; ++i)
         {
-            const float* det = output + i * cols;
-            float confidence = det[4];
+            const float confidence = readYoloAttribute(output, layout, i, 4);
+            if (confidence <= confThreshold) continue;
 
-            if (confidence > confThreshold)
-            {
-                int classId = static_cast<int>(det[5]);
+            const float x1 = readYoloAttribute(output, layout, i, 0);
+            const float y1 = readYoloAttribute(output, layout, i, 1);
+            const float x2 = readYoloAttribute(output, layout, i, 2);
+            const float y2 = readYoloAttribute(output, layout, i, 3);
+            const int classId = static_cast<int>(std::round(readYoloAttribute(output, layout, i, 5)));
 
-                float cx = det[0];
-                float cy = det[1];
-                float dx = det[2];
-                float dy = det[3];
-
-                Detection detection;
-                detection.box.x = static_cast<int>(cx * img_scale);
-                detection.box.y = static_cast<int>(cy * img_scale);
-                detection.box.width = static_cast<int>((dx - cx) * img_scale);
-                detection.box.height = static_cast<int>((dy - cy) * img_scale);
-                detection.confidence = confidence;
-                detection.classId = classId;
-
-                detections.push_back(detection);
-            }
+            Detection detection;
+            detection.box.x = static_cast<int>(x1 * imgScale);
+            detection.box.y = static_cast<int>(y1 * imgScale);
+            detection.box.width = static_cast<int>((x2 - x1) * imgScale);
+            detection.box.height = static_cast<int>((y2 - y1) * imgScale);
+            detection.confidence = confidence;
+            detection.classId = classId;
+            detections.push_back(detection);
         }
     }
     else
     {
-        for (int i = 0; i < cols; ++i)
+        const int classOffset = layout.hasObjectness ? 5 : 4;
+        if (layout.classCount <= 0 || classOffset + layout.classCount > layout.attributeCount)
         {
-            const float* col_data = output + i;
+            return detections;
+        }
 
-            float cx = col_data[0 * cols];
-            float cy = col_data[1 * cols];
-            float ow = col_data[2 * cols];
-            float oh = col_data[3 * cols];
-
-            float maxScore = 0.0f;
+        for (int64_t i = 0; i < layout.boxCount; ++i)
+        {
+            const float objectness = layout.hasObjectness ? readYoloAttribute(output, layout, i, 4) : 1.0f;
+            float maxScore = std::numeric_limits<float>::lowest();
             int maxClassId = 0;
-            for (int c = 0; c < numClasses; ++c)
+            for (int c = 0; c < layout.classCount; ++c)
             {
-                float score = col_data[(4 + c) * cols];
+                const float score = objectness * readYoloAttribute(output, layout, i, classOffset + c);
                 if (score > maxScore)
                 {
                     maxScore = score;
@@ -187,14 +414,18 @@ std::vector<Detection> postProcessYolo(
 
             if (maxScore > confThreshold)
             {
+                const float cx = readYoloAttribute(output, layout, i, 0);
+                const float cy = readYoloAttribute(output, layout, i, 1);
+                const float ow = readYoloAttribute(output, layout, i, 2);
+                const float oh = readYoloAttribute(output, layout, i, 3);
                 const float half_ow = 0.5f * ow;
                 const float half_oh = 0.5f * oh;
 
                 Detection det;
-                det.box.x = static_cast<int>((cx - half_ow) * img_scale);
-                det.box.y = static_cast<int>((cy - half_oh) * img_scale);
-                det.box.width = static_cast<int>(ow * img_scale);
-                det.box.height = static_cast<int>(oh * img_scale);
+                det.box.x = static_cast<int>((cx - half_ow) * imgScale);
+                det.box.y = static_cast<int>((cy - half_oh) * imgScale);
+                det.box.width = static_cast<int>(ow * imgScale);
+                det.box.height = static_cast<int>(oh * imgScale);
                 det.confidence = maxScore;
                 det.classId = maxClassId;
 
@@ -206,6 +437,28 @@ std::vector<Detection> postProcessYolo(
     NMS(detections, nmsThreshold, nmsTime);
     return detections;
 }
+
+#ifndef YOLO_ANNOTATION_WORKER
+std::vector<Detection> postProcessYolo(
+    const float* output,
+    const std::vector<int64_t>& shape,
+    int numClasses,
+    float confThreshold,
+    float nmsThreshold,
+    std::chrono::duration<double, std::milli>* nmsTime
+)
+{
+    return postProcessYoloScaled(
+        output,
+        shape,
+        numClasses,
+        confThreshold,
+        nmsThreshold,
+        trt_detector.img_scale,
+        nmsTime
+    );
+}
+#endif
 #endif
 
 std::vector<Detection> postProcessYoloDML(

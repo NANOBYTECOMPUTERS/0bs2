@@ -57,7 +57,21 @@ void PidMouseController::setSettings(const PidMouseSettings& nextSettings)
     settings.derivativeSmoothingMultiplier = clampFinite(settings.derivativeSmoothingMultiplier, 1.0, 6.0, 1.5);
     settings.governorBlend = clampFinite(settings.governorBlend, 0.0, 1.0, 1.0);
     settings.governorMaxSpeedMultiple = clampFinite(settings.governorMaxSpeedMultiple, 1.0, 5.0, 5.0);
+    settings.pid_smart_blending_aggression = clampFinite(settings.pid_smart_blending_aggression, 0.30, 1.0, 0.65);
+    settings.pid_smart_blending_near_damping = clampFinite(settings.pid_smart_blending_near_damping, 0.0, 1.0, 0.75);
+    settings.pid_smart_blending_deadzone_px = clampFinite(settings.pid_smart_blending_deadzone_px, 0.0, 12.0, 0.0);
+    settings.pid_smart_blending_jerk_limit_px = clampFinite(settings.pid_smart_blending_jerk_limit_px, 0.02, 8.0, 0.65);
+    settings.pid_smart_blending_confidence_floor = clampFinite(settings.pid_smart_blending_confidence_floor, 0.0, 1.0, 0.45);
     outputScaleState = std::clamp(outputScaleState, settings.minOutputScale, settings.maxOutputScale);
+
+    SmartBlenderSettings blendSettings;
+    blendSettings.enabled = settings.pid_smart_blending_enabled;
+    blendSettings.aggression = settings.pid_smart_blending_aggression;
+    blendSettings.nearTargetDamping = settings.pid_smart_blending_near_damping;
+    blendSettings.deadzonePx = settings.pid_smart_blending_deadzone_px;
+    blendSettings.jerkLimitPx = settings.pid_smart_blending_jerk_limit_px;
+    blendSettings.confidenceFloor = settings.pid_smart_blending_confidence_floor;
+    smartBlender.setSettings(blendSettings);
 }
 
 void PidMouseController::setGovernor(std::shared_ptr<IPidGovernor> nextGovernor)
@@ -91,6 +105,7 @@ void PidMouseController::reset()
     feedForwardCooldownSeconds = 0.0;
     outputSaturatedLastStep = false;
     hasPreviousDistance = false;
+    smartBlender.reset();
 }
 
 void PidMouseController::updateObservation(const PidMouseObservation& observation, double centerX, double centerY)
@@ -238,6 +253,24 @@ PidMouseCommand PidMouseController::step(std::chrono::steady_clock::time_point n
     outY += command.feedForwardY;
     applyConvergenceDirectionGuard(outX, outY, distance, precisionRadius);
 
+    SmartBlendInput blendInput;
+    blendInput.desiredX = outX;
+    blendInput.desiredY = outY;
+    blendInput.distance = distance;
+    blendInput.precisionRadius = precisionRadius;
+    blendInput.targetSize = command.targetSize;
+    blendInput.targetSpeed = std::hypot(targetVx, targetVy);
+    blendInput.confidence = std::isfinite(latest.confidence) ? latest.confidence : 0.0;
+    blendInput.dtSeconds = dtSeconds;
+    const SmartBlendOutput blendOutput = smartBlender.apply(blendInput);
+    outX = blendOutput.x;
+    outY = blendOutput.y;
+    command.smartBlendActive = blendOutput.active;
+    command.smartBlendAlpha = blendOutput.alpha;
+    command.smartBlendJerkLimitPx = blendOutput.jerkLimitPx;
+    command.smartBlendNearAmount = blendOutput.nearAmount;
+    applyConvergenceDirectionGuard(outX, outY, distance, precisionRadius);
+
     const double outputMag = std::hypot(outX, outY);
     const double distanceLimit = std::max(0.0, distance - precisionRadius);
     const double sizeScale = command.targetSize > 0.0
@@ -247,7 +280,11 @@ PidMouseCommand PidMouseController::step(std::chrono::steady_clock::time_point n
         ? std::clamp(settings.governorMaxSpeedMultiple * command.governorSpeedScale, 0.0, settings.governorMaxSpeedMultiple)
         : 1.0;
     const double remainingObservationBudget = std::max(0.0, observationTravelBudget - observationTravelUsed);
-    if (remainingObservationBudget <= 1e-6)
+    // Only enter the "budget exhausted" decay branch when the controller has
+    // actually consumed travel. Without this guard, the first step() after a
+    // reset (budget=0, used=0) would decay integrals before any observation
+    // contributed, corrupting state on every target re-acquisition.
+    if (remainingObservationBudget <= 1e-6 && observationTravelUsed > 1e-9)
     {
         axisX.integral *= 0.94;
         axisY.integral *= 0.94;
@@ -480,7 +517,7 @@ double PidMouseController::computeOutputScale(double distance, double dtSeconds,
 }
 
 std::pair<double, double> PidMouseController::computeFeedForward(
-    const PidMouseCommand& command,
+    PidMouseCommand& command,
     double distance,
     double closingRate,
     bool overshot,
@@ -489,11 +526,11 @@ std::pair<double, double> PidMouseController::computeFeedForward(
     double& feedForwardScale) const
 {
     feedForwardScale = 0.0;
-    if (!settings.feedForwardEnabled || overshot)
+    if (overshot || settings.feedForwardMaxStep <= 0.0)
         return { 0.0, 0.0 };
 
-    const double motionSpeed = std::hypot(targetVx, targetVy);
-    if (!std::isfinite(motionSpeed) || motionSpeed < settings.feedForwardMinSpeed)
+    const bool learnedFeedForwardRequested = latest.learnedPredictionLeadValid;
+    if (!settings.feedForwardEnabled && !learnedFeedForwardRequested)
         return { 0.0, 0.0 };
 
     double lookaheadSec = std::clamp(settings.feedForwardLookaheadMs * 0.001, 0.0, 0.120);
@@ -502,64 +539,93 @@ std::pair<double, double> PidMouseController::computeFeedForward(
     lookaheadSec = std::clamp(lookaheadSec, 0.0, 0.160);
 
     const double effectiveFeedForwardGain = settings.runtimeLatencySweepEnabled ? settings.feedForwardGain : std::min(settings.feedForwardGain, 2.0);
-    if (lookaheadSec <= 1e-6 || effectiveFeedForwardGain <= 0.0 || settings.feedForwardMaxStep <= 0.0)
+    if (lookaheadSec <= 1e-6)
         return { 0.0, 0.0 };
 
-    const double size = targetSize();
-    const double slowdownRadius = std::max(precisionRadius + 0.25, size * settings.slowdownRadiusScale);
-    const double nearT = (distance - precisionRadius) / std::max(0.001, slowdownRadius - precisionRadius);
-    const double nearScale = smoothStep(nearT);
-    if (nearScale <= 1e-6)
-        return { 0.0, 0.0 };
-
-    double confidenceScale = 1.0;
-    const double latestConfidence = std::isfinite(latest.confidence) ? latest.confidence : 0.0;
-    if (settings.feedForwardConfidenceFloor >= 1.0)
+    double stepX = 0.0;
+    double stepY = 0.0;
+    if (settings.feedForwardEnabled && effectiveFeedForwardGain > 0.0)
     {
-        confidenceScale = latestConfidence >= 1.0 ? 1.0 : 0.0;
+        const double motionSpeed = std::hypot(targetVx, targetVy);
+        if (std::isfinite(motionSpeed) && motionSpeed >= settings.feedForwardMinSpeed)
+        {
+            const double size = targetSize();
+            const double slowdownRadius = std::max(precisionRadius + 0.25, size * settings.slowdownRadiusScale);
+            const double nearT = (distance - precisionRadius) / std::max(0.001, slowdownRadius - precisionRadius);
+            const double nearScale = smoothStep(nearT);
+
+            double confidenceScale = 1.0;
+            const double latestConfidence = std::isfinite(latest.confidence) ? latest.confidence : 0.0;
+            if (settings.feedForwardConfidenceFloor >= 1.0)
+            {
+                confidenceScale = latestConfidence >= 1.0 ? 1.0 : 0.0;
+            }
+            else
+            {
+                confidenceScale = std::clamp(
+                    (latestConfidence - settings.feedForwardConfidenceFloor) /
+                    std::max(1e-6, 1.0 - settings.feedForwardConfidenceFloor),
+                    0.0,
+                    1.0);
+            }
+
+            double approachScale = 1.0;
+            if (closingRate > 0.0)
+            {
+                approachScale *= 1.0 - 0.65 * std::clamp(closingRate / std::max(1.0, motionSpeed), 0.0, 1.0);
+            }
+
+            const double motionTowardCenter = command.errorX * targetVx + command.errorY * targetVy;
+            if (motionTowardCenter < 0.0 && distance < slowdownRadius * 1.5)
+                approachScale *= 0.45;
+
+            approachScale = std::clamp(approachScale, 0.0, 1.0);
+            if (nearScale > 1e-6 && confidenceScale > 1e-6 && approachScale > 1e-6)
+            {
+                double leadX = targetVx * lookaheadSec + 0.5 * targetAx * lookaheadSec * lookaheadSec;
+                double leadY = targetVy * lookaheadSec + 0.5 * targetAy * lookaheadSec * lookaheadSec;
+                if (!std::isfinite(leadX)) leadX = 0.0;
+                if (!std::isfinite(leadY)) leadY = 0.0;
+
+                const double maxLead = std::max(1.0, settings.feedForwardMaxStep * (lookaheadSec / std::max(dtSeconds, 1e-6)) * 2.0);
+                const double leadMag = std::hypot(leadX, leadY);
+                if (leadMag > maxLead && leadMag > 1e-9)
+                {
+                    const double leadScale = maxLead / leadMag;
+                    leadX *= leadScale;
+                    leadY *= leadScale;
+                }
+
+                feedForwardScale = effectiveFeedForwardGain * nearScale * confidenceScale * approachScale;
+                stepX = leadX * (dtSeconds / lookaheadSec) * feedForwardScale;
+                stepY = leadY * (dtSeconds / lookaheadSec) * feedForwardScale;
+            }
+        }
     }
-    else
+
+    double learnedStepX = 0.0;
+    double learnedStepY = 0.0;
+    if (learnedFeedForwardRequested)
     {
-        confidenceScale = std::clamp(
-            (latestConfidence - settings.feedForwardConfidenceFloor) /
-            std::max(1e-6, 1.0 - settings.feedForwardConfidenceFloor),
-            0.0,
-            1.0);
+        const double learnedLookaheadSec = std::clamp(settings.feedForwardLookaheadMs * 0.001, 0.016, 0.160);
+        learnedStepX = latest.learnedPredictionLeadX * (dtSeconds / learnedLookaheadSec);
+        learnedStepY = latest.learnedPredictionLeadY * (dtSeconds / learnedLookaheadSec);
+
+        const double learnedStepMag = std::hypot(learnedStepX, learnedStepY);
+        if (learnedStepMag > settings.feedForwardMaxStep && learnedStepMag > 1e-9)
+        {
+            const double learnedScale = settings.feedForwardMaxStep / learnedStepMag;
+            learnedStepX *= learnedScale;
+            learnedStepY *= learnedScale;
+        }
+
+        if (!std::isfinite(learnedStepX)) learnedStepX = 0.0;
+        if (!std::isfinite(learnedStepY)) learnedStepY = 0.0;
+        command.learnedFeedForwardX = learnedStepX;
+        command.learnedFeedForwardY = learnedStepY;
+        stepX += learnedStepX;
+        stepY += learnedStepY;
     }
-    if (confidenceScale <= 1e-6)
-        return { 0.0, 0.0 };
-
-    double approachScale = 1.0;
-    if (closingRate > 0.0)
-    {
-        approachScale *= 1.0 - 0.65 * std::clamp(closingRate / std::max(1.0, motionSpeed), 0.0, 1.0);
-    }
-
-    const double motionTowardCenter = command.errorX * targetVx + command.errorY * targetVy;
-    if (motionTowardCenter < 0.0 && distance < slowdownRadius * 1.5)
-        approachScale *= 0.45;
-
-    approachScale = std::clamp(approachScale, 0.0, 1.0);
-    if (approachScale <= 1e-6)
-        return { 0.0, 0.0 };
-
-    double leadX = targetVx * lookaheadSec + 0.5 * targetAx * lookaheadSec * lookaheadSec;
-    double leadY = targetVy * lookaheadSec + 0.5 * targetAy * lookaheadSec * lookaheadSec;
-    if (!std::isfinite(leadX)) leadX = 0.0;
-    if (!std::isfinite(leadY)) leadY = 0.0;
-
-    const double maxLead = std::max(1.0, settings.feedForwardMaxStep * (lookaheadSec / std::max(dtSeconds, 1e-6)) * 2.0);
-    const double leadMag = std::hypot(leadX, leadY);
-    if (leadMag > maxLead && leadMag > 1e-9)
-    {
-        const double leadScale = maxLead / leadMag;
-        leadX *= leadScale;
-        leadY *= leadScale;
-    }
-
-    feedForwardScale = effectiveFeedForwardGain * nearScale * confidenceScale * approachScale;
-    double stepX = leadX * (dtSeconds / lookaheadSec) * feedForwardScale;
-    double stepY = leadY * (dtSeconds / lookaheadSec) * feedForwardScale;
 
     const double stepMag = std::hypot(stepX, stepY);
     if (stepMag > settings.feedForwardMaxStep && stepMag > 1e-9)

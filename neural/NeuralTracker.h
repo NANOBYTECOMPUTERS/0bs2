@@ -45,6 +45,7 @@ public:
 };
 
 std::array<float, NeuralTrackerFeatureCount> neuralTrackerFeatureArray(const NeuralTrackerFeatures& features);
+std::shared_ptr<INeuralTracker> createNeuralTracker(const std::string& modelPath, const std::string& runtime);
 std::shared_ptr<INeuralTracker> createOnnxNeuralTracker(const std::string& modelPath);
 
 void logNeuralTrackerAssociation(

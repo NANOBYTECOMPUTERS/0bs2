@@ -73,6 +73,12 @@ bool prev_pid_perspective_fov_mapping_enabled = config.pid_perspective_fov_mappi
 bool prev_pid_governor_enabled = config.pid_governor_enabled;
 float prev_pid_governor_blend = config.pid_governor_blend;
 float prev_pid_governor_max_speed_multiple = config.pid_governor_max_speed_multiple;
+bool prev_pid_smart_blending_enabled = config.pid_smart_blending_enabled;
+float prev_pid_smart_blending_aggression = config.pid_smart_blending_aggression;
+float prev_pid_smart_blending_near_damping = config.pid_smart_blending_near_damping;
+float prev_pid_smart_blending_deadzone_px = config.pid_smart_blending_deadzone_px;
+float prev_pid_smart_blending_jerk_limit_px = config.pid_smart_blending_jerk_limit_px;
+float prev_pid_smart_blending_confidence_floor = config.pid_smart_blending_confidence_floor;
 bool prev_auto_shoot = config.auto_shoot;
 float prev_bScope_multiplier = config.bScope_multiplier;
 
@@ -629,6 +635,21 @@ void draw_mouse()
         ImGui::Checkbox("Perspective FOV PID", &config.pid_perspective_fov_mapping_enabled);
 
         ImGui::Separator();
+        ImGui::TextUnformatted("Smart Blending");
+        ImGui::Checkbox("Enable smart blending", &config.pid_smart_blending_enabled);
+        if (!config.pid_smart_blending_enabled)
+            ImGui::BeginDisabled();
+
+        ImGui::SliderFloat("Smoothing aggression", &config.pid_smart_blending_aggression, 0.30f, 1.0f, "%.2f");
+        ImGui::SliderFloat("Near-target damping", &config.pid_smart_blending_near_damping, 0.0f, 1.0f, "%.2f");
+        ImGui::SliderFloat("Blend deadzone (px)", &config.pid_smart_blending_deadzone_px, 0.0f, 12.0f, "%.2f");
+        ImGui::SliderFloat("Blend jerk limit (px/tick)", &config.pid_smart_blending_jerk_limit_px, 0.02f, 8.0f, "%.2f");
+        ImGui::SliderFloat("Blend confidence floor", &config.pid_smart_blending_confidence_floor, 0.0f, 1.0f, "%.2f");
+
+        if (!config.pid_smart_blending_enabled)
+            ImGui::EndDisabled();
+
+        ImGui::Separator();
         ImGui::TextUnformatted("PID Governor");
         ImGui::Checkbox("Enable PID governor", &config.pid_governor_enabled);
         if (!config.pid_governor_enabled)
@@ -676,6 +697,12 @@ void draw_mouse()
             config.pid_adaptive_output_error_scale = 96.0f;
             config.pid_derivative_smoothing_multiplier = 1.5f;
             config.pid_perspective_fov_mapping_enabled = false;
+            config.pid_smart_blending_enabled = false;
+            config.pid_smart_blending_aggression = 0.65f;
+            config.pid_smart_blending_near_damping = 0.75f;
+            config.pid_smart_blending_deadzone_px = 0.0f;
+            config.pid_smart_blending_jerk_limit_px = 0.65f;
+            config.pid_smart_blending_confidence_floor = 0.45f;
             OverlayConfig_MarkDirty();
             refreshMouseThread();
         }
@@ -773,6 +800,12 @@ void draw_mouse()
         prev_pid_governor_enabled != config.pid_governor_enabled ||
         prev_pid_governor_blend != config.pid_governor_blend ||
         prev_pid_governor_max_speed_multiple != config.pid_governor_max_speed_multiple ||
+        prev_pid_smart_blending_enabled != config.pid_smart_blending_enabled ||
+        prev_pid_smart_blending_aggression != config.pid_smart_blending_aggression ||
+        prev_pid_smart_blending_near_damping != config.pid_smart_blending_near_damping ||
+        prev_pid_smart_blending_deadzone_px != config.pid_smart_blending_deadzone_px ||
+        prev_pid_smart_blending_jerk_limit_px != config.pid_smart_blending_jerk_limit_px ||
+        prev_pid_smart_blending_confidence_floor != config.pid_smart_blending_confidence_floor ||
         prev_auto_shoot != config.auto_shoot ||
         prev_bScope_multiplier != config.bScope_multiplier)
     {
@@ -828,6 +861,12 @@ void draw_mouse()
         prev_pid_governor_enabled = config.pid_governor_enabled;
         prev_pid_governor_blend = config.pid_governor_blend;
         prev_pid_governor_max_speed_multiple = config.pid_governor_max_speed_multiple;
+        prev_pid_smart_blending_enabled = config.pid_smart_blending_enabled;
+        prev_pid_smart_blending_aggression = config.pid_smart_blending_aggression;
+        prev_pid_smart_blending_near_damping = config.pid_smart_blending_near_damping;
+        prev_pid_smart_blending_deadzone_px = config.pid_smart_blending_deadzone_px;
+        prev_pid_smart_blending_jerk_limit_px = config.pid_smart_blending_jerk_limit_px;
+        prev_pid_smart_blending_confidence_floor = config.pid_smart_blending_confidence_floor;
         prev_auto_shoot = config.auto_shoot;
         prev_bScope_multiplier = config.bScope_multiplier;
 

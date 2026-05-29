@@ -8,12 +8,15 @@
 #include <algorithm>
 #include <numeric>
 #include <memory>
+#include <string>
+#include <utility>
 #include <opencv2/opencv.hpp>
 
 #include "0BS_box_2.h"
 #include "BoxTarget.h"
 #include "config.h"
 #include "neural/NeuralTracker.h"
+#include "neural/TemporalPredictor.h"
 
 BoxTarget::BoxTarget()
     : x(0), y(0), w(0), h(0), classId(0), pivotX(0.0), pivotY(0.0), smoothX(0.0), smoothY(0.0), confidence(1.0), trackId(-1)
@@ -264,10 +267,15 @@ void MultiTargetTracker::updateInnerAim(InnerAimTrack& track, const cv::Rect& de
     const double closeDistance = std::hypot(rawInnerX - track.smoothX, rawInnerY - track.smoothY);
     if (config.kalman_enabled && track.kalman.initialized() && closeDistance < 2.5 * scaleFactor() && track.consistencyScore > 0.70f)
     {
-        std::uniform_real_distribution<double> jitter(-0.4f * scaleFactor(), 0.4f * scaleFactor());
         const double jitterScale = 0.25 * (1.0 - std::clamp(static_cast<double>(track.consistencyScore), 0.0, 1.0));
-        rawInnerX += jitter(innerAimRng_) * jitterScale;
-        rawInnerY += jitter(innerAimRng_) * jitterScale;
+        // Skip the RNG draw entirely when jitterScale collapses to zero (perfect consistency)
+        // so the RNG sequence does not depend on how often this branch is reached.
+        if (jitterScale > 0.0)
+        {
+            std::uniform_real_distribution<double> jitter(-0.4f * scaleFactor(), 0.4f * scaleFactor());
+            rawInnerX += jitter(innerAimRng_) * jitterScale;
+            rawInnerY += jitter(innerAimRng_) * jitterScale;
+        }
     }
 
     if (!config.kalman_enabled)
@@ -325,6 +333,135 @@ void MultiTargetTracker::decayInnerAim(InnerAimTrack& track)
     {
         track.missedFrames = 0;
     }
+}
+
+aim::neural::TemporalPredictor::Input MultiTargetTracker::buildTemporalPredictorInput(
+    const TrackState& t,
+    int screenWidth,
+    int screenHeight) const
+{
+    aim::neural::TemporalPredictor::Input input;
+    input.history_length = std::clamp(config.temporal_prediction_history_length, 2, 64);
+
+    if (t.history.empty())
+        return input;
+
+    const size_t needed = static_cast<size_t>(input.history_length);
+    input.history.reserve(needed * aim::neural::TemporalPredictorFeatureCount);
+    const size_t available = t.history.size();
+    const size_t start = available > needed ? available - needed : 0;
+    const auto& pad = t.history.front();
+    const int padCount = static_cast<int>(needed - std::min(needed, available));
+
+    auto appendSample = [&](const TrackState::TrackHistorySample& s)
+        {
+            input.history.push_back(static_cast<float>(s.x));
+            input.history.push_back(static_cast<float>(s.y));
+            input.history.push_back(static_cast<float>(s.w));
+            input.history.push_back(static_cast<float>(s.h));
+            input.history.push_back(static_cast<float>(s.vx));
+            input.history.push_back(static_cast<float>(s.vy));
+            input.history.push_back(static_cast<float>(s.boxScaleVel));
+            input.history.push_back(static_cast<float>(std::clamp(s.confidence, 0.0, 1.0)));
+        };
+
+    for (int i = 0; i < padCount; ++i)
+        appendSample(pad);
+
+    for (size_t i = start; i < available; ++i)
+        appendSample(t.history[i]);
+
+    (void)screenWidth;
+    (void)screenHeight;
+    return input;
+}
+
+void MultiTargetTracker::appendTrackHistory(TrackState& t)
+{
+    TrackState::TrackHistorySample sample;
+    sample.x = t.innerAim.smoothX;
+    sample.y = t.innerAim.smoothY;
+    sample.w = t.box.width;
+    sample.h = t.box.height;
+    sample.vx = t.velocity.x;
+    sample.vy = t.velocity.y;
+    sample.boxScaleVel = (static_cast<double>(t.sizeVelocity.x) + static_cast<double>(t.sizeVelocity.y)) * 0.5;
+    sample.confidence = std::clamp(static_cast<double>(t.confidence), 0.0, 1.0);
+
+    t.history.push_back(sample);
+    const size_t maxHistory = static_cast<size_t>(std::clamp(config.temporal_prediction_history_length * 2, 8, 128));
+    while (t.history.size() > maxHistory)
+        t.history.pop_front();
+}
+
+void MultiTargetTracker::updateTemporalPrediction(TrackState& t, int screenWidth, int screenHeight)
+{
+    auto& worker = aim::neural::TemporalPredictionWorker::instance();
+
+    if (!config.temporal_prediction_enabled)
+    {
+        t.temporalPrediction.clear();
+        t.temporalPredictionValid = false;
+        t.temporalPredictionPending = false;
+        worker.clear();
+        return;
+    }
+
+    const int historyLength = std::clamp(config.temporal_prediction_history_length, 2, 64);
+    if (static_cast<int>(t.history.size()) < historyLength)
+    {
+        t.temporalPrediction.clear();
+        t.temporalPredictionValid = false;
+        t.temporalPredictionPending = false;
+        return;
+    }
+
+    const int interval = std::clamp(config.temporal_prediction_interval_frames, 1, 16);
+    aim::neural::TemporalPredictionWorker::Result workerResult;
+    if (worker.tryGet(t.id, workerResult))
+    {
+        t.temporalPredictionPending = false;
+        if (workerResult.valid &&
+            workerResult.frame_id >= t.lastTemporalPredictionFrame &&
+            !workerResult.output.future_x.empty() &&
+            workerResult.output.future_x.size() == workerResult.output.future_y.size())
+        {
+            t.temporalPrediction.clear();
+            t.temporalPrediction.reserve(workerResult.output.future_x.size());
+            for (size_t i = 0; i < workerResult.output.future_x.size(); ++i)
+            {
+                const double x = std::clamp(static_cast<double>(workerResult.output.future_x[i]), 0.0, static_cast<double>(screenWidth));
+                const double y = std::clamp(static_cast<double>(workerResult.output.future_y[i]), 0.0, static_cast<double>(screenHeight));
+                t.temporalPrediction.emplace_back(x, y);
+            }
+            t.temporalPredictionValid = !t.temporalPrediction.empty();
+            t.lastTemporalPredictionFrame = workerResult.frame_id;
+        }
+    }
+
+    if (t.temporalPredictionValid &&
+        updateFrameCounter_ - t.lastTemporalPredictionFrame < interval)
+    {
+        return;
+    }
+
+    if (t.temporalPredictionPending &&
+        updateFrameCounter_ - t.lastTemporalPredictionRequestFrame < std::max(1, interval * 2))
+    {
+        return;
+    }
+
+    auto input = buildTemporalPredictorInput(t, screenWidth, screenHeight);
+    aim::neural::TemporalPredictionWorker::Request request;
+    request.track_id = t.id;
+    request.frame_id = updateFrameCounter_;
+    request.model_path = config.temporal_prediction_model_path;
+    request.history_length = historyLength;
+    request.prediction_horizon = std::clamp(config.temporal_prediction_horizon, 1, 64);
+    request.input = std::move(input);
+    worker.submit(request);
+    t.temporalPredictionPending = true;
+    t.lastTemporalPredictionRequestFrame = updateFrameCounter_;
 }
 
 bool MultiTargetTracker::shouldAcceptAsNewLock(const DetectionCandidate& det, const InnerAimTrack* current) const
@@ -411,6 +548,8 @@ void MultiTargetTracker::reset()
     tracks_.clear();
     nextId_ = 1;
     lockedTrackId_ = -1;
+    updateFrameCounter_ = 0;
+    aim::neural::TemporalPredictionWorker::instance().clear();
 }
 
 void MultiTargetTracker::update(
@@ -435,6 +574,7 @@ void MultiTargetTracker::update(
     bool keepCurrentLock)
 {
     const auto now = std::chrono::steady_clock::now();
+    ++updateFrameCounter_;
 
     for (auto& t : tracks_)
     {
@@ -598,20 +738,25 @@ void MultiTargetTracker::update(
         {
             static std::shared_ptr<aim::neural::INeuralTracker> tracker;
             static std::string loadedPath;
+            static std::string loadedRuntime;
             static bool attemptedLoad = false;
 
             if (!config.neural_tracker_enabled)
             {
                 tracker.reset();
                 loadedPath.clear();
+                loadedRuntime.clear();
                 attemptedLoad = false;
                 return nullptr;
             }
 
-            if (!attemptedLoad || loadedPath != config.neural_tracker_model_path)
+            if (!attemptedLoad
+                || loadedPath != config.neural_tracker_model_path
+                || loadedRuntime != config.neural_tracker_runtime)
             {
                 loadedPath = config.neural_tracker_model_path;
-                tracker = aim::neural::createOnnxNeuralTracker(loadedPath);
+                loadedRuntime = config.neural_tracker_runtime;
+                tracker = aim::neural::createNeuralTracker(loadedPath, loadedRuntime);
                 attemptedLoad = true;
             }
 
@@ -1025,6 +1170,11 @@ void MultiTargetTracker::update(
                 t.innerAim.smoothX += t.velocity.x * dt;
                 t.innerAim.smoothY += t.velocity.y * dt;
             }
+            else
+            {
+                t.innerAim.smoothX += t.velocity.x * dt;
+                t.innerAim.smoothY += t.velocity.y * dt;
+            }
             const float decay = (t.id == lockedTrackId_) ? 0.90f : 0.84f;
             t.velocity *= decay;
             t.sizeVelocity *= decay;
@@ -1048,6 +1198,9 @@ void MultiTargetTracker::update(
             t.observedThisFrame = false;
             t.lastUpdate = now;
         }
+
+        appendTrackHistory(t);
+        updateTemporalPrediction(t, screenWidth, screenHeight);
     }
 
     auto suppressedByLockedInnerAim = [&](const DetectionCandidate& d) -> bool
@@ -1096,6 +1249,8 @@ void MultiTargetTracker::update(
         t.lastNeuralEvaluated = false;
         t.lastUpdate = now;
         initializeInnerAim(t, d);
+        appendTrackHistory(t);
+        updateTemporalPrediction(t, screenWidth, screenHeight);
         tracks_.push_back(t);
     }
 
@@ -1144,6 +1299,15 @@ bool MultiTargetTracker::getLockedTarget(LockedTargetInfo& out) const
     );
     out.target.smoothX = t.innerAim.smoothX;
     out.target.smoothY = t.innerAim.smoothY;
+    out.predictedFuture = t.temporalPredictionValid
+        ? t.temporalPrediction
+        : std::vector<std::pair<double, double>>{};
+    out.predictedFutureAgeFrames = t.temporalPredictionValid
+        ? std::max(0, updateFrameCounter_ - t.lastTemporalPredictionFrame)
+        : 9999;
+    out.targetVelocityX = t.velocity.x;
+    out.targetVelocityY = t.velocity.y;
+    out.targetBoxScaleVelocity = (static_cast<double>(t.sizeVelocity.x) + static_cast<double>(t.sizeVelocity.y)) * 0.5;
     return true;
 }
 
@@ -1184,6 +1348,8 @@ std::vector<TrackDebugInfo> MultiTargetTracker::getDebugTracks() const
         d.lastNeuralScore = t.lastNeuralScore;
         d.lastNeuralBonus = t.lastNeuralBonus;
         d.lastNeuralEvaluated = t.lastNeuralEvaluated;
+        d.temporalFuture = t.temporalPrediction;
+        d.temporalPredictionValid = t.temporalPredictionValid;
         out.push_back(d);
     }
 

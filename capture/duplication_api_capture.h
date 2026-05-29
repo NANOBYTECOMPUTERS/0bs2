@@ -23,6 +23,7 @@ public:
     ~DuplicationAPIScreenCapture();
 
     cv::Mat GetNextFrameCpu() override;
+    CaptureFrameGeometry GetFrameGeometry(int modelWidth, int modelHeight) const override;
 #ifdef USE_CUDA
     bool GetNextFrameGpu(cv::cuda::GpuMat& gpuFrameBgra);
 #endif

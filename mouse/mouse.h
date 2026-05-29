@@ -24,6 +24,7 @@
 #include "MouseInput.h"
 #include "aim_kalman.h"
 #include "PidMouseController.h"
+#include "neural/targeting/NeuralTargetingHead.h"
 
 class MouseThread
 {
@@ -69,6 +70,15 @@ private:
     aim::AimKalman2D              targetKalman;
     aim::AimKalmanTelemetry       lastKalmanTelemetry;
     double                        lastPredictionLookaheadSec = 0.0;
+    bool                          neuralTargetingPending = false;
+    int                           neuralTargetingPendingTrackId = -1;
+    int                           neuralTargetingLastResultTrackId = -1;
+    std::chrono::steady_clock::time_point neuralTargetingLastSubmit{};
+    std::pair<double, double>     neuralTargetingRefinement{ 0.0, 0.0 };
+    bool                          neuralTargetingRefinementValid = false;
+    std::pair<double, double>     neuralTargetingRefinedAimPoint{ 0.0, 0.0 };
+    bool                          neuralTargetingRefinedAimPointValid = false;
+    mutable std::mutex            neuralTargetingDebugMutex;
 
     void moveWorkerLoop();
     void queueMove(int dx, int dy);
@@ -80,7 +90,19 @@ private:
         double targetHeight,
         double confidence,
         double targetOffsetX = 0.0,
-        double targetOffsetY = 0.0);
+        double targetOffsetY = 0.0,
+        double learnedPredictionLeadX = 0.0,
+        double learnedPredictionLeadY = 0.0);
+    aim::neural::NeuralTargetingHead::Input computeNeuralTargetingInput(
+        const BoxTarget& target,
+        const LockedTargetInfo& lockInfo) const;
+    std::pair<double, double> consumeNeuralTargetingResult(
+        const BoxTarget& target,
+        const LockedTargetInfo& lockInfo);
+    void submitNeuralTargetingRequest(
+        const BoxTarget& target,
+        const LockedTargetInfo& lockInfo);
+    void setNeuralTargetingDebugPoint(const BoxTarget& target, const std::pair<double, double>& totalLead);
     std::pair<double, double> pixelDeltaToCounts(double pixelDx, double pixelDy) const;
     void resetPid();
 
@@ -150,8 +172,11 @@ public:
         double targetHeight,
         double confidence,
         double targetOffsetX,
-        double targetOffsetY);
+        double targetOffsetY,
+        double learnedPredictionLeadX = 0.0,
+        double learnedPredictionLeadY = 0.0);
     void clearQueuedMoves();
+    std::pair<double, double> computePredictionFeedForwardLead(const BoxTarget& target, const LockedTargetInfo& lockInfo);
     std::pair<double, double> predict_target_position(double target_x, double target_y);
     void moveMouse(const BoxTarget& target);
     void pressMouse(const BoxTarget& target);
@@ -165,6 +190,7 @@ public:
     void storeFuturePositions(const std::vector<std::pair<double, double>>& positions);
     void clearFuturePositions();
     std::vector<std::pair<double, double>> getFuturePositions();
+    bool getNeuralTargetingRefinedAimPoint(std::pair<double, double>& point) const;
     void clearWindDebugTrail();
     std::vector<std::pair<double, double>> getWindDebugTrail();
 

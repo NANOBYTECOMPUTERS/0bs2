@@ -11,6 +11,7 @@
 #include <mutex>
 #include <vector>
 
+#include "capture/capture_geometry.h"
 #include "postProcess.h"
 
 class DirectMLDetector
@@ -25,6 +26,11 @@ public:
     void dmlInferenceThread();
     void processFrame(const cv::Mat& frame);
     void processFrame(const cv::Mat& frame, uint64_t frameId, std::chrono::steady_clock::time_point captureTimestamp);
+    void processFrame(
+        const cv::Mat& frame,
+        uint64_t frameId,
+        std::chrono::steady_clock::time_point captureTimestamp,
+        const CaptureFrameGeometry& frameGeometry);
 
     int getNumberOfClasses();
 
@@ -62,6 +68,7 @@ private:
     cv::Mat currentFrame;
     uint64_t currentFrameId = 0;
     std::chrono::steady_clock::time_point currentFrameCaptureTimestamp{};
+    CaptureFrameGeometry currentFrameGeometry;
     bool frameReady = false;
 
     void initializeModel(const std::string& model_path);

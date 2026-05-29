@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="CUDA">
+      <UniqueIdentifier>{34781207-DF25-4A09-9F69-25B3283B650F}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="CUDA\Detector">
+      <UniqueIdentifier>{10D23727-77BA-47D3-B11F-FA3A723D9F3D}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="CUDA\Depth">
+      <UniqueIdentifier>{4373E80D-12E9-4339-AC74-5D5202E7C851}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="CUDA\Runtime">
+      <UniqueIdentifier>{76D3AD58-B1E2-4CC6-A9CE-23AF0E1B8CA2}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="..\detector\trt_detector.cpp">
+      <Filter>CUDA\Detector</Filter>
+    </ClCompile>
+    <ClCompile Include="..\depth\depth_anything_trt.cpp">
+      <Filter>CUDA\Depth</Filter>
+    </ClCompile>
+    <ClCompile Include="..\depth\depth_mask.cpp">
+      <Filter>CUDA\Depth</Filter>
+    </ClCompile>
+    <ClCompile Include="..\mem\gpu_resource_manager.cpp">
+      <Filter>CUDA\Runtime</Filter>
+    </ClCompile>
+    <ClCompile Include="..\neural\TemporalPredictor.cpp">
+      <Filter>CUDA\Runtime</Filter>
+    </ClCompile>
+    <ClCompile Include="..\neural\targeting\NeuralTargetingHead.cpp">
+      <Filter>CUDA\Runtime</Filter>
+    </ClCompile>
+    <ClCompile Include="..\mouse\SmartBlender.cpp">
+      <Filter>CUDA\Runtime</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <CudaCompile Include="..\detector\cuda_preprocess.cu">
+      <Filter>CUDA\Detector</Filter>
+    </CudaCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="..\capture\capture_geometry.h">
+      <Filter>CUDA\Runtime</Filter>
+    </ClInclude>
+    <ClInclude Include="..\detector\trt_detector.h">
+      <Filter>CUDA\Detector</Filter>
+    </ClInclude>
+    <ClInclude Include="..\detector\cuda_preprocess.h">
+      <Filter>CUDA\Detector</Filter>
+    </ClInclude>
+    <ClInclude Include="..\depth\depth_anything_trt.h">
+      <Filter>CUDA\Depth</Filter>
+    </ClInclude>
+    <ClInclude Include="..\depth\depth_mask.h">
+      <Filter>CUDA\Depth</Filter>
+    </ClInclude>
+    <ClInclude Include="..\mem\gpu_resource_manager.h">
+      <Filter>CUDA\Runtime</Filter>
+    </ClInclude>
+    <ClInclude Include="..\neural\TemporalPredictor.h">
+      <Filter>CUDA\Runtime</Filter>
+    </ClInclude>
+    <ClInclude Include="..\neural\targeting\NeuralTargetingHead.h">
+      <Filter>CUDA\Runtime</Filter>
+    </ClInclude>
+    <ClInclude Include="..\mouse\SmartBlender.h">
+      <Filter>CUDA\Runtime</Filter>
+    </ClInclude>
+  </ItemGroup>
+</Project>

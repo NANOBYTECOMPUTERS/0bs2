@@ -99,11 +99,7 @@ Teensy41RawHid::~Teensy41RawHid()
 
 bool Teensy41RawHid::isOpen() const
 {
-    if (!connected_.load(std::memory_order_acquire))
-        return false;
-
-    std::lock_guard<std::mutex> lock(writeMutex_);
-    return device_ != nullptr;
+    return connected_.load(std::memory_order_acquire);
 }
 
 bool Teensy41RawHid::move(int dx, int dy, int wheel, int wheelH)
@@ -168,7 +164,7 @@ bool Teensy41RawHid::open()
         hid_device* opened = hid_open_path(cur->path);
         if (opened)
         {
-            device_.reset(opened);
+            device_ = std::shared_ptr<hid_device>(opened, HidDeviceDeleter{});
             hid_set_nonblocking(device_.get(), 1);
             hid_free_enumeration(devices);
             return true;
@@ -225,8 +221,22 @@ void Teensy41RawHid::readerLoop()
             continue;
         }
 
+        // Snapshot a shared reference to the device so a concurrent reconnect
+        // (which clears device_ under writeMutex_) cannot free the handle while
+        // hid_read_timeout is still using it.
+        std::shared_ptr<hid_device> devSnapshot;
+        {
+            std::lock_guard<std::mutex> lock(writeMutex_);
+            devSnapshot = device_;
+        }
+        if (!devSnapshot)
+        {
+            connected_.store(false, std::memory_order_release);
+            continue;
+        }
+
         std::array<unsigned char, Teensy41RawHidPacketSize + 1> buffer{};
-        int read = hid_read_timeout(device_.get(), buffer.data(), buffer.size(), packetTimeoutMs_);
+        int read = hid_read_timeout(devSnapshot.get(), buffer.data(), buffer.size(), packetTimeoutMs_);
         if (read == 0)
         {
             std::this_thread::sleep_for(std::chrono::milliseconds(1));

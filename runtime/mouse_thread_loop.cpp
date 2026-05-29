@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <chrono>
 #include <optional>
+#include <utility>
 #include <vector>
 
 #include "capture.h"
@@ -31,6 +32,7 @@ void mouseThreadFunction(MouseThread& mouseThread)
     std::vector<float> confidences;
     MultiTargetTracker targetTracker;
     std::optional<BoxTarget> activeTarget;
+    std::pair<double, double> learnedPredictionLead{ 0.0, 0.0 };
     auto lastTrackerUpdate = std::chrono::steady_clock::time_point::min();
     unsigned long long seenDetectionResolutionGeneration =
         detection_resolution_generation.load(std::memory_order_relaxed);
@@ -76,7 +78,7 @@ void mouseThreadFunction(MouseThread& mouseThread)
         {
             seenDetectionResolutionGeneration = currentDetectionResolutionGeneration;
             {
-                std::lock_guard<std::mutex> cfgLock(configMutex);
+                std::lock_guard<std::recursive_mutex> cfgLock(configMutex);
                 mouseThread.updateConfig(
                     config.detection_resolution,
                     config.fovX,
@@ -134,20 +136,30 @@ void mouseThreadFunction(MouseThread& mouseThread)
             if (targetTracker.getLockedTarget(lockInfo) && (lockInfo.observedThisFrame || lockInfo.missedFrames <= 2))
             {
                 activeTarget = lockInfo.target;
+                learnedPredictionLead = { 0.0, 0.0 };
                 hasAimObservation = true;
                 mouseThread.setLastTargetTime(std::chrono::steady_clock::now());
                 mouseThread.setTargetDetected(true);
 
-                auto futurePositions = mouseThread.predictFuturePositions(
-                    activeTarget->smoothX,
-                    activeTarget->smoothY,
-                    config.prediction_futurePositions
-                );
-                mouseThread.storeFuturePositions(futurePositions);
+                if (config.temporal_prediction_enabled && !lockInfo.predictedFuture.empty())
+                {
+                    mouseThread.storeFuturePositions(lockInfo.predictedFuture);
+                    learnedPredictionLead = mouseThread.computePredictionFeedForwardLead(*activeTarget, lockInfo);
+                }
+                else
+                {
+                    auto futurePositions = mouseThread.predictFuturePositions(
+                        activeTarget->smoothX,
+                        activeTarget->smoothY,
+                        config.prediction_futurePositions
+                    );
+                    mouseThread.storeFuturePositions(futurePositions);
+                }
             }
             else
             {
                 activeTarget.reset();
+                learnedPredictionLead = { 0.0, 0.0 };
                 mouseThread.clearFuturePositions();
                 mouseThread.setTargetDetected(false);
                 mouseThread.clearQueuedMoves();
@@ -161,6 +173,7 @@ void mouseThreadFunction(MouseThread& mouseThread)
             if (std::chrono::steady_clock::now() - lastTrackerUpdate > std::chrono::milliseconds(staleMs))
             {
                 activeTarget.reset();
+                learnedPredictionLead = { 0.0, 0.0 };
                 mouseThread.clearFuturePositions();
                 mouseThread.setTargetDetected(false);
                 mouseThread.clearQueuedMoves();
@@ -177,7 +190,9 @@ void mouseThreadFunction(MouseThread& mouseThread)
                     activeTarget->w,
                     activeTarget->h,
                     activeTarget->confidence,
-                    0.0, 0.0);
+                    0.0, 0.0,
+                    learnedPredictionLead.first,
+                    learnedPredictionLead.second);
 
                 if (config.auto_shoot)
                 {

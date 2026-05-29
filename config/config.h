@@ -109,14 +109,38 @@ public:
     std::string pid_governor_model_path;
     float pid_governor_blend;
     float pid_governor_max_speed_multiple;
+    bool pid_smart_blending_enabled;
+    float pid_smart_blending_aggression;
+    float pid_smart_blending_near_damping;
+    float pid_smart_blending_deadzone_px;
+    float pid_smart_blending_jerk_limit_px;
+    float pid_smart_blending_confidence_floor;
 
     // Neural tracker association
     bool neural_tracker_enabled;
+    std::string neural_tracker_runtime; // "CPU" or "CUDA"
     std::string neural_tracker_model_path;
     float neural_tracker_blend;
     bool neural_tracker_log_enabled;
     bool neural_tracker_debug_enabled;
     std::string neural_tracker_log_path;
+
+    // Learned temporal predictor
+    bool temporal_prediction_enabled;
+    std::string temporal_prediction_model_path;
+    int temporal_prediction_history_length;
+    int temporal_prediction_horizon;
+    int temporal_prediction_interval_frames;
+    bool temporal_prediction_feed_forward_enabled;
+    float temporal_prediction_influence;
+    float temporal_prediction_max_lead_px;
+
+    // Neural targeting head
+    bool neural_targeting_enabled;
+    std::string neural_targeting_model_path;
+    float neural_targeting_influence;
+    float neural_targeting_max_refinement_px;
+    int neural_targeting_max_iterations;
 
     // Arduino
     int arduino_baudrate;

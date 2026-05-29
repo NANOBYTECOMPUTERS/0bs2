@@ -8,6 +8,8 @@ namespace aim
 {
 struct AimKalmanSettings
 {
+    // Runtime sweep gate for experimental estimator behavior; false preserves legacy warmup.
+    bool runtimeLatencySweepEnabled = false;
     bool enabled = true;
     double process_noise_position = 40.0;
     double process_noise_velocity = 1800.0;
@@ -15,6 +17,10 @@ struct AimKalmanSettings
     double velocity_damping = 0.08;
     double max_velocity = 20000.0;
     int warmup_frames = 2;
+    // Seeds initial velocity from the first measured delta during the 3-5 frame acquisition phase.
+    bool velocitySeedEnabled = true;
+    // Number of acquisition frames used to ramp prediction weight from 0 to 1.
+    int acquisitionFrames = 4;
 };
 
 struct AimKalmanTelemetry
@@ -34,6 +40,7 @@ struct AimKalmanTelemetry
     double velocity_y = 0.0;
     double innovation_x = 0.0;
     double innovation_y = 0.0;
+    double prediction_weight = 0.0;
 };
 
 class AimKalman2D
@@ -44,7 +51,10 @@ public:
     void setSettings(const AimKalmanSettings& settings)
     {
         settings_ = clampSettings(settings);
-        warmupRemaining_ = std::clamp(warmupRemaining_, 0, settings_.warmup_frames);
+        const int maxWarmup = settings_.runtimeLatencySweepEnabled
+            ? settings_.acquisitionFrames
+            : settings_.warmup_frames;
+        warmupRemaining_ = std::clamp(warmupRemaining_, 0, maxWarmup);
     }
 
     const AimKalmanSettings& settings() const
@@ -58,7 +68,10 @@ public:
         yAxis_ = AxisState();
         initialized_ = false;
         hasLastMeasurement_ = false;
-        warmupRemaining_ = settings_.warmup_frames;
+        velocitySeeded_ = false;
+        warmupRemaining_ = settings_.runtimeLatencySweepEnabled
+            ? settings_.acquisitionFrames
+            : settings_.warmup_frames;
     }
 
     bool initialized() const
@@ -82,7 +95,7 @@ public:
             return {};
 
         const double lookahead = std::clamp(lookaheadSec, 0.0, 1.5);
-        if (lookahead <= 0.0 || warmupRemaining_ > 0)
+        if (lookahead <= 0.0 || (!settings_.runtimeLatencySweepEnabled && warmupRemaining_ > 0))
             return position();
 
         return {
@@ -134,6 +147,16 @@ public:
             return telemetry;
         }
 
+        if (settings_.runtimeLatencySweepEnabled &&
+            settings_.velocitySeedEnabled &&
+            !velocitySeeded_ &&
+            hasLastMeasurement_)
+        {
+            xAxis_.velocity = clampAbs((measurementX - lastMeasurementX_) / clampedDt, settings_.max_velocity);
+            yAxis_.velocity = clampAbs((measurementY - lastMeasurementY_) / clampedDt, settings_.max_velocity);
+            velocitySeeded_ = true;
+        }
+
         const double innovationX = updateAxis(xAxis_, measurementX, clampedDt);
         const double innovationY = updateAxis(yAxis_, measurementY, clampedDt);
 
@@ -166,6 +189,7 @@ private:
         out.velocity_damping = std::clamp(out.velocity_damping, 0.0, 3.0);
         out.max_velocity = std::clamp(out.max_velocity, 100.0, 60000.0);
         out.warmup_frames = std::clamp(out.warmup_frames, 0, 20);
+        out.acquisitionFrames = std::clamp(out.acquisitionFrames, 3, 5);
         return out;
     }
 
@@ -198,9 +222,12 @@ private:
         yAxis_.p11 = settings_.process_noise_velocity;
         xAxis_.p01 = xAxis_.p10 = 0.0;
         yAxis_.p01 = yAxis_.p10 = 0.0;
-        warmupRemaining_ = settings_.warmup_frames;
+        warmupRemaining_ = settings_.runtimeLatencySweepEnabled
+            ? settings_.acquisitionFrames
+            : settings_.warmup_frames;
         initialized_ = true;
         hasLastMeasurement_ = true;
+        velocitySeeded_ = false;
         lastMeasurementX_ = measurementX;
         lastMeasurementY_ = measurementY;
     }
@@ -263,18 +290,35 @@ private:
         telemetry.innovation_x = innovationX;
         telemetry.innovation_y = innovationY;
 
-        if (warmupRemaining_ > 0)
+        if (!settings_.runtimeLatencySweepEnabled && warmupRemaining_ > 0)
         {
             --warmupRemaining_;
             telemetry.predicted_x = xAxis_.position;
             telemetry.predicted_y = yAxis_.position;
             telemetry.warmup_remaining = warmupRemaining_;
+            telemetry.prediction_weight = 0.0;
             return telemetry;
         }
 
         auto future = predict(lookaheadSec);
-        telemetry.predicted_x = future.first;
-        telemetry.predicted_y = future.second;
+        double predictionWeight = 1.0;
+        if (settings_.runtimeLatencySweepEnabled && warmupRemaining_ > 0)
+        {
+            const int acquisitionFrames = std::max(1, settings_.acquisitionFrames);
+            const int completedFrames = std::clamp(acquisitionFrames - warmupRemaining_, 0, acquisitionFrames);
+            // Divide by acquisitionFrames (not acquisitionFrames-1) so the ramp
+            // produces 0/N, 1/N, ..., (N-1)/N before snapping to 1.0 on the
+            // first post-warmup frame. With the old denominator the last ramp
+            // frame jumped straight to 1.0, skipping an intermediate step.
+            predictionWeight = static_cast<double>(completedFrames) / static_cast<double>(acquisitionFrames);
+            predictionWeight = std::clamp(predictionWeight, 0.0, 1.0);
+            --warmupRemaining_;
+            telemetry.warmup_remaining = warmupRemaining_;
+        }
+
+        telemetry.prediction_weight = predictionWeight;
+        telemetry.predicted_x = xAxis_.position + (future.first - xAxis_.position) * predictionWeight;
+        telemetry.predicted_y = yAxis_.position + (future.second - yAxis_.position) * predictionWeight;
         return telemetry;
     }
 
@@ -284,6 +328,7 @@ private:
     AxisState yAxis_{};
     bool initialized_ = false;
     bool hasLastMeasurement_ = false;
+    bool velocitySeeded_ = false;
     int warmupRemaining_ = 0;
     double lastMeasurementX_ = 0.0;
     double lastMeasurementY_ = 0.0;

@@ -113,7 +113,7 @@ struct CaptureThreadConfig
 
 CaptureThreadConfig SnapshotCaptureConfig()
 {
-    std::lock_guard<std::mutex> cfgLock(configMutex);
+    std::lock_guard<std::recursive_mutex> cfgLock(configMutex);
     CaptureThreadConfig snapshot;
     snapshot.capture_method = config.capture_method;
     snapshot.capture_fps = config.capture_fps;
@@ -393,6 +393,7 @@ void captureThread(int CAPTURE_WIDTH, int CAPTURE_HEIGHT)
         std::string activeCapturerMethod = capturer ? desiredCaptureMethod : std::string();
         auto lastCapturerCreateAttempt = std::chrono::steady_clock::now();
         cv::Mat lastDetectionFrame;
+        CaptureFrameGeometry lastDetectionGeometry;
         uint64_t detectorFrameId = 0;
 
         auto clearCaptureFrames = [&]()
@@ -401,6 +402,7 @@ void captureThread(int CAPTURE_WIDTH, int CAPTURE_HEIGHT)
             latestFrame.release();
             frameQueue.clear();
             lastDetectionFrame.release();
+            lastDetectionGeometry = CaptureFrameGeometry();
         };
 
         auto clearDetections = [&]()
@@ -455,7 +457,8 @@ void captureThread(int CAPTURE_WIDTH, int CAPTURE_HEIGHT)
 
         auto submitFrameToDetector = [&](
             const cv::Mat& frame,
-            std::chrono::steady_clock::time_point captureTimestamp) -> bool
+            std::chrono::steady_clock::time_point captureTimestamp,
+            const CaptureFrameGeometry& frameGeometry) -> bool
         {
             if (frame.empty())
                 return false;
@@ -463,14 +466,14 @@ void captureThread(int CAPTURE_WIDTH, int CAPTURE_HEIGHT)
             if (currentCfg.backend == "DML" && dml_detector)
             {
                 ++detectorFrameId;
-                dml_detector->processFrame(frame, detectorFrameId, captureTimestamp);
+                dml_detector->processFrame(frame, detectorFrameId, captureTimestamp, frameGeometry);
                 return true;
             }
 #ifdef USE_CUDA
             if (currentCfg.backend == "TRT")
             {
                 ++detectorFrameId;
-                trt_detector.processFrame(frame, detectorFrameId, captureTimestamp);
+                trt_detector.processFrame(frame, detectorFrameId, captureTimestamp, frameGeometry);
                 return true;
             }
 #endif
@@ -613,6 +616,7 @@ void captureThread(int CAPTURE_WIDTH, int CAPTURE_HEIGHT)
 
             cv::Mat screenshotCpu;
             cv::Mat detectionFrame;
+            CaptureFrameGeometry frameGeometry;
             auto frameCaptureTimestamp = std::chrono::steady_clock::now();
             bool frameSubmittedToDetector = false;
             bool reusedCachedDetectionFrame = false;
@@ -653,8 +657,9 @@ void captureThread(int CAPTURE_WIDTH, int CAPTURE_HEIGHT)
                     if (duplicationCapture->GetNextFrameGpu(screenshotGpu))
                     {
                         frameCaptureTimestamp = std::chrono::steady_clock::now();
+                        frameGeometry = duplicationCapture->GetFrameGeometry(screenshotGpu.cols, screenshotGpu.rows);
                         ++detectorFrameId;
-                        trt_detector.processFrameGpu(screenshotGpu, detectorFrameId, frameCaptureTimestamp);
+                        trt_detector.processFrameGpu(screenshotGpu, detectorFrameId, frameCaptureTimestamp, frameGeometry);
                         frameSubmittedToDetector = true;
 
                         if (needCpuCopyFromGpu)
@@ -668,6 +673,8 @@ void captureThread(int CAPTURE_WIDTH, int CAPTURE_HEIGHT)
             {
                 screenshotCpu = capturer->GetNextFrameCpu();
                 frameCaptureTimestamp = std::chrono::steady_clock::now();
+                if (!screenshotCpu.empty())
+                    frameGeometry = capturer->GetFrameGeometry(screenshotCpu.cols, screenshotCpu.rows);
 
                 if (screenshotCpu.empty())
                 {
@@ -679,8 +686,9 @@ void captureThread(int CAPTURE_WIDTH, int CAPTURE_HEIGHT)
                     if (canReuseStableDesktopFrame && !lastDetectionFrame.empty())
                     {
                         detectionFrame = lastDetectionFrame;
+                        frameGeometry = lastDetectionGeometry;
                         frameCaptureTimestamp = now;
-                        frameSubmittedToDetector = submitFrameToDetector(detectionFrame, frameCaptureTimestamp);
+                        frameSubmittedToDetector = submitFrameToDetector(detectionFrame, frameCaptureTimestamp, frameGeometry);
                         reusedCachedDetectionFrame = frameSubmittedToDetector;
                     }
 
@@ -698,10 +706,12 @@ void captureThread(int CAPTURE_WIDTH, int CAPTURE_HEIGHT)
 
                 if (!reusedCachedDetectionFrame && NormalizeCaptureMethod(currentCfg.capture_method) == "virtual_camera")
                 {
+                    const int sourceW = screenshotCpu.cols;
+                    const int sourceH = screenshotCpu.rows;
                     const int targetW = std::max(1, captureWidth);
                     const int targetH = std::max(1, captureHeight);
-                    const int roiW = std::min(targetW, screenshotCpu.cols);
-                    const int roiH = std::min(targetH, screenshotCpu.rows);
+                    const int roiW = std::min(targetW, sourceW);
+                    const int roiH = std::min(targetH, sourceH);
 
                     if (roiW <= 0 || roiH <= 0)
                     {
@@ -709,8 +719,16 @@ void captureThread(int CAPTURE_WIDTH, int CAPTURE_HEIGHT)
                         continue;
                     }
 
-                    const int x = std::max(0, (screenshotCpu.cols - roiW) / 2);
-                    const int y = std::max(0, (screenshotCpu.rows - roiH) / 2);
+                    const int x = std::max(0, (sourceW - roiW) / 2);
+                    const int y = std::max(0, (sourceH - roiH) / 2);
+                    frameGeometry = CaptureFrameGeometry::FromCenterCrop(
+                        sourceW,
+                        sourceH,
+                        roiW,
+                        roiH,
+                        targetW,
+                        targetH,
+                        false);
                     cv::Mat centered = screenshotCpu(cv::Rect(x, y, roiW, roiH));
 
                     if (roiW != targetW || roiH != targetH)
@@ -856,9 +874,12 @@ void captureThread(int CAPTURE_WIDTH, int CAPTURE_HEIGHT)
 
                 if (!reusedCachedDetectionFrame)
                 {
-                    frameSubmittedToDetector = submitFrameToDetector(detectionFrame, frameCaptureTimestamp);
+                    frameSubmittedToDetector = submitFrameToDetector(detectionFrame, frameCaptureTimestamp, frameGeometry);
                     if (frameSubmittedToDetector)
+                    {
                         lastDetectionFrame = detectionFrame.clone();
+                        lastDetectionGeometry = frameGeometry;
+                    }
                 }
             }
 

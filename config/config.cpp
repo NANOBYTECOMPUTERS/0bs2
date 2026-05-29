@@ -10,6 +10,7 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <algorithm>
+#include <cctype>
 
 #include "config.h"
 #include "MouseInput.h"
@@ -154,14 +155,38 @@ bool Config::loadConfig(const std::string& filename)
         pid_governor_model_path = "training/models/pid_governor.onnx";
         pid_governor_blend = 1.0f;
         pid_governor_max_speed_multiple = 5.0f;
+        pid_smart_blending_enabled = false;
+        pid_smart_blending_aggression = 0.65f;
+        pid_smart_blending_near_damping = 0.75f;
+        pid_smart_blending_deadzone_px = 0.0f;
+        pid_smart_blending_jerk_limit_px = 0.65f;
+        pid_smart_blending_confidence_floor = 0.45f;
 
         // Neural tracker association
         neural_tracker_enabled = false;
+        neural_tracker_runtime = "CPU";
         neural_tracker_model_path = "training/models/neural_tracker.onnx";
         neural_tracker_blend = 0.35f;
         neural_tracker_log_enabled = false;
         neural_tracker_debug_enabled = false;
         neural_tracker_log_path = "training/logs/neural_tracker_association.csv";
+
+        // Learned temporal predictor
+        temporal_prediction_enabled = false;
+        temporal_prediction_model_path = "models/temporal_predictor.onnx";
+        temporal_prediction_history_length = 12;
+        temporal_prediction_horizon = 16;
+        temporal_prediction_interval_frames = 2;
+        temporal_prediction_feed_forward_enabled = false;
+        temporal_prediction_influence = 0.35f;
+        temporal_prediction_max_lead_px = 45.0f;
+
+        // Neural targeting head
+        neural_targeting_enabled = false;
+        neural_targeting_model_path = "models/neural_targeting_head.onnx";
+        neural_targeting_influence = 0.40f;
+        neural_targeting_max_refinement_px = 35.0f;
+        neural_targeting_max_iterations = 2;
 
         // Arduino
         arduino_baudrate = 115200;
@@ -526,14 +551,38 @@ bool Config::loadConfig(const std::string& filename)
     pid_governor_model_path = get_string("pid_governor_model_path", "training/models/pid_governor.onnx");
     pid_governor_blend = (float)get_double("pid_governor_blend", 1.0);
     pid_governor_max_speed_multiple = (float)get_double("pid_governor_max_speed_multiple", 5.0);
+    pid_smart_blending_enabled = get_bool("pid_smart_blending_enabled", false);
+    pid_smart_blending_aggression = (float)get_double("pid_smart_blending_aggression", 0.65);
+    pid_smart_blending_near_damping = (float)get_double("pid_smart_blending_near_damping", 0.75);
+    pid_smart_blending_deadzone_px = (float)get_double("pid_smart_blending_deadzone_px", 0.0);
+    pid_smart_blending_jerk_limit_px = (float)get_double("pid_smart_blending_jerk_limit_px", 0.65);
+    pid_smart_blending_confidence_floor = (float)get_double("pid_smart_blending_confidence_floor", 0.45);
 
     // Neural tracker association
     neural_tracker_enabled = get_bool("neural_tracker_enabled", false);
+    neural_tracker_runtime = get_string("neural_tracker_runtime", "CPU");
     neural_tracker_model_path = get_string("neural_tracker_model_path", "training/models/neural_tracker.onnx");
     neural_tracker_blend = (float)get_double("neural_tracker_blend", 0.35);
     neural_tracker_log_enabled = get_bool("neural_tracker_log_enabled", false);
     neural_tracker_debug_enabled = get_bool("neural_tracker_debug_enabled", false);
     neural_tracker_log_path = get_string("neural_tracker_log_path", "training/logs/neural_tracker_association.csv");
+
+    // Learned temporal predictor
+    temporal_prediction_enabled = get_bool("temporal_prediction_enabled", false);
+    temporal_prediction_model_path = get_string("temporal_prediction_model_path", "models/temporal_predictor.onnx");
+    temporal_prediction_history_length = get_long("temporal_prediction_history_length", 12);
+    temporal_prediction_horizon = get_long("temporal_prediction_horizon", 16);
+    temporal_prediction_interval_frames = get_long("temporal_prediction_interval_frames", 2);
+    temporal_prediction_feed_forward_enabled = get_bool("temporal_prediction_feed_forward_enabled", false);
+    temporal_prediction_influence = (float)get_double("temporal_prediction_influence", 0.35);
+    temporal_prediction_max_lead_px = (float)get_double("temporal_prediction_max_lead_px", 45.0);
+
+    // Neural targeting head
+    neural_targeting_enabled = get_bool("neural_targeting_enabled", false);
+    neural_targeting_model_path = get_string("neural_targeting_model_path", "models/neural_targeting_head.onnx");
+    neural_targeting_influence = (float)get_double("neural_targeting_influence", 0.40);
+    neural_targeting_max_refinement_px = (float)get_double("neural_targeting_max_refinement_px", 35.0);
+    neural_targeting_max_iterations = get_long("neural_targeting_max_iterations", 2);
 
     // Arduino
     arduino_baudrate = get_long("arduino_baudrate", 115200);
@@ -809,10 +858,39 @@ bool Config::loadConfig(const std::string& filename)
     if (pid_governor_blend > 1.0f) pid_governor_blend = 1.0f;
     if (pid_governor_max_speed_multiple < 1.0f) pid_governor_max_speed_multiple = 1.0f;
     if (pid_governor_max_speed_multiple > 5.0f) pid_governor_max_speed_multiple = 5.0f;
+    if (pid_smart_blending_aggression < 0.30f) pid_smart_blending_aggression = 0.30f;
+    if (pid_smart_blending_aggression > 1.0f) pid_smart_blending_aggression = 1.0f;
+    if (pid_smart_blending_near_damping < 0.0f) pid_smart_blending_near_damping = 0.0f;
+    if (pid_smart_blending_near_damping > 1.0f) pid_smart_blending_near_damping = 1.0f;
+    if (pid_smart_blending_deadzone_px < 0.0f) pid_smart_blending_deadzone_px = 0.0f;
+    if (pid_smart_blending_deadzone_px > 12.0f) pid_smart_blending_deadzone_px = 12.0f;
+    if (pid_smart_blending_jerk_limit_px < 0.02f) pid_smart_blending_jerk_limit_px = 0.02f;
+    if (pid_smart_blending_jerk_limit_px > 8.0f) pid_smart_blending_jerk_limit_px = 8.0f;
+    if (pid_smart_blending_confidence_floor < 0.0f) pid_smart_blending_confidence_floor = 0.0f;
+    if (pid_smart_blending_confidence_floor > 1.0f) pid_smart_blending_confidence_floor = 1.0f;
+    if (neural_tracker_runtime.empty()) neural_tracker_runtime = "CPU";
     if (neural_tracker_model_path.empty()) neural_tracker_model_path = "training/models/neural_tracker.onnx";
     if (neural_tracker_blend < 0.0f) neural_tracker_blend = 0.0f;
     if (neural_tracker_blend > 1.0f) neural_tracker_blend = 1.0f;
     if (neural_tracker_log_path.empty()) neural_tracker_log_path = "training/logs/neural_tracker_association.csv";
+    if (temporal_prediction_model_path.empty()) temporal_prediction_model_path = "models/temporal_predictor.onnx";
+    if (temporal_prediction_history_length < 2) temporal_prediction_history_length = 2;
+    if (temporal_prediction_history_length > 64) temporal_prediction_history_length = 64;
+    if (temporal_prediction_horizon < 1) temporal_prediction_horizon = 1;
+    if (temporal_prediction_horizon > 64) temporal_prediction_horizon = 64;
+    if (temporal_prediction_interval_frames < 1) temporal_prediction_interval_frames = 1;
+    if (temporal_prediction_interval_frames > 16) temporal_prediction_interval_frames = 16;
+    if (temporal_prediction_influence < 0.0f) temporal_prediction_influence = 0.0f;
+    if (temporal_prediction_influence > 1.0f) temporal_prediction_influence = 1.0f;
+    if (temporal_prediction_max_lead_px < 20.0f) temporal_prediction_max_lead_px = 20.0f;
+    if (temporal_prediction_max_lead_px > 80.0f) temporal_prediction_max_lead_px = 80.0f;
+    if (neural_targeting_model_path.empty()) neural_targeting_model_path = "models/neural_targeting_head.onnx";
+    if (neural_targeting_influence < 0.0f) neural_targeting_influence = 0.0f;
+    if (neural_targeting_influence > 1.0f) neural_targeting_influence = 1.0f;
+    if (neural_targeting_max_refinement_px < 1.0f) neural_targeting_max_refinement_px = 1.0f;
+    if (neural_targeting_max_refinement_px > 80.0f) neural_targeting_max_refinement_px = 80.0f;
+    if (neural_targeting_max_iterations < 1) neural_targeting_max_iterations = 1;
+    if (neural_targeting_max_iterations > 2) neural_targeting_max_iterations = 2;
 
     // Classes
     class_player = get_long("class_player", 0);
@@ -955,13 +1033,33 @@ bool Config::loadConfigMerged(const std::string& filename)
     MERGE_FIELD("pid_governor_model_path", pid_governor_model_path);
     MERGE_FIELD("pid_governor_blend", pid_governor_blend);
     MERGE_FIELD("pid_governor_max_speed_multiple", pid_governor_max_speed_multiple);
+    MERGE_FIELD("pid_smart_blending_enabled", pid_smart_blending_enabled);
+    MERGE_FIELD("pid_smart_blending_aggression", pid_smart_blending_aggression);
+    MERGE_FIELD("pid_smart_blending_near_damping", pid_smart_blending_near_damping);
+    MERGE_FIELD("pid_smart_blending_deadzone_px", pid_smart_blending_deadzone_px);
+    MERGE_FIELD("pid_smart_blending_jerk_limit_px", pid_smart_blending_jerk_limit_px);
+    MERGE_FIELD("pid_smart_blending_confidence_floor", pid_smart_blending_confidence_floor);
 
     MERGE_FIELD("neural_tracker_enabled", neural_tracker_enabled);
+    MERGE_FIELD("neural_tracker_runtime", neural_tracker_runtime);
     MERGE_FIELD("neural_tracker_model_path", neural_tracker_model_path);
     MERGE_FIELD("neural_tracker_blend", neural_tracker_blend);
     MERGE_FIELD("neural_tracker_log_enabled", neural_tracker_log_enabled);
     MERGE_FIELD("neural_tracker_debug_enabled", neural_tracker_debug_enabled);
     MERGE_FIELD("neural_tracker_log_path", neural_tracker_log_path);
+    MERGE_FIELD("temporal_prediction_enabled", temporal_prediction_enabled);
+    MERGE_FIELD("temporal_prediction_model_path", temporal_prediction_model_path);
+    MERGE_FIELD("temporal_prediction_history_length", temporal_prediction_history_length);
+    MERGE_FIELD("temporal_prediction_horizon", temporal_prediction_horizon);
+    MERGE_FIELD("temporal_prediction_interval_frames", temporal_prediction_interval_frames);
+    MERGE_FIELD("temporal_prediction_feed_forward_enabled", temporal_prediction_feed_forward_enabled);
+    MERGE_FIELD("temporal_prediction_influence", temporal_prediction_influence);
+    MERGE_FIELD("temporal_prediction_max_lead_px", temporal_prediction_max_lead_px);
+    MERGE_FIELD("neural_targeting_enabled", neural_targeting_enabled);
+    MERGE_FIELD("neural_targeting_model_path", neural_targeting_model_path);
+    MERGE_FIELD("neural_targeting_influence", neural_targeting_influence);
+    MERGE_FIELD("neural_targeting_max_refinement_px", neural_targeting_max_refinement_px);
+    MERGE_FIELD("neural_targeting_max_iterations", neural_targeting_max_iterations);
 
     MERGE_FIELD("arduino_baudrate", arduino_baudrate);
     MERGE_FIELD("arduino_port", arduino_port);
@@ -1113,6 +1211,19 @@ bool Config::loadConfigMerged(const std::string& filename)
 
 bool Config::validate()
 {
+    std::transform(neural_tracker_runtime.begin(), neural_tracker_runtime.end(), neural_tracker_runtime.begin(),
+        [](unsigned char c) { return static_cast<char>(std::toupper(c)); });
+    if (neural_tracker_runtime != "CPU"
+#ifdef USE_CUDA
+        && neural_tracker_runtime != "CUDA"
+#endif
+        )
+    {
+        std::cerr << "[Config] Unknown neural_tracker_runtime '" << neural_tracker_runtime
+                  << "', using CPU neural tracker runtime." << std::endl;
+        neural_tracker_runtime = "CPU";
+    }
+
     if (!ParseMouseInputMethod(input_method))
     {
         std::cerr << "[Config] Unknown input_method '" << input_method
@@ -1261,16 +1372,42 @@ bool Config::saveConfig(const std::string& filename)
         << "pid_governor_enabled = " << (pid_governor_enabled ? "true" : "false") << "\n"
         << "pid_governor_model_path = " << pid_governor_model_path << "\n"
         << "pid_governor_blend = " << pid_governor_blend << "\n"
-        << "pid_governor_max_speed_multiple = " << pid_governor_max_speed_multiple << "\n\n";
+        << "pid_governor_max_speed_multiple = " << pid_governor_max_speed_multiple << "\n"
+        << "pid_smart_blending_enabled = " << (pid_smart_blending_enabled ? "true" : "false") << "\n"
+        << "pid_smart_blending_aggression = " << pid_smart_blending_aggression << "\n"
+        << "pid_smart_blending_near_damping = " << pid_smart_blending_near_damping << "\n"
+        << "pid_smart_blending_deadzone_px = " << pid_smart_blending_deadzone_px << "\n"
+        << "pid_smart_blending_jerk_limit_px = " << pid_smart_blending_jerk_limit_px << "\n"
+        << "pid_smart_blending_confidence_floor = " << pid_smart_blending_confidence_floor << "\n\n";
 
     file << "# Neural tracker association\n"
         << "neural_tracker_enabled = " << (neural_tracker_enabled ? "true" : "false") << "\n"
+        << "neural_tracker_runtime = " << neural_tracker_runtime << "\n"
         << "neural_tracker_model_path = " << neural_tracker_model_path << "\n"
         << std::fixed << std::setprecision(3)
         << "neural_tracker_blend = " << neural_tracker_blend << "\n"
         << "neural_tracker_log_enabled = " << (neural_tracker_log_enabled ? "true" : "false") << "\n"
         << "neural_tracker_debug_enabled = " << (neural_tracker_debug_enabled ? "true" : "false") << "\n"
         << "neural_tracker_log_path = " << neural_tracker_log_path << "\n\n";
+
+    file << "# Learned temporal predictor\n"
+        << "temporal_prediction_enabled = " << (temporal_prediction_enabled ? "true" : "false") << "\n"
+        << "temporal_prediction_model_path = " << temporal_prediction_model_path << "\n"
+        << "temporal_prediction_history_length = " << temporal_prediction_history_length << "\n"
+        << "temporal_prediction_horizon = " << temporal_prediction_horizon << "\n"
+        << "temporal_prediction_interval_frames = " << temporal_prediction_interval_frames << "\n"
+        << "temporal_prediction_feed_forward_enabled = " << (temporal_prediction_feed_forward_enabled ? "true" : "false") << "\n"
+        << std::fixed << std::setprecision(3)
+        << "temporal_prediction_influence = " << temporal_prediction_influence << "\n"
+        << "temporal_prediction_max_lead_px = " << temporal_prediction_max_lead_px << "\n\n";
+
+    file << "# Neural targeting head\n"
+        << "neural_targeting_enabled = " << (neural_targeting_enabled ? "true" : "false") << "\n"
+        << "neural_targeting_model_path = " << neural_targeting_model_path << "\n"
+        << std::fixed << std::setprecision(3)
+        << "neural_targeting_influence = " << neural_targeting_influence << "\n"
+        << "neural_targeting_max_refinement_px = " << neural_targeting_max_refinement_px << "\n"
+        << "neural_targeting_max_iterations = " << neural_targeting_max_iterations << "\n\n";
 
     // Arduino
     file << "# Arduino\n"

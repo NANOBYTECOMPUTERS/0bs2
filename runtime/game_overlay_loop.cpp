@@ -13,9 +13,11 @@
 #include <optional>
 #include <random>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "capture.h"
+#include "capture/capture_geometry.h"
 #include "Game_overlay.h"
 #include "mouse.h"
 #include "other_tools.h"
@@ -36,6 +38,55 @@ namespace
 std::string g_lastIconPath;
 int g_iconImageId = 0;
 std::mutex g_iconMutex;
+
+cv::Rect clipModelRect(const cv::Rect& rect, int modelWidth, int modelHeight)
+{
+    const int x = std::max(0, std::min(rect.x, modelWidth));
+    const int y = std::max(0, std::min(rect.y, modelHeight));
+    const int w = std::max(0, std::min(rect.width, modelWidth - x));
+    const int h = std::max(0, std::min(rect.height, modelHeight - y));
+    return { x, y, w, h };
+}
+
+CaptureFrameGeometry fallbackOverlayGeometry(int detRes, int panelWidth, int panelHeight)
+{
+    int regionW = std::max(1, detRes);
+    int regionH = std::max(1, detRes);
+    if (regionW > panelWidth) regionW = panelWidth;
+    if (regionH > panelHeight) regionH = panelHeight;
+
+    return CaptureFrameGeometry::FromCenterCrop(
+        panelWidth,
+        panelHeight,
+        regionW,
+        regionH,
+        detRes,
+        detRes,
+        true);
+}
+
+CaptureFrameGeometry selectOverlayGeometry(
+    const CaptureFrameGeometry& detectionGeometry,
+    int detRes,
+    int panelWidth,
+    int panelHeight)
+{
+    const bool desktopMonitorCapture =
+        (config.capture_method == "duplication_api" ||
+            (config.capture_method == "winrt" && config.capture_target != "window")) &&
+        config.monitor_idx == 0;
+
+    if (desktopMonitorCapture &&
+        detectionGeometry.validScreenMapping &&
+        detectionGeometry.hasValidModel() &&
+        detectionGeometry.screenWidth == panelWidth &&
+        detectionGeometry.screenHeight == panelHeight)
+    {
+        return detectionGeometry;
+    }
+
+    return fallbackOverlayGeometry(detRes, panelWidth, panelHeight);
+}
 }
 static void draw_target_correction_demo_game_overlay(Game_overlay* overlay, float centerX, float centerY)
 {
@@ -1103,20 +1154,9 @@ void gameOverlayRenderLoop()
             continue;
         }
 
-        int regionW = detRes;
-        int regionH = detRes;
-
-        if (regionW > pw) regionW = pw;
-        if (regionH > ph) regionH = ph;
-
-        const int baseX = (pw - regionW) / 2;
-        const int baseY = (ph - regionH) / 2;
-
-        const float scaleX = detRes > 0 ? (static_cast<float>(regionW) / static_cast<float>(detRes)) : 1.0f;
-        const float scaleY = detRes > 0 ? (static_cast<float>(regionH) / static_cast<float>(detRes)) : 1.0f;
-
         std::vector<cv::Rect> boxesCopy;
         std::vector<int> classesCopy;
+        CaptureFrameGeometry detectionGeometry;
         int detectionVersion = lastDetectionVersion;
         {
             std::unique_lock<std::mutex> lk(detectionBuffer.mutex);
@@ -1127,13 +1167,32 @@ void gameOverlayRenderLoop()
                 });
             boxesCopy = detectionBuffer.boxes;
             classesCopy = detectionBuffer.classes;
+            detectionGeometry = detectionBuffer.geometry;
             detectionVersion = detectionBuffer.version;
         }
         lastDetectionVersion = detectionVersion;
 
+        const CaptureFrameGeometry overlayGeometry = selectOverlayGeometry(detectionGeometry, detRes, pw, ph);
+        CaptureToScreenConverter overlayConverter(overlayGeometry);
+        const cv::Rect2d captureFrameRect = overlayConverter.modelToScreenRect(cv::Rect(0, 0, detRes, detRes));
+
+        const float baseX = static_cast<float>(captureFrameRect.x);
+        const float baseY = static_cast<float>(captureFrameRect.y);
+        const float regionW = static_cast<float>(captureFrameRect.width);
+        const float regionH = static_cast<float>(captureFrameRect.height);
+        const float scaleX = static_cast<float>(overlayConverter.scaleX());
+        const float scaleY = static_cast<float>(overlayConverter.scaleY());
+        const float averageScale = static_cast<float>(overlayConverter.averageScale());
+
         decltype(globalMouseThread->getFuturePositions()) futurePts;
         if (config.game_overlay_draw_future && globalMouseThread)
             futurePts = globalMouseThread->getFuturePositions();
+
+        std::pair<double, double> neuralTargetingRefinedAimPoint{ 0.0, 0.0 };
+        bool neuralTargetingRefinedAimPointValid = false;
+        if (config.game_overlay_draw_future && globalMouseThread)
+            neuralTargetingRefinedAimPointValid =
+                globalMouseThread->getNeuralTargetingRefinedAimPoint(neuralTargetingRefinedAimPoint);
 
         std::vector<std::pair<double, double>> windTailPts;
         if (config.game_overlay_draw_wind_tail && globalMouseThread)
@@ -1502,10 +1561,11 @@ void gameOverlayRenderLoop()
 
                     if (maskHasBounds)
                     {
-                        const float bx = maskX + static_cast<float>(maskBounds.x) * scaleX;
-                        const float by = maskY + static_cast<float>(maskBounds.y) * scaleY;
-                        const float bw = static_cast<float>(maskBounds.width) * scaleX;
-                        const float bh = static_cast<float>(maskBounds.height) * scaleY;
+                        const cv::Rect2d screenRect = overlayConverter.modelToScreenRect(maskBounds);
+                        const float bx = static_cast<float>(screenRect.x);
+                        const float by = static_cast<float>(screenRect.y);
+                        const float bw = static_cast<float>(screenRect.width);
+                        const float bh = static_cast<float>(screenRect.height);
 
                         gameOverlayPtr->AddRect({ bx, by, bw, bh }, ARGB(230, 255, 240, 120), 1.8f);
                     }
@@ -1534,8 +1594,9 @@ void gameOverlayRenderLoop()
 
             if (config.circle_mask)
             {
-                float cx = baseX + regionW * 0.5f;
-                float cy = baseY + regionH * 0.5f;
+                const cv::Point2d screenPoint = overlayConverter.modelToScreenPoint(detRes * 0.5, detRes * 0.5);
+                float cx = static_cast<float>(screenPoint.x);
+                float cy = static_cast<float>(screenPoint.y);
                 float radius = std::min(regionW, regionH) * 0.5f;
                 gameOverlayPtr->AddCircle({ cx, cy, radius }, col, thickness);
             }
@@ -1572,16 +1633,14 @@ void gameOverlayRenderLoop()
             {
                 if (b.width <= 0 || b.height <= 0) continue;
 
-                int bx = std::max(0, std::min(b.x, detRes));
-                int by = std::max(0, std::min(b.y, detRes));
-                int bw = std::max(0, std::min(b.width, detRes - bx));
-                int bh = std::max(0, std::min(b.height, detRes - by));
-                if (bw == 0 || bh == 0) continue;
+                const cv::Rect clippedBox = clipModelRect(b, detRes, detRes);
+                if (clippedBox.width == 0 || clippedBox.height == 0) continue;
 
-                float x = baseX + bx * scaleX;
-                float y = baseY + by * scaleY;
-                float w = bw * scaleX;
-                float h = bh * scaleY;
+                const cv::Rect2d screenRect = overlayConverter.modelToScreenRect(clippedBox);
+                float x = static_cast<float>(screenRect.x);
+                float y = static_cast<float>(screenRect.y);
+                float w = static_cast<float>(screenRect.width);
+                float h = static_cast<float>(screenRect.height);
 
                 if (x + w < baseX || y + h < baseY ||
                     x > baseX + regionW || y > baseY + regionH)
@@ -1595,14 +1654,12 @@ void gameOverlayRenderLoop()
                 const auto& b = t.box;
                 if (b.width <= 0 || b.height <= 0) continue;
 
-                int bx = std::max(0, std::min(b.x, detRes));
-                int by = std::max(0, std::min(b.y, detRes));
-                int bw = std::max(0, std::min(b.width, detRes - bx));
-                int bh = std::max(0, std::min(b.height, detRes - by));
-                if (bw == 0 || bh == 0) continue;
+                const cv::Rect clippedBox = clipModelRect(b, detRes, detRes);
+                if (clippedBox.width == 0 || clippedBox.height == 0) continue;
 
-                const float x = baseX + bx * scaleX;
-                const float y = baseY + by * scaleY;
+                const cv::Rect2d screenRect = overlayConverter.modelToScreenRect(clippedBox);
+                const float x = static_cast<float>(screenRect.x);
+                const float y = static_cast<float>(screenRect.y);
 
                 std::wstring label = L"ID " + std::to_wstring(t.trackId);
                 if (t.trackId == lockedTrackId || t.isLocked)
@@ -1625,11 +1682,12 @@ void gameOverlayRenderLoop()
                     textCol
                 );
 
-                const float innerAimX = static_cast<float>(baseX) + static_cast<float>(t.innerAimX) * scaleX;
-                const float innerAimY = static_cast<float>(baseY) + static_cast<float>(t.innerAimY) * scaleY;
+                const cv::Point2d screenPoint = overlayConverter.modelToScreenPoint(t.innerAimX, t.innerAimY);
+                const float innerAimX = static_cast<float>(screenPoint.x);
+                const float innerAimY = static_cast<float>(screenPoint.y);
                 const float innerAimRadius =
-                    std::max(2.0f, t.innerAimRadius * ((scaleX + scaleY) * 0.5f));
-                const float cross = std::max(3.0f, 4.0f * ((scaleX + scaleY) * 0.5f));
+                    std::max(2.0f, t.innerAimRadius * averageScale);
+                const float cross = std::max(3.0f, 4.0f * averageScale);
                 const float consistencyScore = std::clamp(t.consistencyScore, 0.0f, 1.0f);
                 const uint32_t innerCol =
                     consistencyScore > 0.72f
@@ -1644,6 +1702,34 @@ void gameOverlayRenderLoop()
                     gameOverlayPtr->AddLine({ innerAimX - cross, innerAimY, innerAimX + cross, innerAimY }, innerCol, 1.4f);
                     gameOverlayPtr->AddLine({ innerAimX, innerAimY - cross, innerAimX, innerAimY + cross }, innerCol, 1.4f);
                     gameOverlayPtr->AddCircle({ innerAimX, innerAimY, innerAimRadius }, innerCol, 1.0f);
+                }
+
+                const auto& temporalFuture = t.temporalFuture;
+                if (config.game_overlay_draw_future && t.temporalPredictionValid && !temporalFuture.empty())
+                {
+                    const uint32_t temporalCol = ARGB(220, 120, 255, 210);
+                    cv::Point2d previous = overlayConverter.modelToScreenPoint(t.innerAimX, t.innerAimY);
+
+                    for (const auto& futurePoint : temporalFuture)
+                    {
+                        const cv::Point2d screenFuture =
+                            overlayConverter.modelToScreenPoint(futurePoint.first, futurePoint.second);
+                        const float fx = static_cast<float>(screenFuture.x);
+                        const float fy = static_cast<float>(screenFuture.y);
+
+                        if (fx < baseX - 40.0f || fy < baseY - 40.0f ||
+                            fx > baseX + regionW + 40.0f || fy > baseY + regionH + 40.0f)
+                            continue;
+
+                        gameOverlayPtr->AddLine(
+                            { static_cast<float>(previous.x), static_cast<float>(previous.y), fx, fy },
+                            temporalCol,
+                            1.1f);
+                        gameOverlayPtr->FillCircle(
+                            { fx, fy, std::max(1.8f, config.game_overlay_future_point_radius * 0.75f) },
+                            temporalCol);
+                        previous = screenFuture;
+                    }
                 }
             }
         }
@@ -1669,8 +1755,10 @@ void gameOverlayRenderLoop()
                     (uint32_t(50) << 8) |
                     (uint32_t(i * 255 / total));
 
-                float px = static_cast<float>(baseX) + static_cast<float>(futurePts[i].first) * scaleX;
-                float py = static_cast<float>(baseY) + static_cast<float>(futurePts[i].second) * scaleY;
+                const cv::Point2d screenPoint =
+                    overlayConverter.modelToScreenPoint(futurePts[i].first, futurePts[i].second);
+                float px = static_cast<float>(screenPoint.x);
+                float py = static_cast<float>(screenPoint.y);
 
                 if (px < baseX - 40 || py < baseY - 40 ||
                     px > baseX + regionW + 40 || py > baseY + regionH + 40)
@@ -1680,13 +1768,28 @@ void gameOverlayRenderLoop()
             }
         }
 
+        if (config.game_overlay_draw_future && neuralTargetingRefinedAimPointValid)
+        {
+            const cv::Point2d refined =
+                overlayConverter.modelToScreenPoint(neuralTargetingRefinedAimPoint.first, neuralTargetingRefinedAimPoint.second);
+            const float rx = static_cast<float>(refined.x);
+            const float ry = static_cast<float>(refined.y);
+            if (rx >= baseX - 40.0f && ry >= baseY - 40.0f &&
+                rx <= baseX + regionW + 40.0f && ry <= baseY + regionH + 40.0f)
+            {
+                gameOverlayPtr->AddCircle({ rx, ry, 7.0f }, ARGB(235, 255, 90, 220), 1.5f);
+                gameOverlayPtr->FillCircle({ rx, ry, 2.6f }, ARGB(235, 255, 90, 220));
+            }
+        }
+
         // WIND DEBUG TAIL
         if (config.game_overlay_draw_wind_tail && windTailPts.size() > 1)
         {
             const size_t n = windTailPts.size();
             const auto& anchor = windTailPts.back();
-            const float centerX = static_cast<float>(baseX) + regionW * 0.5f;
-            const float centerY = static_cast<float>(baseY) + regionH * 0.5f;
+            const cv::Point2d screenPoint = overlayConverter.modelToScreenPoint(detRes * 0.5, detRes * 0.5);
+            const float centerX = static_cast<float>(screenPoint.x);
+            const float centerY = static_cast<float>(screenPoint.y);
             for (size_t i = 1; i < n; ++i)
             {
                 const auto& p0 = windTailPts[i - 1];
@@ -1739,16 +1842,14 @@ void gameOverlayRenderLoop()
                 }
 
                 if (b.width <= 0 || b.height <= 0) continue;
-                int bx = std::max(0, std::min(b.x, detRes));
-                int by = std::max(0, std::min(b.y, detRes));
-                int bw = std::max(0, std::min(b.width, detRes - bx));
-                int bh = std::max(0, std::min(b.height, detRes - by));
-                if (bw == 0 || bh == 0) continue;
+                const cv::Rect clippedBox = clipModelRect(b, detRes, detRes);
+                if (clippedBox.width == 0 || clippedBox.height == 0) continue;
 
-                float boxX = baseX + bx * scaleX;
-                float boxY = baseY + by * scaleY;
-                float boxW = bw * scaleX;
-                float boxH = bh * scaleY;
+                const cv::Rect2d screenRect = overlayConverter.modelToScreenRect(clippedBox);
+                float boxX = static_cast<float>(screenRect.x);
+                float boxY = static_cast<float>(screenRect.y);
+                float boxW = static_cast<float>(screenRect.width);
+                float boxH = static_cast<float>(screenRect.height);
 
                 float drawX = boxX;
                 float drawY = boxY;
@@ -1783,10 +1884,12 @@ void gameOverlayRenderLoop()
 
         if (config.game_overlay_show_target_correction)
         {
+            const cv::Point2d correctionCenter =
+                overlayConverter.modelToScreenPoint(detRes * 0.5, detRes * 0.5);
             draw_target_correction_demo_game_overlay(
                 gameOverlayPtr,
-                static_cast<float>(baseX) + regionW * 0.5f,
-                static_cast<float>(baseY) + regionH * 0.5f);
+                static_cast<float>(correctionCenter.x),
+                static_cast<float>(correctionCenter.y));
         }
 
         if (config.aim_sim_enabled)

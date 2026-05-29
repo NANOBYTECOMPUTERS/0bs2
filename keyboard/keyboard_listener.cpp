@@ -50,7 +50,7 @@ bool isTeensy41InputMethod()
 
 bool useInputDeviceButtonState()
 {
-    return (config.arduino_enable_keys || isTeensy41InputMethod()) &&
+    return isTeensy41InputMethod() &&
         activeMouseInputOwner && activeMouseInputOwner->isOpen();
 }
 
@@ -214,7 +214,7 @@ void keyboardListener()
         {
             if (!reloadPressed)
             {
-                std::lock_guard<std::mutex> lock(configMutex);
+                std::lock_guard<std::recursive_mutex> lock(configMutex);
                 LoadRuntimeConfigMerge();
                 reloadPressed = true;
             }

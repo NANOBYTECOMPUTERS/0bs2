@@ -115,7 +115,7 @@ private:
     void readerLoop();
     void applyButtonEvent(uint8_t buttonId, bool pressed);
 
-    std::unique_ptr<hid_device, HidDeviceDeleter> device_;
+    std::shared_ptr<hid_device> device_;
     mutable std::mutex writeMutex_;
     std::thread readerThread_;
     std::atomic<bool> connected_{ false };

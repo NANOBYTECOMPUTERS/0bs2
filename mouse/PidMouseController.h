@@ -2,6 +2,7 @@
 #define PID_MOUSE_CONTROLLER_H
 
 #include "PidGovernor.h"
+#include "SmartBlender.h"
 
 #include <chrono>
 #include <memory>
@@ -59,6 +60,12 @@ struct PidMouseSettings
     bool governorEnabled = false;
     double governorBlend = 1.0;
     double governorMaxSpeedMultiple = 5.0;
+    bool pid_smart_blending_enabled = false;
+    double pid_smart_blending_aggression = 0.65;
+    double pid_smart_blending_near_damping = 0.75;
+    double pid_smart_blending_deadzone_px = 0.0;
+    double pid_smart_blending_jerk_limit_px = 0.65;
+    double pid_smart_blending_confidence_floor = 0.45;
 };
 
 struct PidMouseObservation
@@ -69,8 +76,11 @@ struct PidMouseObservation
     double height = 0.0;
     double targetOffsetX = 0.0;
     double targetOffsetY = 0.0;
+    double learnedPredictionLeadX = 0.0;
+    double learnedPredictionLeadY = 0.0;
     double confidence = 1.0;
     std::chrono::steady_clock::time_point timestamp{};
+    bool learnedPredictionLeadValid = false;
     bool valid = false;
 };
 
@@ -94,11 +104,17 @@ struct PidMouseCommand
     double governorSpeedScale = 1.0;
     double feedForwardX = 0.0;
     double feedForwardY = 0.0;
+    double learnedFeedForwardX = 0.0;
+    double learnedFeedForwardY = 0.0;
     double feedForwardScale = 0.0;
     double angularDxDeg = 0.0;
     double angularDyDeg = 0.0;
+    double smartBlendAlpha = 1.0;
+    double smartBlendJerkLimitPx = 0.0;
+    double smartBlendNearAmount = 0.0;
     bool governorActive = false;
     bool feedForwardActive = false;
+    bool smartBlendActive = false;
     bool angularOutputActive = false;
     bool active = false;
 };
@@ -148,6 +164,7 @@ private:
     bool outputSaturatedLastStep = false;
     bool hasPreviousDistance = false;
     std::shared_ptr<IPidGovernor> governor;
+    SmartBlender smartBlender;
 
     static double clampFinite(double value, double lo, double hi, double fallback);
     static double smoothAlpha(double dtSeconds, double tauSeconds);
@@ -165,7 +182,7 @@ private:
     void applyConvergenceDirectionGuard(double& outX, double& outY, double distance, double precisionRadius) const;
     double computeOutputScale(double distance, double dtSeconds, bool overshot);
     std::pair<double, double> computeFeedForward(
-        const PidMouseCommand& command,
+        PidMouseCommand& command,
         double distance,
         double closingRate,
         bool overshot,

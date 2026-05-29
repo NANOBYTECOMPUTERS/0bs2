@@ -61,8 +61,8 @@ bool GhubMouse::mouse_up(int key)
     if (!gmok)
         return false;
 
-    auto release = reinterpret_cast<bool(*)()>(GetProcAddress(gm, "release"));
-    return release != NULL && release();
+    auto release = reinterpret_cast<bool(*)(int)>(GetProcAddress(gm, "release"));
+    return release != NULL && release(key);
 }
 
 bool GhubMouse::mouse_close()
