@@ -159,3 +159,68 @@ temporal_prediction_interval_frames = 2
 Training-only knobs such as `hidden_size` and `model_type` are CLI arguments,
 not runtime fields. The runtime only needs the exported ONNX contract and the
 history/horizon values used during export.
+
+# Neural Targeting Head Training
+
+This trains the optional advisory `NeuralTargetingHead`. It does not replace
+PID/Kalman convergence. The exported ONNX only predicts a bounded feed-forward
+refinement offset and confidence:
+
+```text
+input:  targeting_features [batch, 10 + prediction_horizon * 2]
+output: targeting_output   [batch, 3]
+        [refinement_offset_x, refinement_offset_y, confidence]
+```
+
+The feature vector intentionally matches `neural/targeting/NeuralTargetingHead.cpp`.
+C++ already supplies scaled values, so this trainer does not wrap the model with
+an additional mean/std normalizer.
+
+## Generate Targeting Data
+
+```powershell
+python training/data_gen/generate_targeting_data.py `
+  --output training/datasets/neural_targeting_tracks.npz `
+  --samples 8192 `
+  --history-length 12 `
+  --prediction-horizon 16 `
+  --detection-width 320 `
+  --detection-height 320
+```
+
+The generator builds on the temporal track simulator, then adds realistic
+prediction bias, bad-prediction cases, near-lock damping, and ideal refinement
+labels. Labels are clamped to the configured maximum refinement so the model
+learns the same advisory boundary enforced at runtime.
+
+## Train And Export
+
+```powershell
+python training/train_neural_targeting.py `
+  --dataset training/datasets/neural_targeting_tracks.npz `
+  --output training/models/neural_targeting_head.pt `
+  --onnx-output models/neural_targeting_head.onnx `
+  --metadata training/models/neural_targeting_head.json `
+  --prediction-horizon 16 `
+  --hidden-size 192 `
+  --max-refinement-px 35 `
+  --epochs 35
+```
+
+If the dataset path does not exist, `train_neural_targeting.py` auto-generates
+it using the requested horizon and detection geometry. Add
+`--no-auto-generate-dataset` when a missing dataset should fail.
+
+## Evaluate
+
+```powershell
+python training/evaluate_neural_targeting.py `
+  --dataset training/datasets/neural_targeting_tracks.npz `
+  --model training/models/neural_targeting_head.pt `
+  --output-dir training/models/neural_targeting_eval
+```
+
+Evaluation writes `metrics.json` with refinement MAE/RMSE, confidence error, and
+bad-overconfidence rate. If `matplotlib` is installed, it also writes plots
+showing the current point, predicted trajectory, ideal refinement, and model
+refinement.
