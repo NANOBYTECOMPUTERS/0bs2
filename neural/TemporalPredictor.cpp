@@ -22,12 +22,29 @@ namespace
 std::filesystem::path resolveModelPath(const std::string& modelPath)
 {
     if (modelPath.empty())
-        return std::filesystem::path("models") / "temporal_predictor.onnx";
+        return std::filesystem::path("neural_models") / "temporal_predictor.onnx";
 
-    std::filesystem::path path(modelPath);
-    if (path.is_absolute())
-        return path;
-    return std::filesystem::absolute(path);
+    std::filesystem::path configured(modelPath);
+    if (configured.is_absolute())
+        return configured;
+
+    // Prefer neural_models/ for new structure, then fall back to models/
+    std::vector<std::filesystem::path> searchRoots = {
+        std::filesystem::path("neural_models"),
+        std::filesystem::path("models"),
+        std::filesystem::path("training/models")
+    };
+
+    for (const auto& root : searchRoots)
+    {
+        std::filesystem::path candidate = root / configured.filename();
+        std::error_code ec;
+        if (std::filesystem::exists(candidate, ec))
+            return std::filesystem::absolute(candidate);
+    }
+
+    // Default to neural_models if nothing found
+    return std::filesystem::absolute(std::filesystem::path("neural_models") / configured);
 }
 }
 

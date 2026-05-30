@@ -1,3 +1,21 @@
+# Neural Pipeline Training
+
+This directory contains the complete offline training stack for the advisory neural components used by the runtime (Perfect Aim v1).
+
+**Components covered:**
+- PID Governor (learned dynamic scaling of PID gains + speed)
+- Temporal Predictor (GRU-based future position forecasting)
+- Neural Targeting Head (bounded aim refinement + confidence)
+- Neural Tracker (learned association helper)
+
+All trainers have been modernized with consistent practices: AdamW + weight decay, learning rate scheduling, early stopping, gradient clipping, optional TensorBoard, and (strongly recommended) LightGBM teacher distillation.
+
+Models are centralized under `neural_models/` at the project root for easier distribution. The C++ runtime searches `neural_models/`, `models/`, and `training/models/`.
+
+See the main [README.md](../README.md) (Neural Tab and Perfect Aim v1 sections) for runtime configuration and the advisory nature of these systems.
+
+---
+
 # PID Governor Training
 
 This folder is offline-only. It is for creating a small MLP that learns how to
@@ -36,22 +54,25 @@ python training/train_pid_governor.py `
   --epochs 25
 ```
 
-The model inputs are raw controller state features. The outputs are:
+The model inputs are raw controller state features (40 columns in the exact order emitted by `pidGovernorFeatures()` in C++). The outputs are:
 
 ```text
 label_kp_scale, label_ki_scale, label_kd_scale, label_speed_scale
 ```
 
+**Important (2025+):** The PID governor trainer and dataset were updated to the current 40-feature runtime contract (added target_offset_*, aim_point_error_*, box_aspect_ratio, plus refined naming). Regenerate your dataset with `generate_pid_dataset.py` (or the vendored copy) after pulling these changes, then retrain.
+
 ## Export ONNX
 
 ```powershell
 python training/export_pid_governor_onnx.py `
-  --model training/models/pid_governor.pt `
-  --output training/models/pid_governor.onnx
+  --model neural_models/pid_governor.pt `
+  --output neural_models/pid_governor.onnx
 ```
 
-The ONNX graph includes feature normalization, so C++ can feed raw feature
-values in the order listed in the generated metadata JSON.
+All neural models are now centralized in the `neural_models/` folder at the project root
+for easier management and distribution. The C++ runtime automatically searches
+`neural_models/`, `models/`, and `training/models/` when resolving model paths.
 
 ## Enable Runtime Governor
 
@@ -65,6 +86,10 @@ pid_governor_max_speed_multiple = 5.000
 ```
 
 If the file is missing or inference fails, runtime falls back to pure PID.
+
+**Training hygiene:** All four trainers now share modern practices (AdamW + weight decay, ReduceLROnPlateau or equivalent, early stopping + best checkpoint restore, gradient clipping, optional TensorBoard). The two previously lighter trainers (neural_tracker, pid_governor) received the largest upgrades.
+
+**Strongly recommended:** Use `--use-gbm-teacher` (plus `--distill-weight 0.5` to `0.7`) when training the PID Governor or Neural Tracker. This trains a LightGBM teacher on the same data and distills its predictions into the neural net. The final exported ONNX remains a small, smooth MLP (zero changes to the C++ runtime), but the weights are significantly better. LightGBM must be installed (`pip install lightgbm`).
 
 ## Evaluate
 

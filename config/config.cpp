@@ -157,7 +157,7 @@ bool Config::loadConfig(const std::string& filename)
         pid_derivative_smoothing_multiplier = 1.5f;
         pid_perspective_fov_mapping_enabled = false;
         pid_governor_enabled = false;
-        pid_governor_model_path = "training/models/pid_governor.onnx";
+        pid_governor_model_path = "neural_models/pid_governor.onnx";
         pid_governor_blend = 1.0f;
         pid_governor_max_speed_multiple = 5.0f;
         pid_smart_blending_enabled = false;
@@ -170,7 +170,7 @@ bool Config::loadConfig(const std::string& filename)
         // Neural tracker association
         neural_tracker_enabled = false;
         neural_tracker_runtime = "CPU";
-        neural_tracker_model_path = "training/models/neural_tracker.onnx";
+        neural_tracker_model_path = "neural_models/neural_tracker.onnx";
         neural_tracker_blend = 0.35f;
         neural_tracker_log_enabled = false;
         neural_tracker_debug_enabled = false;
@@ -178,7 +178,7 @@ bool Config::loadConfig(const std::string& filename)
 
         // Learned temporal predictor
         temporal_prediction_enabled = false;
-        temporal_prediction_model_path = "models/temporal_predictor.onnx";
+        temporal_prediction_model_path = "neural_models/temporal_predictor.onnx";
         temporal_prediction_history_length = 12;
         temporal_prediction_horizon = 16;
         temporal_prediction_interval_frames = 2;
@@ -190,7 +190,7 @@ bool Config::loadConfig(const std::string& filename)
 
         // Neural targeting head
         neural_targeting_enabled = false;
-        neural_targeting_model_path = "models/neural_targeting_head.onnx";
+        neural_targeting_model_path = "neural_models/neural_targeting_head.onnx";
         neural_targeting_influence = 0.40f;
         neural_targeting_max_refinement_px = 35.0f;
         neural_targeting_max_iterations = 2;
@@ -887,7 +887,7 @@ bool Config::loadConfig(const std::string& filename)
     if (pid_adaptive_output_error_scale > 640.0f) pid_adaptive_output_error_scale = 640.0f;
     if (pid_derivative_smoothing_multiplier < 1.0f) pid_derivative_smoothing_multiplier = 1.0f;
     if (pid_derivative_smoothing_multiplier > 6.0f) pid_derivative_smoothing_multiplier = 6.0f;
-    if (pid_governor_model_path.empty()) pid_governor_model_path = "training/models/pid_governor.onnx";
+    if (pid_governor_model_path.empty()) pid_governor_model_path = "neural_models/pid_governor.onnx";
     if (pid_governor_blend < 0.0f) pid_governor_blend = 0.0f;
     if (pid_governor_blend > 1.0f) pid_governor_blend = 1.0f;
     if (pid_governor_max_speed_multiple < 1.0f) pid_governor_max_speed_multiple = 1.0f;
@@ -903,11 +903,11 @@ bool Config::loadConfig(const std::string& filename)
     if (pid_smart_blending_confidence_floor < 0.0f) pid_smart_blending_confidence_floor = 0.0f;
     if (pid_smart_blending_confidence_floor > 1.0f) pid_smart_blending_confidence_floor = 1.0f;
     if (neural_tracker_runtime.empty()) neural_tracker_runtime = "CPU";
-    if (neural_tracker_model_path.empty()) neural_tracker_model_path = "training/models/neural_tracker.onnx";
+    if (neural_tracker_model_path.empty()) neural_tracker_model_path = "neural_models/neural_tracker.onnx";
     if (neural_tracker_blend < 0.0f) neural_tracker_blend = 0.0f;
     if (neural_tracker_blend > 1.0f) neural_tracker_blend = 1.0f;
     if (neural_tracker_log_path.empty()) neural_tracker_log_path = "training/logs/neural_tracker_association.csv";
-    if (temporal_prediction_model_path.empty()) temporal_prediction_model_path = "models/temporal_predictor.onnx";
+    if (temporal_prediction_model_path.empty()) temporal_prediction_model_path = "neural_models/temporal_predictor.onnx";
     if (temporal_prediction_history_length < 2) temporal_prediction_history_length = 2;
     if (temporal_prediction_history_length > 64) temporal_prediction_history_length = 64;
     if (temporal_prediction_horizon < 1) temporal_prediction_horizon = 1;
@@ -920,7 +920,7 @@ bool Config::loadConfig(const std::string& filename)
     if (temporal_prediction_adaptive_ema_alpha > 1.0f) temporal_prediction_adaptive_ema_alpha = 1.0f;
     if (temporal_prediction_max_lead_px < 20.0f) temporal_prediction_max_lead_px = 20.0f;
     if (temporal_prediction_max_lead_px > 80.0f) temporal_prediction_max_lead_px = 80.0f;
-    if (neural_targeting_model_path.empty()) neural_targeting_model_path = "models/neural_targeting_head.onnx";
+    if (neural_targeting_model_path.empty()) neural_targeting_model_path = "neural_models/neural_targeting_head.onnx";
     if (neural_targeting_influence < 0.0f) neural_targeting_influence = 0.0f;
     if (neural_targeting_influence > 1.0f) neural_targeting_influence = 1.0f;
     if (neural_targeting_max_refinement_px < 1.0f) neural_targeting_max_refinement_px = 1.0f;

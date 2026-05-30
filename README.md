@@ -204,23 +204,57 @@ These launchers do not rebuild OpenCV. They reuse the current repository build p
 
 ## Neural Tab
 
-### Sliders
+The Neural tab (and related controls scattered across Mouse / Game Overlay) governs the advisory neural pipeline components. All neural systems in Perfect Aim v1 are **advisory / optional** and default to OFF or low influence. The core PID + State Estimator (Kalman/IMM) remains the primary convergence mechanism.
+
+### Neural Pipeline Overview
+Runtime data flow (advisory layers highlighted):
+`Detector → NeuralTracker (association) → Temporal Predictor (learned future positions) → Neural Targeting Head (bounded refinement offset + confidence) → Adaptive Influence + SmartBlender → PID/Governor → Output`
+
+- **Neural Tracker**: Learned association helper that can improve target correspondence across frames.
+- **Temporal Predictor**: GRU (or experimental Transformer) model that predicts future target positions from recent track history. Provides feed-forward to PID and visualization.
+- **Neural Targeting Head**: Small MLP that suggests a bounded aim-point refinement given current state + temporal predictions. Outputs both offset and a confidence value.
+- **PID Governor**: Learned model that dynamically scales PID terms and output speed based on rich controller state features.
+- **SmartBlender + Adaptive Influence**: Smoothly combines the various advisory signals while penalizing jitter and oscillation.
+
+Detailed training workflows for all components live in [training/README.md](training/README.md).
+
+### Sliders & Controls
 
 | Section | Slider | Config key | Range | Current | Notes |
 | --- | --- | --- | --- | --- | --- |
 | Neural Tracker | Association blend | neural_tracker_blend | 0.00-1.00 | 1.000 | Blend strength between regular and neural association output. |
+| Temporal Prediction | Influence | temporal_prediction_influence | 0.0-1.0 | 0.35 | Base strength of temporal feed-forward added to PID. |
+| Temporal Prediction | Max lead | temporal_prediction_max_lead_px | 0-200 | 45 | Hard clamp on predicted lead distance (pixels at detection resolution). |
+| Neural Targeting | Influence | neural_targeting_influence | 0.0-1.0 | 0.25 | Strength of the Neural Targeting Head refinement offset. |
+| Neural Targeting | Max refinement | neural_targeting_max_refinement_px | 5-80 | 35 | Maximum allowed refinement offset (pixels). The model is trained to respect this bound. |
+| PID Governor | Blend | pid_governor_blend | 0.0-1.0 | 0.2 | How strongly the learned governor scales the final PID output. |
+| PID Governor | Max speed multiple | pid_governor_max_speed_multiple | 1.0-10.0 | 5.0 | Safety cap on speed scaling produced by the governor. |
 
 ### Activate/Deactivate
 
 | Section | Control | Config key | Values | Current | Notes |
 | --- | --- | --- | --- | --- | --- |
 | Neural Tracker | Enable neural association | neural_tracker_enabled | true/false | true | Enables learned association/tracking helper logic. |
+| Temporal Prediction | Enable temporal prediction | temporal_prediction_enabled | true/false | false | Master switch for the Temporal Predictor path. |
+| Temporal Prediction | Feed-forward | temporal_prediction_feed_forward_enabled | true/false | true | Whether temporal predictions contribute feed-forward to the PID loop. |
+| Temporal Prediction | Adaptive influence | temporal_prediction_adaptive_influence_enabled | true/false | true | Allows confidence-based dynamic scaling of temporal influence. |
+| Neural Targeting | Enable neural targeting | neural_targeting_enabled | true/false | false | Master advisory neural refinement (Neural Targeting Head). |
+| PID Governor | Enable PID governor | pid_governor_enabled | true/false | true | Enables the learned ONNX PID governor when a model is present. |
 
 ### Other GUI-Exposed Config Controls
 
 | Section | Control | Config key | Type/options | Current | Notes |
 | --- | --- | --- | --- | --- | --- |
-| Neural Tracker | Association model | neural_tracker_model_path | path | training/models/neural_tracker.onnx | Path to the neural tracker ONNX file. |
+| Neural Tracker | Association model | neural_tracker_model_path | path | neural_models/neural_tracker.onnx | Path to the neural tracker ONNX file (searched in `neural_models/`, `models/`, `training/models/`). |
+| Temporal Prediction | Model path | temporal_prediction_model_path | path | models/temporal_predictor.onnx | Exported temporal predictor. |
+| Temporal Prediction | History length | temporal_prediction_history_length | 4-32 | 12 | Number of past frames fed to the temporal model. Must match export. |
+| Temporal Prediction | Horizon | temporal_prediction_horizon | 4-32 | 16 | How many future frames the model predicts. Must match export. |
+| Neural Targeting | Model path | neural_targeting_model_path | path | models/neural_targeting_head.onnx | Exported Neural Targeting Head model. |
+| PID Governor | Model path | pid_governor_model_path | path | neural_models/pid_governor.onnx | Learned PID scaling model (see training/README.md). |
+
+**Presets** (Balanced / Aggressive / Smooth / Sniper) in the Neural section of the main overlay automatically adjust several of the influence, refinement, and SmartBlender damping values above while keeping the master toggles under your control.
+
+See also the Game Overlay tab for extensive visualization of temporal history, neural refinement, aim simulation, and SmartBlender debug state.
 
 ## AI Tab
 
@@ -410,7 +444,7 @@ These settings are editable by changing `config.ini` directly. Some are build-ga
 | --- | --- | --- | --- | --- | --- | --- |
 | Mouse prediction | prediction_futurePositions | 20 | integer | Config only | Number of future target positions to retain/use for prediction visualization. | Saved in current config.ini, but no direct GUI control exists. |
 | Mouse prediction | draw_futurePositions | true | true/false | Config only | Enables drawing future positions in preview/debug paths. | Separate from game_overlay_draw_future. |
-| PID governor | pid_governor_model_path | training/models/pid_governor.onnx | path | Config only | Model path for the ONNX PID governor. | Relative paths are resolved against current/exe parent locations. |
+| PID governor | pid_governor_model_path | neural_models/pid_governor.onnx | path | Config only | Model path for the ONNX PID governor. All neural models are searched in `neural_models/`, `models/`, and `training/models/`. | Relative paths are resolved against current/exe parent locations. |
 | AI backend | backend | DML | DML or TRT | DML config-only / CUDA GUI | Selects DirectML or TensorRT backend. | GUI combo exists only in CUDA builds. |
 | AI backend | dml_device_id | 0 | integer adapter id | Config only | DirectML adapter index used by ONNX Runtime DML. | Not exposed in the GUI. |
 | System reserves | cpuCoreReserveCount | 4 | integer | Config only | CPU cores reserved away from worker assignment. | Not exposed in the GUI. |
