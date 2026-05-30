@@ -1,8 +1,10 @@
 # 0BS GUI and Config Setting Reference
 
-Generated on 2026-05-16 from `x64\DML\config.ini` and the ImGui source files under `overlay/`.
+Generated on 2026-05-16 (with manual extensions) from `x64\DML\config.ini` and the ImGui source files under `overlay/`.
 
 This reference is ordered by the GUI sidebar tabs in `overlay/overlay.cpp`. It lists every GUI slider and every activate/deactivate checkbox, then documents config.ini settings that are not editable in the current DML GUI or are hidden/loadable config keys.
+
+**Note on stability:** The runtime uses a HotConfigSnapshot pattern for consistent, lock-free reads of configuration from all real-time paths (PID actuator, Kalman/IMM, temporal prediction, neural refinement, wind simulation, aim curves, and overlay drawing). This makes live config reloads (F4) and GUI edits safe even under high-rate mouse control (240–2000 Hz actuator). Input method switches are hardened with explicit worker clear/reset paths and actuator health telemetry.
 
 ## Searchable Directory
 
@@ -23,6 +25,22 @@ PID/Kalman remains the convergence owner by default. Selecting IMM changes only 
 Ego-motion compensation is an opt-in tracker stabilizer. It subtracts bounded, recent emitted mouse/view motion from tracker priors and temporal history only; raw detector boxes, PID observation points, and final actuator output remain unchanged.
 
 The Neural tab exposes Balanced, Aggressive, Smooth, and Sniper presets. Presets tune prediction influence, neural refinement range, and SmartBlender damping/jerk limits while retaining opt-in master toggles. Optional telemetry can show current adaptive influence, confidence, predicted lead, neural refinement, and SmartBlender jitter/oscillation state on the game overlay, or write a throttled CSV log for tuning.
+
+## Build Launchers
+
+0BS includes double-click and noninteractive build launchers modeled after `sunone_aimbot_2` while retaining the existing Visual Studio/MSBuild project flow:
+
+| Script | Purpose |
+| --- | --- |
+| `BUILDER.bat` / `RUN_BUILDER.bat` | Interactive launcher for DML, CUDA, worker, or all targets. |
+| `BUILDER.ps1 -Backend DML -NonInteractive` | Builds the DirectML app through `tools/build_dml.ps1`. |
+| `BUILDER.ps1 -Backend CUDA -NonInteractive` | Builds the CUDA app through `tools/build_cuda.ps1`, which delegates to `cuda/build-cuda.ps1`. |
+| `BUILDER.ps1 -Backend WORKER -NonInteractive` | Builds the CUDA YOLO worker through `cuda/build-yolo-worker.ps1`. |
+| `build_dml.bat`, `build_cuda.bat`, `build_no-options.bat` | Direct wrappers for scriptable or double-click use. |
+
+**Recommended policy:** Use the DML backend for normal development and iteration. Only build the CUDA/TensorRT variant when you are actively modifying CUDA-specific code paths (detector, capture interop, depth, TensorRT workers, etc.). This keeps iteration fast and avoids unnecessary long CUDA rebuilds. See `cuda/README.md` for the isolated CUDA build surface details.
+
+These launchers do not rebuild OpenCV. They reuse the current repository build paths and accept `-DryRun` for command inspection.
 
 ## GUI Tab Order
 
@@ -172,9 +190,11 @@ The Neural tab exposes Balanced, Aggressive, Smooth, and Sniper presets. Presets
 | --- | --- | --- | --- | --- | --- |
 | Game Profile | Active Game Profile | active_game | profile names | UNIFIED | Selects the active game profile. |
 | Manage Profiles | Game profile rows | Games.<profile> | name = sens,yaw,pitch[,true,baseFOV] | profile/local | Custom profiles can be added/deleted; UNIFIED is read-only. |
-| Input Method | Mouse Input Method | input_method | WIN32, GHUB, RAZER, ARDUINO, TEENSY41, KMBOX_NET, KMBOX_A, MAKCU | RAZER | Changes active mouse backend. |
-| Input Method | Arduino/Teensy Port | arduino_port | COM1-COM30 | COM0 | Arduino and Teensy 4.1 serial input. |
-| Input Method | Arduino/Teensy Baudrate | arduino_baudrate | 9600-115200 | 115200 | Arduino and Teensy 4.1 serial input. |
+| Input Method | Mouse Input Method | input_method | WIN32, GHUB, RAZER, ARDUINO, TEENSY41, KMBOX_NET, KMBOX_A, MAKCU | RAZER | Changes active mouse backend. All methods support the hardened switch path with actuator telemetry reset. |
+| Input Method | Arduino/Teensy Port | arduino_port | COM1-COM30 | COM0 | Arduino and Teensy 4.1 *serial* input. |
+| Input Method | Arduino/Teensy Baudrate | arduino_baudrate | 9600-115200 | 115200 | Arduino and Teensy 4.1 *serial* input. |
+
+**Teensy 4.1 note:** `TEENSY41` supports both the classic serial passthrough sketch and a high-performance RawHID mode (no COM port, lower latency, preferred for gaming). See `firmware/teensy41_mouse_bridge/` (RawHID) and `TeensyMouseRawHidBridge/` for the two firmware options, plus `mouse/Teensy41RawHid.*` in the source. RawHID appears under the same `TEENSY41` input method selection when the appropriate firmware is flashed.
 | Input Method | Kmbox Net IP | kmbox_net_ip | text | 10.42.42.42 | Saved with Save & Reconnect. |
 | Input Method | Kmbox Net Port | kmbox_net_port | text | 1984 | Saved with Save & Reconnect. |
 | Input Method | Kmbox Net UUID | kmbox_net_uuid | text | DEADC0DE | Saved with Save & Reconnect. |
@@ -348,6 +368,15 @@ No saved GUI sliders in this tab.
 ## Stats Tab
 
 The Stats tab is read-only in the current GUI. It displays timing graphs, capture FPS, capture details, and CUDA/depth status where available.
+
+### Actuator Health Telemetry (new)
+The Stats tab now includes real-time PID actuator health monitoring:
+- Missed frame count (how many times the high-rate actuator missed its deadline).
+- "Last miss X seconds ago" (or "never") using monotonic timestamps.
+
+This telemetry is critical for validating 240–2000 Hz mouse output stability, especially when switching input methods or running under heavy overlay + neural load. The counters reset automatically on input method changes (covering Arduino, Makcu, GHUB, Razer, Teensy, Kmbox variants, and WIN32) and on resolution changes.
+
+Use this data together with the Neural tab telemetry (adaptive influence, confidence, SmartBlender jitter/oscillation) and the Game Overlay aim-simulation / wind-debug visuals when tuning or validating a new game profile or model.
 
 ## Debug Tab
 
