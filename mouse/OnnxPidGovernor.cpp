@@ -20,6 +20,7 @@ std::filesystem::path resolveModelPath(const std::string& modelPath)
     if (configured.is_absolute() && std::filesystem::exists(configured, ec))
         return configured;
 
+    // Build search bases (exe dir, parents, current)
     std::vector<std::filesystem::path> bases;
     bases.push_back(std::filesystem::current_path(ec));
 
@@ -32,16 +33,30 @@ std::filesystem::path resolveModelPath(const std::string& modelPath)
         bases.push_back(exeDir.parent_path().parent_path());
     }
 
+    // Preferred subfolders for neural models
+    std::vector<std::filesystem::path> subdirs = {
+        "neural_models",
+        "models",
+        "training/models"
+    };
+
     for (const auto& base : bases)
     {
-        if (base.empty())
-            continue;
-        std::filesystem::path candidate = base / configured;
-        if (std::filesystem::exists(candidate, ec))
-            return candidate;
+        if (base.empty()) continue;
+        for (const auto& sub : subdirs)
+        {
+            std::filesystem::path candidate = base / sub / configured.filename();
+            if (std::filesystem::exists(candidate, ec))
+                return candidate;
+        }
+        // Also try direct relative to base
+        std::filesystem::path direct = base / configured;
+        if (std::filesystem::exists(direct, ec))
+            return direct;
     }
 
-    return configured;
+    // Final fallback: neural_models
+    return std::filesystem::absolute(std::filesystem::path("neural_models") / configured);
 }
 
 class OnnxPidGovernor final : public IPidGovernor

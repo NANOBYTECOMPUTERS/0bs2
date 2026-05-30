@@ -74,9 +74,9 @@ def weighted_position_loss(torch, prediction, target, horizon_weights):
 def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Train the learned temporal predictor.")
     parser.add_argument("--dataset", default="training/datasets/temporal_tracks.npz")
-    parser.add_argument("--output", default="training/models/temporal_predictor.pt")
-    parser.add_argument("--onnx-output", default="models/temporal_predictor.onnx")
-    parser.add_argument("--metadata", default="training/models/temporal_predictor.json")
+    parser.add_argument("--output", default="neural_models/temporal_predictor.pt")
+    parser.add_argument("--onnx-output", default="neural_models/temporal_predictor.onnx")
+    parser.add_argument("--metadata", default="neural_models/temporal_predictor.json")
     parser.add_argument("--epochs", type=int, default=40)
     parser.add_argument("--batch-size", type=int, default=256)
     parser.add_argument("--hidden-size", type=int, default=160)

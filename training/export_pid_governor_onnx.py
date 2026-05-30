@@ -24,9 +24,9 @@ def resolve_repo_path(path: str | Path) -> Path:
 
 def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Export PID governor model to ONNX.")
-    parser.add_argument("--model", default="training/models/pid_governor.pt")
-    parser.add_argument("--output", default="training/models/pid_governor.onnx")
-    parser.add_argument("--metadata", default="training/models/pid_governor_onnx.json")
+    parser.add_argument("--model", default="neural_models/pid_governor.pt")
+    parser.add_argument("--output", default="neural_models/pid_governor.onnx")
+    parser.add_argument("--metadata", default="neural_models/pid_governor_onnx.json")
     parser.add_argument("--opset", type=int, default=17)
     return parser
 

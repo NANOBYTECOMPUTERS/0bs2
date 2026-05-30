@@ -67,9 +67,9 @@ def output_magnitude_loss(torch, prediction):
 def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Train the advisory neural targeting head.")
     parser.add_argument("--dataset", default="training/datasets/neural_targeting_tracks.npz")
-    parser.add_argument("--output", default="training/models/neural_targeting_head.pt")
-    parser.add_argument("--onnx-output", default="models/neural_targeting_head.onnx")
-    parser.add_argument("--metadata", default="training/models/neural_targeting_head.json")
+    parser.add_argument("--output", default="neural_models/neural_targeting_head.pt")
+    parser.add_argument("--onnx-output", default="neural_models/neural_targeting_head.onnx")
+    parser.add_argument("--metadata", default="neural_models/neural_targeting_head.json")
     parser.add_argument("--epochs", type=int, default=35)
     parser.add_argument("--batch-size", type=int, default=256)
     parser.add_argument("--hidden-size", type=int, default=192)

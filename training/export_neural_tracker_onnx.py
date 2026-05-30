@@ -18,9 +18,9 @@ from training.train_neural_tracker import import_torch, make_model, resolve_repo
 
 def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Export neural tracker model to ONNX.")
-    parser.add_argument("--model", default="training/models/neural_tracker.pt")
-    parser.add_argument("--output", default="training/models/neural_tracker.onnx")
-    parser.add_argument("--metadata", default="training/models/neural_tracker_onnx.json")
+    parser.add_argument("--model", default="neural_models/neural_tracker.pt")
+    parser.add_argument("--output", default="neural_models/neural_tracker.onnx")
+    parser.add_argument("--metadata", default="neural_models/neural_tracker_onnx.json")
     parser.add_argument("--opset", type=int, default=17)
     return parser
 

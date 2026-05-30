@@ -13,6 +13,7 @@ import argparse
 import csv
 import math
 import random
+import numpy as np
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
@@ -44,34 +45,41 @@ MOTION_STATE_COLUMNS = [
     "target_motion_moving",
 ]
 
+# Exact order must match C++ pidGovernorFeatures() emission order (40 features).
+# See mouse/PidGovernor.cpp and mouse/PidGovernor.h (PidGovernorFeatureCount = 40).
 FEATURE_COLUMNS = [
-    "error_x_px",
-    "error_y_px",
-    "error_distance_px",
+    "error_x",
+    "error_y",
+    "error_distance",
     *DIRECTION_COLUMNS,
-    "target_width_px",
-    "target_height_px",
-    "target_size_px",
-    "target_speed_x_px_s",
-    "target_speed_y_px_s",
-    "target_accel_x_px_s2",
-    "target_accel_y_px_s2",
+    "target_width",
+    "target_height",
+    "target_size",
+    "target_offset_x",
+    "target_offset_y",
+    "aim_point_error_x",
+    "aim_point_error_y",
+    "target_vx",
+    "target_vy",
+    "target_ax",
+    "target_ay",
     *MOTION_STATE_COLUMNS,
-    "cursor_speed_x_px_s",
-    "cursor_speed_y_px_s",
-    "previous_output_x_px",
-    "previous_output_y_px",
+    "cursor_vx",
+    "cursor_vy",
+    "previous_output_x",
+    "previous_output_y",
     "pid_p_x",
     "pid_p_y",
     "pid_i_x",
     "pid_i_y",
     "pid_d_x",
     "pid_d_y",
-    "closing_rate_px_s",
+    "closing_rate",
     "overshoot_risk",
-    "dt_s",
+    "dt",
     "confidence",
     "max_speed_ratio",
+    "box_aspect_ratio",
 ]
 
 LABEL_COLUMNS = [
@@ -244,21 +252,37 @@ def compute_teacher_labels(features: dict[str, float], pid: PidConfig, cfg: Data
     overshoot risk appears.
     """
 
-    distance = max(0.0, float(features.get("error_distance_px", 0.0)))
-    target_size = max(1.0, float(features.get("target_size_px", pid.size_reference_px)))
-    closing_rate = float(features.get("closing_rate_px_s", 0.0))
-    overshoot_risk = _clamp(float(features.get("overshoot_risk", 0.0)), 0.0, 1.0)
-    confidence = _clamp(float(features.get("confidence", 1.0)), 0.0, 1.0)
+    # Support both legacy long names and the current 40-col short names for robustness.
+    def _get(name: str, default: float = 0.0) -> float:
+        if name in features:
+            return float(features.get(name, default))
+        # legacy fallbacks
+        legacy = {
+            "error_distance": "error_distance_px",
+            "target_size": "target_size_px",
+            "closing_rate": "closing_rate_px_s",
+            "target_vx": "target_speed_x_px_s",
+            "target_vy": "target_speed_y_px_s",
+        }.get(name)
+        if legacy and legacy in features:
+            return float(features.get(legacy, default))
+        return float(features.get(name, default))
+
+    distance = max(0.0, _get("error_distance", 0.0))
+    target_size = max(1.0, _get("target_size", pid.size_reference_px))
+    closing_rate = _get("closing_rate", 0.0)
+    overshoot_risk = _clamp(_get("overshoot_risk", 0.0), 0.0, 1.0)
+    confidence = _clamp(_get("confidence", 1.0), 0.0, 1.0)
     diagonal_weight = _clamp(
-        float(features.get("error_direction_down_right", 0.0))
-        + float(features.get("error_direction_down_left", 0.0))
-        + float(features.get("error_direction_up_left", 0.0))
-        + float(features.get("error_direction_up_right", 0.0)),
+        _get("error_direction_down_right", 0.0)
+        + _get("error_direction_down_left", 0.0)
+        + _get("error_direction_up_left", 0.0)
+        + _get("error_direction_up_right", 0.0),
         0.0,
         1.0,
     )
-    still_weight = _clamp(float(features.get("target_motion_still", 0.0)), 0.0, 1.0)
-    moving_weight = _clamp(float(features.get("target_motion_moving", 0.0)), 0.0, 1.0)
+    still_weight = _clamp(_get("target_motion_still", 0.0), 0.0, 1.0)
+    moving_weight = _clamp(_get("target_motion_moving", 0.0), 0.0, 1.0)
 
     precision_radius = max(0.10, target_size * 0.018)
     slowdown_radius = max(precision_radius + 0.50, target_size * 0.65)
@@ -521,10 +545,33 @@ def _simulate_profile(profile: str, episode: int, rng: random.Random, pid: PidCo
         )
 
         features = {
+            # Core features (both short and legacy names for maximum compatibility)
+            "error_x": float(observed_x),
+            "error_y": float(observed_y),
+            "error_distance": float(distance),
+            **_eight_axis_direction_features(observed_x, observed_y),
+            "target_width": float(state["target_width"]),
+            "target_height": float(state["target_height"]),
+            "target_size": float(target_size),
+            "target_vx": float(state["vx"]),
+            "target_vy": float(state["vy"]),
+            "target_ax": float(state["ax"]),
+            "target_ay": float(state["ay"]),
+            **_motion_state_features(state["vx"], state["vy"], target_size),
+            "cursor_vx": float(cursor_speed_x),
+            "cursor_vy": float(cursor_speed_y),
+            "previous_output_x": float(prev_output_x),
+            "previous_output_y": float(prev_output_y),
+            **terms,
+            "closing_rate": float(closing_rate),
+            "overshoot_risk": float(overshoot_risk),
+            "dt": float(dt),
+            "confidence": float(confidence),
+            "max_speed_ratio": float(cfg.max_speed_multiple),
+            # Legacy long names (teacher + old tooling)
             "error_x_px": float(observed_x),
             "error_y_px": float(observed_y),
             "error_distance_px": float(distance),
-            **_eight_axis_direction_features(observed_x, observed_y),
             "target_width_px": float(state["target_width"]),
             "target_height_px": float(state["target_height"]),
             "target_size_px": float(target_size),
@@ -532,16 +579,12 @@ def _simulate_profile(profile: str, episode: int, rng: random.Random, pid: PidCo
             "target_speed_y_px_s": float(state["vy"]),
             "target_accel_x_px_s2": float(state["ax"]),
             "target_accel_y_px_s2": float(state["ay"]),
-            **_motion_state_features(state["vx"], state["vy"], target_size),
             "cursor_speed_x_px_s": float(cursor_speed_x),
             "cursor_speed_y_px_s": float(cursor_speed_y),
             "previous_output_x_px": float(prev_output_x),
             "previous_output_y_px": float(prev_output_y),
-            **terms,
             "closing_rate_px_s": float(closing_rate),
-            "overshoot_risk": float(overshoot_risk),
             "dt_s": float(dt),
-            "confidence": float(confidence),
             "max_speed_ratio": float(cfg.max_speed_multiple),
         }
         labels = compute_teacher_labels(features, pid, cfg)
@@ -577,6 +620,33 @@ def _simulate_profile(profile: str, episode: int, rng: random.Random, pid: PidCo
         }
         row.update(features)
         row.update(labels)
+
+        # Populate the 5 new columns (40 total) with synthetic but realistic values
+        # to match the current C++ PidGovernorInput / pidGovernorFeatures contract.
+        box_aspect = float(state.get("target_width", 20.0)) / max(1e-6, float(state.get("target_height", 20.0)))
+        # aim_point_error = raw observed error (what the command saw before any offset correction)
+        aim_err_x = float(observed_x)
+        aim_err_y = float(observed_y)
+        # target_offset simulates a prior neural / advisory correction already active this frame.
+        # In real runtime this comes from NeuralTargetingHead or other sources.
+        # We occasionally inject a plausible non-zero offset so the model learns to react to it.
+        offset_x = 0.0
+        offset_y = 0.0
+        if rng.random() < 0.28:
+            # small fraction of the just-computed correction (or a damped random nudge)
+            offset_x = float(raw_x) * rng.uniform(0.05, 0.55)
+            offset_y = float(raw_y) * rng.uniform(0.05, 0.55)
+            if rng.random() < 0.25:
+                # occasional independent small offset (different source)
+                offset_x += rng.gauss(0.0, max(0.8, abs(observed_x) * 0.12))
+                offset_y += rng.gauss(0.0, max(0.8, abs(observed_y) * 0.12))
+
+        row["target_offset_x"] = float(offset_x)
+        row["target_offset_y"] = float(offset_y)
+        row["aim_point_error_x"] = float(aim_err_x)
+        row["aim_point_error_y"] = float(aim_err_y)
+        row["box_aspect_ratio"] = float(np.clip(box_aspect, 0.25, 4.0))
+
         rows.append(row)
 
         prev_observed_x = observed_x

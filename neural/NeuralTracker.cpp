@@ -51,16 +51,28 @@ std::filesystem::path resolveNeuralModelPath(const std::string& modelPath)
         bases.push_back(exeDir.parent_path().parent_path());
     }
 
+    // Prioritize neural_models for the new centralized structure
+    std::vector<std::filesystem::path> subdirs = {
+        "neural_models",
+        "models",
+        "training/models"
+    };
+
     for (const auto& base : bases)
     {
-        if (base.empty())
-            continue;
-        std::filesystem::path candidate = base / configured;
-        if (std::filesystem::exists(candidate, ec))
-            return candidate;
+        if (base.empty()) continue;
+        for (const auto& sub : subdirs)
+        {
+            std::filesystem::path candidate = base / sub / configured.filename();
+            if (std::filesystem::exists(candidate, ec))
+                return candidate;
+        }
+        std::filesystem::path direct = base / configured;
+        if (std::filesystem::exists(direct, ec))
+            return direct;
     }
 
-    return configured;
+    return std::filesystem::absolute(std::filesystem::path("neural_models") / configured);
 }
 
 float normalizeOutputScore(float value)
