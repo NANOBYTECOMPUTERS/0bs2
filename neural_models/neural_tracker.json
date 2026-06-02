@@ -1,0 +1,36 @@
+{
+  "model_path": "C:\\Users\\donar\\OneDrive\\Desktop\\0BS\\neural_models\\neural_tracker.pt",
+  "dataset": "C:\\Users\\donar\\OneDrive\\Desktop\\0BS\\training\\data\\neural_tracker_dataset.csv",
+  "samples": 20000,
+  "feature_columns": [
+    "distance_norm",
+    "iou",
+    "size_log_ratio",
+    "detection_confidence",
+    "track_confidence",
+    "heading_alignment",
+    "track_missed_norm",
+    "track_hits_norm",
+    "is_locked",
+    "class_compatible",
+    "dt",
+    "speed_norm",
+    "target_size_norm",
+    "pivot_offset_x_norm",
+    "pivot_offset_y_norm",
+    "relaxed_gate"
+  ],
+  "label_column": "label_match",
+  "hidden": 56,
+  "final_validation_weighted_bce": 0.4254559576511383,
+  "final_validation_mae": 0.324116975069046,
+  "final_validation_accuracy": 0.9996874928474426,
+  "distilled_from_gbm": true,
+  "distill_weight": 0.65,
+  "runtime_contract": "C++ feeds 16 raw features; ONNX applies stored mean/std and outputs single sigmoid match score.",
+  "gbm_teacher": {
+    "boosting_rounds": 250,
+    "learning_rate": 0.05,
+    "max_depth": 6
+  }
+}

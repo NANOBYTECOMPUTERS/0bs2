@@ -23,6 +23,9 @@ char neuralModelPathBuf[260] = {};
 char temporalModelPathBuf[260] = {};
 char neuralTargetingModelPathBuf[260] = {};
 char neuralTelemetryLogPathBuf[260] = {};
+char realWorldDataLogDirBuf[260] = {};
+char temporalRealworldModelPathBuf[260] = {};
+char targetingRealworldModelPathBuf[260] = {};
 bool neuralUiInitialized = false;
 
 bool hasNeuralModelExtension(const std::filesystem::path& path)
@@ -71,6 +74,9 @@ void syncNeuralBuffers()
     strncpy_s(temporalModelPathBuf, config.temporal_prediction_model_path.c_str(), _TRUNCATE);
     strncpy_s(neuralTargetingModelPathBuf, config.neural_targeting_model_path.c_str(), _TRUNCATE);
     strncpy_s(neuralTelemetryLogPathBuf, config.neural_control_telemetry_log_path.c_str(), _TRUNCATE);
+    strncpy_s(realWorldDataLogDirBuf, config.real_world_data_log_dir.c_str(), _TRUNCATE);
+    strncpy_s(temporalRealworldModelPathBuf, config.temporal_realworld_model_path.c_str(), _TRUNCATE);
+    strncpy_s(targetingRealworldModelPathBuf, config.neural_targeting_realworld_model_path.c_str(), _TRUNCATE);
     neuralUiInitialized = true;
 }
 
@@ -91,12 +97,13 @@ void applyPerfectAimPreset(const char* preset)
 {
     config.neural_control_preset = preset ? preset : "Balanced";
     config.temporal_prediction_feed_forward_enabled = true;
-    config.temporal_prediction_adaptive_influence_enabled = true;
+    config.adaptive_prediction_enabled = true;
+    config.temporal_prediction_adaptive_influence_enabled = config.adaptive_prediction_enabled;
     config.pid_smart_blending_enabled = true;
 
     if (config.neural_control_preset == "Aggressive")
     {
-        config.temporal_prediction_influence = 0.50f;
+        config.base_prediction_influence = 0.50f;
         config.temporal_prediction_max_lead_px = 60.0f;
         config.neural_targeting_influence = 0.55f;
         config.neural_targeting_max_refinement_px = 45.0f;
@@ -107,7 +114,7 @@ void applyPerfectAimPreset(const char* preset)
     }
     else if (config.neural_control_preset == "Smooth")
     {
-        config.temporal_prediction_influence = 0.22f;
+        config.base_prediction_influence = 0.22f;
         config.temporal_prediction_max_lead_px = 38.0f;
         config.neural_targeting_influence = 0.28f;
         config.neural_targeting_max_refinement_px = 28.0f;
@@ -118,7 +125,7 @@ void applyPerfectAimPreset(const char* preset)
     }
     else if (config.neural_control_preset == "Sniper")
     {
-        config.temporal_prediction_influence = 0.18f;
+        config.base_prediction_influence = 0.18f;
         config.temporal_prediction_max_lead_px = 28.0f;
         config.neural_targeting_influence = 0.20f;
         config.neural_targeting_max_refinement_px = 22.0f;
@@ -130,7 +137,7 @@ void applyPerfectAimPreset(const char* preset)
     else
     {
         config.neural_control_preset = "Balanced";
-        config.temporal_prediction_influence = 0.32f;
+        config.base_prediction_influence = 0.32f;
         config.temporal_prediction_max_lead_px = 45.0f;
         config.neural_targeting_influence = 0.40f;
         config.neural_targeting_max_refinement_px = 35.0f;
@@ -141,6 +148,7 @@ void applyPerfectAimPreset(const char* preset)
     }
 
     config.temporal_prediction_adaptive_ema_alpha = 0.62f;
+    config.temporal_prediction_influence = config.base_prediction_influence;
     config.pid_smart_blending_deadzone_px = 0.0f;
     OverlayConfig_MarkDirty();
     refreshMouseThreadFromNeural();
@@ -289,6 +297,22 @@ void draw_neural()
             OverlayConfig_MarkDirty();
         }
 
+        // Real-world fine-tuned variant (from convert + --fine-tune workflow)
+        ImGui::SetNextItemWidth(OverlayUI::AdaptiveItemWidth(0.78f));
+        if (ImGui::InputText("Real-world temporal model", temporalRealworldModelPathBuf, IM_ARRAYSIZE(temporalRealworldModelPathBuf)))
+        {
+            config.temporal_realworld_model_path = temporalRealworldModelPathBuf;
+            OverlayConfig_MarkDirty();
+        }
+        if (ImGui::Button("Use real-world temporal##use_temporal_real"))
+        {
+            config.temporal_prediction_model_path = config.temporal_realworld_model_path;
+            strncpy_s(temporalModelPathBuf, config.temporal_prediction_model_path.c_str(), _TRUNCATE);
+            OverlayConfig_MarkDirty();
+        }
+        ImGui::SameLine();
+        ImGui::TextDisabled("(after fine-tuning)");
+
         if (ImGui::SliderInt("History length", &config.temporal_prediction_history_length, 2, 64))
         {
             config.temporal_prediction_history_length = std::clamp(config.temporal_prediction_history_length, 2, 64);
@@ -312,14 +336,16 @@ void draw_neural()
             OverlayConfig_MarkDirty();
         }
 
-        if (ImGui::SliderFloat("Base prediction influence##Prediction influence", &config.temporal_prediction_influence, 0.0f, 1.0f, "%.2f"))
+        if (ImGui::SliderFloat("Base prediction influence##Prediction influence", &config.base_prediction_influence, 0.0f, 1.0f, "%.2f"))
         {
-            config.temporal_prediction_influence = std::clamp(config.temporal_prediction_influence, 0.0f, 1.0f);
+            config.base_prediction_influence = std::clamp(config.base_prediction_influence, 0.0f, 1.0f);
+            config.temporal_prediction_influence = config.base_prediction_influence;
             OverlayConfig_MarkDirty();
         }
 
-        if (ImGui::Checkbox("Adaptive prediction influence", &config.temporal_prediction_adaptive_influence_enabled))
+        if (ImGui::Checkbox("Adaptive prediction influence", &config.adaptive_prediction_enabled))
         {
+            config.temporal_prediction_adaptive_influence_enabled = config.adaptive_prediction_enabled;
             OverlayConfig_MarkDirty();
         }
 
@@ -353,6 +379,22 @@ void draw_neural()
             OverlayConfig_MarkDirty();
         }
 
+        // Real-world fine-tuned variant (from convert + --fine-tune workflow)
+        ImGui::SetNextItemWidth(OverlayUI::AdaptiveItemWidth(0.78f));
+        if (ImGui::InputText("Real-world targeting model", targetingRealworldModelPathBuf, IM_ARRAYSIZE(targetingRealworldModelPathBuf)))
+        {
+            config.neural_targeting_realworld_model_path = targetingRealworldModelPathBuf;
+            OverlayConfig_MarkDirty();
+        }
+        if (ImGui::Button("Use real-world targeting##use_targeting_real"))
+        {
+            config.neural_targeting_model_path = config.neural_targeting_realworld_model_path;
+            strncpy_s(neuralTargetingModelPathBuf, config.neural_targeting_model_path.c_str(), _TRUNCATE);
+            OverlayConfig_MarkDirty();
+        }
+        ImGui::SameLine();
+        ImGui::TextDisabled("(after fine-tuning)");
+
         if (ImGui::SliderFloat("Targeting influence", &config.neural_targeting_influence, 0.0f, 1.0f, "%.2f"))
         {
             config.neural_targeting_influence = std::clamp(config.neural_targeting_influence, 0.0f, 1.0f);
@@ -370,6 +412,58 @@ void draw_neural()
             config.neural_targeting_max_iterations = std::clamp(config.neural_targeting_max_iterations, 1, 2);
             OverlayConfig_MarkDirty();
         }
+
+        OverlayUI::EndSection();
+    }
+
+    // Dedicated Real-World Data section (fine-tuning workflow support)
+    if (OverlayUI::BeginSection("Real-World Data", "neural_section_realworld"))
+    {
+        ImGui::TextDisabled("Capture real sessions -> convert -> fine-tune -> activate here");
+
+        if (ImGui::Checkbox("Real-world data logging", &config.log_real_world_data))
+        {
+            OverlayConfig_MarkDirty();
+        }
+
+        ImGui::SetNextItemWidth(OverlayUI::AdaptiveItemWidth(0.78f));
+        if (ImGui::InputText("Log directory", realWorldDataLogDirBuf, IM_ARRAYSIZE(realWorldDataLogDirBuf)))
+        {
+            config.real_world_data_log_dir = realWorldDataLogDirBuf;
+            OverlayConfig_MarkDirty();
+        }
+
+        ImGui::Separator();
+
+        ImGui::Text("Fine-tuned models (point these at outputs from train_* --fine-tune):");
+
+        ImGui::SetNextItemWidth(OverlayUI::AdaptiveItemWidth(0.78f));
+        if (ImGui::InputText("Real temporal model path", temporalRealworldModelPathBuf, IM_ARRAYSIZE(temporalRealworldModelPathBuf)))
+        {
+            config.temporal_realworld_model_path = temporalRealworldModelPathBuf;
+            OverlayConfig_MarkDirty();
+        }
+        if (ImGui::Button("Activate as temporal model"))
+        {
+            config.temporal_prediction_model_path = config.temporal_realworld_model_path;
+            strncpy_s(temporalModelPathBuf, config.temporal_prediction_model_path.c_str(), _TRUNCATE);
+            OverlayConfig_MarkDirty();
+        }
+
+        ImGui::SetNextItemWidth(OverlayUI::AdaptiveItemWidth(0.78f));
+        if (ImGui::InputText("Real targeting model path", targetingRealworldModelPathBuf, IM_ARRAYSIZE(targetingRealworldModelPathBuf)))
+        {
+            config.neural_targeting_realworld_model_path = targetingRealworldModelPathBuf;
+            OverlayConfig_MarkDirty();
+        }
+        if (ImGui::Button("Activate as targeting model"))
+        {
+            config.neural_targeting_model_path = config.neural_targeting_realworld_model_path;
+            strncpy_s(neuralTargetingModelPathBuf, config.neural_targeting_model_path.c_str(), _TRUNCATE);
+            OverlayConfig_MarkDirty();
+        }
+
+        ImGui::TextDisabled("Workflow: run convert_real_world_logs.py then the two train_* --fine-tune commands.");
 
         OverlayUI::EndSection();
     }

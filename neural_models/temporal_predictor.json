@@ -1,0 +1,39 @@
+{
+  "model_path": "C:\\Users\\donar\\OneDrive\\Desktop\\0BS\\neural_models\\temporal_predictor.pt",
+  "onnx_path": "C:\\Users\\donar\\OneDrive\\Desktop\\0BS\\neural_models\\temporal_predictor.onnx",
+  "input_name": "temporal_history",
+  "output_name": "future_xy",
+  "input_shape": [
+    1,
+    12,
+    8
+  ],
+  "output_shape": [
+    1,
+    16,
+    2
+  ],
+  "feature_columns": [
+    "x",
+    "y",
+    "w",
+    "h",
+    "vx",
+    "vy",
+    "box_scale_vel",
+    "confidence"
+  ],
+  "history_length": 12,
+  "prediction_horizon": 16,
+  "hidden_size": 160,
+  "model_type": "gru",
+  "near_horizon_frames": 6,
+  "near_horizon_weight": 2.5,
+  "best_validation_loss": 119.4229736328125,
+  "dataset": "C:\\Users\\donar\\OneDrive\\Desktop\\0BS\\training\\datasets\\temporal_tracks.npz",
+  "real_world_data": "",
+  "fine_tuned": false,
+  "checkpoint": "",
+  "mix_ratio_real": 0.0,
+  "samples": 24576
+}

@@ -1417,6 +1417,21 @@ bool MultiTargetTracker::getLockedTarget(LockedTargetInfo& out) const
     out.targetVelocityX = t.velocity.x;
     out.targetVelocityY = t.velocity.y;
     out.targetBoxScaleVelocity = (static_cast<double>(t.sizeVelocity.x) + static_cast<double>(t.sizeVelocity.y)) * 0.5;
+    out.trackHistory.clear();
+    out.trackHistory.reserve(t.history.size());
+    for (const auto& sample : t.history)
+    {
+        out.trackHistory.push_back({
+            static_cast<float>(sample.x),
+            static_cast<float>(sample.y),
+            static_cast<float>(sample.w),
+            static_cast<float>(sample.h),
+            static_cast<float>(sample.vx),
+            static_cast<float>(sample.vy),
+            static_cast<float>(sample.boxScaleVel),
+            static_cast<float>(std::clamp(sample.confidence, 0.0, 1.0)),
+        });
+    }
     return true;
 }
 

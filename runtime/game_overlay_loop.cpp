@@ -93,6 +93,8 @@ static void draw_target_correction_demo_game_overlay(Game_overlay* overlay, floa
     if (!overlay)
         return;
 
+    // Legacy prediction compatibility: retained for aim-sim and overlay demo parity.
+    // These config knobs no longer own runtime convergence; PID/Kalman does.
     const float scale = 4.0f;
     float near_px = config.nearRadius * scale;
     float snap_px = config.snapRadius * scale;
@@ -477,6 +479,8 @@ static AimSimHistorySample aim_sim_sample_history(const std::deque<AimSimHistory
 
 static double aim_sim_calculate_speed_multiplier(double distance, double maxDistance)
 {
+    // Legacy prediction compatibility: retained for aim-sim and overlay demo parity.
+    // Removal requires a disabled-neural behavior baseline that proves parity.
     const double snapRadius = std::max(0.0, static_cast<double>(config.snapRadius));
     const double nearRadius = std::max(1e-3, static_cast<double>(config.nearRadius));
     const double curveExp = std::max(0.1, static_cast<double>(config.speedCurveExponent));
@@ -793,6 +797,8 @@ static void aim_sim_step(AimSimulationState& s, double dtSec, int panelW, int pa
     s.controllerInitialized = true;
     s.ctrlPrevTimeSec = s.simTimeSec;
 
+    // Legacy prediction compatibility: predictionInterval is retained for aim-sim
+    // latency visualization, not as the primary live neural/PID prediction owner.
     double lookaheadSec = std::max(0.0, static_cast<double>(config.predictionInterval));
     if (config.kalman_compensate_detection_delay)
         lookaheadSec += inferenceMs * 0.001;

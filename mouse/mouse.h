@@ -81,6 +81,8 @@ private:
     std::mutex                    pidMtx;
     double                        pidCountCarryX = 0.0;
     double                        pidCountCarryY = 0.0;
+    mutable std::mutex            lastAppliedMouseDeltaMutex;
+    std::pair<double, double>     lastAppliedMouseDelta{ 0.0, 0.0 };
 
     std::vector<std::pair<double, double>> futurePositions;
     std::mutex                    futurePositionsMutex;
@@ -93,6 +95,7 @@ private:
     std::chrono::steady_clock::time_point neuralTargetingLastSubmit{};
     std::pair<double, double>     neuralTargetingRefinement{ 0.0, 0.0 };
     bool                          neuralTargetingRefinementValid = false;
+    double                        neuralTargetingRefinementConfidence = 0.0;
     std::pair<double, double>     neuralTargetingRefinedAimPoint{ 0.0, 0.0 };
     bool                          neuralTargetingRefinedAimPointValid = false;
     mutable std::mutex            neuralTargetingDebugMutex;
@@ -100,6 +103,9 @@ private:
     int                           adaptivePredictionTrackId = -1;
     bool                          adaptivePredictionInfluenceActive = false;
     aim::EgoMotionCompensator     egoMotionCompensator;
+    mutable std::mutex            egoMotionVelocityMutex;
+    std::chrono::steady_clock::time_point egoMotionVelocityLastTimestamp{};
+    double                        egoMotionCameraVelocityPxPerSec = 0.0;
     NeuralControlTelemetry        neuralControlTelemetry;
     mutable std::mutex            neuralControlTelemetryMutex;
     std::chrono::steady_clock::time_point lastNeuralControlTelemetryLog{};
@@ -136,6 +142,7 @@ private:
         int trackId,
         double distanceToCrosshair,
         double measuredSpeed,
+        double egoMotionCameraVelocityPxPerSec,
         double directionCosine,
         double confidence,
         int predictionAgeFrames,
@@ -149,7 +156,10 @@ private:
         const std::pair<double, double>& neuralRefinement,
         const std::pair<double, double>& totalLead);
     void updateNeuralControlActuatorTelemetry(const aim::PidMouseCommand& command);
+    void updateLastAppliedMouseDelta(double dx, double dy);
     void recordEgoMotionDelta(double pixelDx, double pixelDy, std::chrono::steady_clock::time_point timestamp);
+    void updateEgoMotionVelocityEstimate(double pixelDx, double pixelDy, std::chrono::steady_clock::time_point timestamp);
+    double currentEgoMotionCameraVelocityPxPerSec() const;
     std::pair<double, double> pixelDeltaToCounts(double pixelDx, double pixelDy) const;
     void resetPid();
 
@@ -228,6 +238,7 @@ public:
         std::chrono::steady_clock::time_point end);
     void resetEgoMotionCompensation();
     std::pair<double, double> computePredictionFeedForwardLead(const BoxTarget& target, const LockedTargetInfo& lockInfo);
+    std::pair<double, double> getLastAppliedMouseDelta() const;
     std::pair<double, double> predict_target_position(double target_x, double target_y);
     void moveMouse(const BoxTarget& target);
     void pressMouse(const BoxTarget& target);

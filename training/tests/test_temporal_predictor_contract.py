@@ -99,6 +99,8 @@ class TemporalPredictorContractTest(unittest.TestCase):
             "temporal_prediction_interval_frames",
             "temporal_prediction_feed_forward_enabled",
             "temporal_prediction_influence",
+            "adaptive_prediction_enabled",
+            "base_prediction_influence",
             "temporal_prediction_max_lead_px",
         ):
             self.assertIn(token, config_h)
@@ -107,7 +109,8 @@ class TemporalPredictorContractTest(unittest.TestCase):
 
         self.assertIn("Learned Temporal Predictor", draw_neural)
         self.assertIn("Prediction feed-forward", draw_neural)
-        self.assertIn("Prediction influence", draw_neural)
+        self.assertIn("Base prediction influence", draw_neural)
+        self.assertIn("Adaptive prediction", draw_neural)
         self.assertIn("Max prediction lead", draw_neural)
         self.assertIn("models/temporal_predictor.onnx", config_cpp)
 
@@ -176,7 +179,8 @@ class TemporalPredictorContractTest(unittest.TestCase):
             "temporal_prediction_horizon = 16",
             "temporal_prediction_interval_frames = 2",
             "temporal_prediction_feed_forward_enabled = false",
-            "temporal_prediction_influence = 0.35f",
+            "base_prediction_influence = 0.30f",
+            "temporal_prediction_influence = base_prediction_influence",
             "temporal_prediction_max_lead_px = 45.0f",
         ):
             self.assertIn(token, config)
@@ -199,7 +203,7 @@ class TemporalPredictorContractTest(unittest.TestCase):
         for token in (
             "computePredictionFeedForwardLead",
             "temporal_prediction_feed_forward_enabled",
-            "temporal_prediction_influence",
+            "base_prediction_influence",
             "temporal_prediction_max_lead_px",
             "predictedFutureAgeFrames > 3",
             "maxFirstPointDistance",
@@ -216,7 +220,7 @@ class TemporalPredictorContractTest(unittest.TestCase):
         self.assertIn("activeTarget->smoothX", loop)
         self.assertIn("activeTarget->smoothY", loop)
 
-    def test_adaptive_prediction_influence_is_opt_in_and_smoothed(self):
+    def test_adaptive_prediction_influence_has_primary_config_and_legacy_aliases(self):
         config_h = self.read("config/config.h")
         config_cpp = self.read("config/config.cpp")
         draw_neural = self.read("overlay/draw_neural.cpp")
@@ -224,6 +228,8 @@ class TemporalPredictorContractTest(unittest.TestCase):
         mouse_cpp = self.read("mouse/mouse.cpp")
 
         for token in (
+            "adaptive_prediction_enabled",
+            "base_prediction_influence",
             "temporal_prediction_adaptive_influence_enabled",
             "temporal_prediction_adaptive_ema_alpha",
         ):
@@ -231,9 +237,15 @@ class TemporalPredictorContractTest(unittest.TestCase):
             self.assertIn(token, config_cpp)
             self.assertIn(token, draw_neural)
 
-        self.assertIn("temporal_prediction_adaptive_influence_enabled = false", config_cpp)
+        self.assertIn("adaptive_prediction_enabled = true", config_cpp)
+        self.assertIn("base_prediction_influence = 0.30f", config_cpp)
+        self.assertIn('get_bool("adaptive_prediction_enabled"', config_cpp)
+        self.assertIn('get_double("base_prediction_influence"', config_cpp)
+        self.assertIn("temporal_prediction_adaptive_influence_enabled = adaptive_prediction_enabled", config_cpp)
+        self.assertIn("temporal_prediction_influence = base_prediction_influence", config_cpp)
         self.assertIn("temporal_prediction_adaptive_ema_alpha = 0.62f", config_cpp)
-        self.assertIn("Adaptive prediction influence", draw_neural)
+        self.assertIn("Adaptive prediction", draw_neural)
+        self.assertIn("Base prediction influence", draw_neural)
         self.assertIn("Adaptive influence EMA", draw_neural)
 
         for token in (
@@ -246,14 +258,15 @@ class TemporalPredictorContractTest(unittest.TestCase):
             self.assertIn(token, mouse_cpp)
 
         for token in (
-            "smoothStepRange(35.0, 90.0",
-            "1.0 - smoothStepRange(180.0, 320.0",
-            "measuredSpeed / 1000.0",
-            "direction_factor",
-            "age_factor",
-            "std::clamp(rawInfluence, 0.0, 0.85)",
+            "smoothStepRange(30.0, 120.0",
+            "relativeSpeed / 1100.0",
+            "egoMotionCameraVelocityPxPerSec",
+            "relativeSpeed",
+            "egoStability",
+            "confidenceWeight",
+            "std::clamp(rawInfluence, 0.0, 1.0)",
             "adaptivePredictionInfluenceEma += (rawInfluence - adaptivePredictionInfluenceEma) * emaAlpha",
-            "config.temporal_prediction_adaptive_influence_enabled",
+            "config.adaptive_prediction_enabled",
             "return baseInfluence",
         ):
             self.assertIn(token, mouse_cpp)

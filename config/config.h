@@ -34,6 +34,10 @@ public:
     // Mouse
     int fovX;
     int fovY;
+
+    // Legacy prediction compatibility: deprecated but retained/loadable for old configs
+    // and for aim-sim/overlay demo parity. Runtime convergence should use PID/Kalman
+    // plus the advisory temporal/neural feed-forward controls instead.
     float minSpeedMultiplier;
     float maxSpeedMultiplier;
 
@@ -59,6 +63,9 @@ public:
     float ego_motion_compensation_max_shift_px;
     int ego_motion_compensation_max_age_ms;
 
+    // Legacy prediction compatibility: deprecated snap-curve knobs kept for config
+    // compatibility and the game-overlay aim simulation. Do not remove until a
+    // disabled-neural regression baseline proves identical behavior.
     float snapRadius;
     float nearRadius;
     float speedCurveExponent;
@@ -137,6 +144,8 @@ public:
     int temporal_prediction_horizon;
     int temporal_prediction_interval_frames;
     bool temporal_prediction_feed_forward_enabled;
+    bool adaptive_prediction_enabled;
+    float base_prediction_influence;
     float temporal_prediction_influence;
     bool temporal_prediction_adaptive_influence_enabled;
     float temporal_prediction_adaptive_ema_alpha;
@@ -153,6 +162,12 @@ public:
     bool neural_control_telemetry_logging_enabled;
     std::string neural_control_telemetry_log_path;
     int neural_control_telemetry_log_interval_ms;
+    bool log_real_world_data;
+    std::string real_world_data_log_dir;
+
+    // Real-world fine-tuned model variants (populated by training after convert_real_world_logs.py + fine-tune)
+    std::string temporal_realworld_model_path;
+    std::string neural_targeting_realworld_model_path;
 
     // Arduino
     int arduino_baudrate;

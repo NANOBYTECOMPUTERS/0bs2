@@ -26,6 +26,22 @@ Ego-motion compensation is an opt-in tracker stabilizer. It subtracts bounded, r
 
 The Neural tab exposes Balanced, Aggressive, Smooth, and Sniper presets. Presets tune prediction influence, neural refinement range, and SmartBlender damping/jerk limits while retaining opt-in master toggles. Optional telemetry can show current adaptive influence, confidence, predicted lead, neural refinement, and SmartBlender jitter/oscillation state on the game overlay, or write a throttled CSV log for tuning.
 
+## Legacy Prediction Compatibility
+
+This pass is conservative. Legacy prediction and snap-curve settings are **Deprecated but retained** so older configs still load and the game overlay / aim simulation remains comparable to earlier builds. PID/Kalman remains the convergence owner, and the temporal predictor, Neural Targeting Head, adaptive influence, SmartBlender, and PID governor remain advisory layers only.
+
+| Key | Status | Current owner / use | Removal gate |
+| --- | --- | --- | --- |
+| `minSpeedMultiplier` | Deprecated but retained | Game overlay target-correction demo and aim simulation speed curve | Remove only after disabled-neural behavior stays identical against a captured regression baseline. |
+| `maxSpeedMultiplier` | Deprecated but retained | Game overlay target-correction demo and aim simulation speed curve | Remove only after disabled-neural behavior stays identical against a captured regression baseline. |
+| `predictionInterval` | Deprecated but retained | Aim simulation latency visualization / auxiliary prediction timing | Remove only after disabled-neural behavior stays identical against a captured regression baseline. |
+| `snapRadius` | Deprecated but retained | Game overlay target-correction demo and aim simulation snap curve | Remove only after disabled-neural behavior stays identical against a captured regression baseline. |
+| `nearRadius` | Deprecated but retained | Game overlay target-correction demo and aim simulation speed curve | Remove only after disabled-neural behavior stays identical against a captured regression baseline. |
+| `speedCurveExponent` | Deprecated but retained | Game overlay target-correction demo and aim simulation speed curve | Remove only after disabled-neural behavior stays identical against a captured regression baseline. |
+| `snapBoostFactor` | Deprecated but retained | Game overlay target-correction demo and aim simulation snap multiplier | Remove only after disabled-neural behavior stays identical against a captured regression baseline. |
+| `kalman_warmup_frames` | Retained active compatibility | State-estimator warmup, including non-neural mode and aim simulation | Do not remove while latency-sweep and non-neural estimator tests depend on it. |
+| `kalman_acquisition_frames` | Retained active control | State-estimator acquisition ramp | Do not remove; this is still an active estimator control. |
+
 ## Build Launchers
 
 0BS includes double-click and noninteractive build launchers modeled after `sunone_aimbot_2` while retaining the existing Visual Studio/MSBuild project flow:
