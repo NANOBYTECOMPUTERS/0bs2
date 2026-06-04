@@ -91,8 +91,8 @@ GUI_CONTROLS: list[dict[str, str]] = [
     # Target
     row("Target", "Targeting", "Disable Headshot", "disable_headshot", "Activate/deactivate", "true/false", "Prevents the head class from being selected as the aim target.", "overlay/draw_target.cpp"),
     row("Target", "Targeting", "Auto Aim", "auto_aim", "Activate/deactivate", "true/false", "Allows target selection/movement logic to act automatically while held conditions are met.", "overlay/draw_target.cpp"),
-    row("Target", "Offsets", "Approximate Body Y Offset", "body_y_offset", "Slider", "0.00-1.00", "Vertical aim point used for body-class detections.", "overlay/draw_target.cpp"),
-    row("Target", "Offsets", "Approximate Head Y Offset", "head_y_offset", "Slider", "0.00-1.00", "Vertical aim point used for head-class detections.", "overlay/draw_target.cpp"),
+    row("Target", "Offsets", "Approximate Body Y Offset", "body_y_offset", "Slider", "0.05-0.90", "Vertical aim point used for body-class detections.", "overlay/draw_target.cpp"),
+    row("Target", "Offsets", "Approximate Head Y Offset", "head_y_offset", "Slider", "0.05-0.55", "Vertical aim point used for head-class detections.", "overlay/draw_target.cpp"),
     # Mouse
     row("Mouse", "FOV", "FOV X", "fovX", "Slider", "10-120", "Horizontal field of view for the mouse controller.", "overlay/draw_mouse.cpp"),
     row("Mouse", "FOV", "FOV Y", "fovY", "Slider", "10-120", "Vertical field of view for the mouse controller.", "overlay/draw_mouse.cpp"),
@@ -245,7 +245,7 @@ OTHER_GUI: list[dict[str, str]] = [
     row("Capture", "UDP Capture", "UDP Port", "udp_port", "Input int", "1-65535", "Applied with the Apply UDP Settings button.", "overlay/draw_capture.cpp"),
     row("Mouse", "Game Profile", "Active Game Profile", "active_game", "Combo", "profile names", "Selects the active game profile.", "overlay/draw_mouse.cpp"),
     row("Mouse", "Manage Profiles", "Game profile rows", "Games.<profile>", "Add/delete", "name = sens,yaw,pitch[,true,baseFOV]", "Custom profiles can be added/deleted; UNIFIED is read-only.", "overlay/draw_mouse.cpp"),
-    row("Mouse", "Input Method", "Mouse Input Method", "input_method", "Combo", "WIN32, GHUB, RAZER, ARDUINO, TEENSY41, KMBOX_NET, KMBOX_A, MAKCU", "Changes active mouse backend.", "overlay/draw_mouse.cpp"),
+    row("Mouse", "Input Method", "Mouse Input Method", "input_method", "Combo", "WIN32, GHUB, RAZER, DIRECT, ARDUINO, TEENSY41, TEENSY41_HID, KMBOX_NET, KMBOX_A, MAKCU", "Changes active mouse backend.", "overlay/draw_mouse.cpp"),
     row("Mouse", "Input Method", "Arduino/Teensy Port", "arduino_port", "Combo", "COM1-COM30", "Arduino and Teensy 4.1 serial input.", "overlay/draw_mouse.cpp"),
     row("Mouse", "Input Method", "Arduino/Teensy Baudrate", "arduino_baudrate", "Combo", "9600-115200", "Arduino and Teensy 4.1 serial input.", "overlay/draw_mouse.cpp"),
     row("Mouse", "Input Method", "Kmbox Net IP", "kmbox_net_ip", "Input text", "text", "Saved with Save & Reconnect.", "overlay/draw_mouse.cpp"),

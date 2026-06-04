@@ -35,8 +35,9 @@ FEATURE_COLUMNS = [
 ]
 
 LABEL_COLUMN = "label_match"
+GROUP_COLUMN = "group_id"
 
-OUTPUT_COLUMNS = ["source", *FEATURE_COLUMNS, LABEL_COLUMN, "sample_weight"]
+OUTPUT_COLUMNS = ["source", GROUP_COLUMN, *FEATURE_COLUMNS, LABEL_COLUMN, "sample_weight"]
 
 
 @dataclass(frozen=True)
@@ -81,6 +82,8 @@ def _label_from_runtime_row(row: dict[str, str]) -> float:
 
 def normalize_row(row: dict[str, str | float | int], source: str = "log") -> dict[str, float | str]:
     normalized: dict[str, float | str] = {"source": str(row.get("source") or source)}
+    group_id = str(row.get(GROUP_COLUMN) or row.get("frame_id") or row.get("timestamp_ms") or "").strip()
+    normalized[GROUP_COLUMN] = group_id
     for column in FEATURE_COLUMNS:
         normalized[column] = _float_or_default(row.get(column), 0.0)
     normalized["distance_norm"] = _clamp(float(normalized["distance_norm"]), 0.0, 3.0)
@@ -132,6 +135,53 @@ def _positive_sample(rng: random.Random) -> dict[str, float | str]:
     }
 
 
+def _group_hard_negative_from_positive(rng: random.Random, positive: dict[str, float | str]) -> dict[str, float | str]:
+    """Create a same-frame distractor that is deliberately close to the positive sample."""
+    mode = rng.choice(["near_duplicate", "pivot", "heading", "size", "soft_class"])
+    distance = _clamp(float(positive["distance_norm"]) + rng.uniform(-0.04, 0.38), 0.0, 3.0)
+    iou = _clamp(float(positive["iou"]) - rng.uniform(0.05, 0.42), 0.0, 1.0)
+    size_log = _clamp(float(positive["size_log_ratio"]) + rng.gauss(0.0, 0.42), -3.0, 3.0)
+    heading = _clamp(float(positive["heading_alignment"]) - rng.uniform(0.10, 1.25), -1.0, 1.0)
+    pivot_sigma = rng.uniform(0.08, 0.32)
+    class_compatible = 1.0
+
+    if mode == "near_duplicate":
+        distance = _clamp(float(positive["distance_norm"]) + rng.uniform(0.02, 0.16), 0.0, 3.0)
+        iou = rng.uniform(0.45, 0.86)
+        heading = _clamp(float(positive["heading_alignment"]) + rng.gauss(-0.18, 0.35), -1.0, 1.0)
+    elif mode == "pivot":
+        pivot_sigma = rng.uniform(0.24, 0.75)
+    elif mode == "heading":
+        heading = rng.uniform(-1.0, 0.15)
+    elif mode == "size":
+        size_log = rng.choice([-1.0, 1.0]) * rng.uniform(0.75, 1.85)
+    elif mode == "soft_class":
+        # Runtime uses 0.5 for allowed player/head swaps, not a hard mismatch.
+        class_compatible = 0.5
+
+    return {
+        "source": "synthetic_group_hard_negative",
+        "distance_norm": distance,
+        "iou": iou,
+        "size_log_ratio": size_log,
+        "detection_confidence": _clamp(float(positive["detection_confidence"]) + rng.uniform(-0.10, 0.08), 0.0, 1.0),
+        "track_confidence": positive["track_confidence"],
+        "heading_alignment": heading,
+        "track_missed_norm": positive["track_missed_norm"],
+        "track_hits_norm": positive["track_hits_norm"],
+        "is_locked": positive["is_locked"],
+        "class_compatible": class_compatible,
+        "dt": positive["dt"],
+        "speed_norm": _clamp(float(positive["speed_norm"]) + rng.uniform(-0.12, 0.35), 0.0, 2.0),
+        "target_size_norm": _clamp(float(positive["target_size_norm"]) + rng.uniform(-0.018, 0.025), 0.0, 1.0),
+        "pivot_offset_x_norm": _clamp(rng.gauss(float(positive["pivot_offset_x_norm"]), pivot_sigma), -2.0, 2.0),
+        "pivot_offset_y_norm": _clamp(rng.gauss(float(positive["pivot_offset_y_norm"]), pivot_sigma), -2.0, 2.0),
+        "relaxed_gate": positive["relaxed_gate"],
+        LABEL_COLUMN: 0.0,
+        "sample_weight": 1.55,
+    }
+
+
 def _negative_sample(rng: random.Random, hard: bool) -> dict[str, float | str]:
     mode = rng.choice(["far", "overlap", "size", "heading", "class", "pivot", "low_conf"])
     if hard:
@@ -160,7 +210,7 @@ def _negative_sample(rng: random.Random, hard: bool) -> dict[str, float | str]:
     elif mode == "heading":
         heading = rng.uniform(-1.0, -0.10)
     elif mode == "class":
-        class_compatible = 0.0
+        class_compatible = 0.5 if hard and rng.random() < 0.65 else 0.0
     elif mode == "pivot":
         distance = min(distance, rng.uniform(0.10, 0.85))
     elif mode == "low_conf":
@@ -195,12 +245,31 @@ def generate_synthetic_dataset(cfg: NeuralTrackerDatasetConfig) -> list[dict[str
     samples = max(2, int(cfg.samples))
     positive_target = int(samples * _clamp(cfg.positive_fraction, 0.05, 0.95))
     rows: list[dict[str, float | str]] = []
-    for index in range(samples):
-        if index < positive_target:
-            rows.append(_positive_sample(rng))
-        else:
-            hard = rng.random() < _clamp(cfg.hard_negative_fraction, 0.0, 1.0)
-            rows.append(_negative_sample(rng, hard))
+    group_id = 0
+
+    paired_groups = min(positive_target, samples - positive_target)
+    for _ in range(paired_groups):
+        positive = _positive_sample(rng)
+        positive[GROUP_COLUMN] = f"synthetic_group_{group_id}"
+        negative = _group_hard_negative_from_positive(rng, positive)
+        negative[GROUP_COLUMN] = positive[GROUP_COLUMN]
+        rows.append(positive)
+        rows.append(negative)
+        group_id += 1
+
+    while sum(1 for row in rows if float(row[LABEL_COLUMN]) >= 0.5) < positive_target:
+        positive = _positive_sample(rng)
+        positive[GROUP_COLUMN] = f"synthetic_positive_{group_id}"
+        rows.append(positive)
+        group_id += 1
+
+    while len(rows) < samples:
+        hard = rng.random() < _clamp(cfg.hard_negative_fraction, 0.0, 1.0)
+        negative = _negative_sample(rng, hard)
+        negative[GROUP_COLUMN] = f"synthetic_negative_{group_id}"
+        rows.append(negative)
+        group_id += 1
+
     rng.shuffle(rows)
     return rows
 

@@ -73,6 +73,24 @@ def weighted_position_loss(torch, prediction, target, horizon_weights):
     return torch.mean(squared * weights)
 
 
+def latency_focus_loss(torch, prediction, target, start_frame: int, end_frame: int):
+    horizon = int(prediction.shape[1])
+    if horizon <= 0:
+        return prediction.sum() * 0.0
+    start = max(0, min(horizon - 1, int(start_frame) - 1))
+    end = max(start + 1, min(horizon, int(end_frame)))
+    return torch.mean((prediction[:, start:end, :] - target[:, start:end, :]) ** 2)
+
+
+def latency_focus_ade(torch, prediction, target, start_frame: int, end_frame: int):
+    horizon = int(prediction.shape[1])
+    if horizon <= 0:
+        return prediction.sum() * 0.0
+    start = max(0, min(horizon - 1, int(start_frame) - 1))
+    end = max(start + 1, min(horizon, int(end_frame)))
+    return torch.mean(torch.linalg.norm(prediction[:, start:end, :] - target[:, start:end, :], dim=-1))
+
+
 def arg_supplied(argv_tokens: list[str], option: str) -> bool:
     return any(token == option or token.startswith(f"{option}=") for token in argv_tokens)
 
@@ -149,6 +167,9 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--velocity-weight", type=float, default=0.050)
     parser.add_argument("--near-horizon-frames", type=int, default=6)
     parser.add_argument("--near-horizon-weight", type=float, default=2.5)
+    parser.add_argument("--latency-focus-start-frame", type=int, default=3)
+    parser.add_argument("--latency-focus-end-frame", type=int, default=6)
+    parser.add_argument("--latency-focus-weight", type=float, default=0.75)
     parser.add_argument("--validation-fraction", type=float, default=0.15)
     parser.add_argument("--patience", type=int, default=8, help="Early stopping patience.")
     parser.add_argument("--seed", type=int, default=1337)
@@ -369,10 +390,18 @@ def main(argv: list[str] | None = None) -> int:
             main_loss = weighted_position_loss(torch, prediction, by, horizon_weights)
             smooth_loss = smoothness_loss(torch, prediction)
             velocity_loss = velocity_consistency_loss(torch, prediction, by)
+            latency_loss = latency_focus_loss(
+                torch,
+                prediction,
+                by,
+                args.latency_focus_start_frame,
+                args.latency_focus_end_frame,
+            )
             loss = (
                 main_loss
                 + max(0.0, args.smoothness_weight) * smooth_loss
                 + max(0.0, args.velocity_weight) * velocity_loss
+                + max(0.0, args.latency_focus_weight) * latency_loss
             )
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
@@ -393,10 +422,24 @@ def main(argv: list[str] | None = None) -> int:
             )
             val_ade = torch.mean(torch.linalg.norm(val_prediction - val_y, dim=-1))
             val_fde = torch.mean(torch.linalg.norm(val_prediction[:, -1, :] - val_y[:, -1, :], dim=-1))
+            val_latency_ade = latency_focus_ade(
+                torch,
+                val_prediction,
+                val_y,
+                args.latency_focus_start_frame,
+                args.latency_focus_end_frame,
+            )
             val_total = (
                 val_mse
                 + max(0.0, args.smoothness_weight) * smoothness_loss(torch, val_prediction)
                 + max(0.0, args.velocity_weight) * velocity_consistency_loss(torch, val_prediction, val_y)
+                + max(0.0, args.latency_focus_weight) * latency_focus_loss(
+                    torch,
+                    val_prediction,
+                    val_y,
+                    args.latency_focus_start_frame,
+                    args.latency_focus_end_frame,
+                )
             )
 
         train_loss = total_loss / max(1, seen)
@@ -406,12 +449,14 @@ def main(argv: list[str] | None = None) -> int:
             writer.add_scalar("loss/train", train_loss, epoch)
             writer.add_scalar("loss/val", val_scalar, epoch)
             writer.add_scalar("metrics/val_near_ade", float(val_near_ade.detach().cpu()), epoch)
+            writer.add_scalar("metrics/val_latency_ade", float(val_latency_ade.detach().cpu()), epoch)
             writer.add_scalar("metrics/val_ade", float(val_ade.detach().cpu()), epoch)
             writer.add_scalar("metrics/val_fde", float(val_fde.detach().cpu()), epoch)
 
         print(
             f"epoch={epoch:03d} train_loss={train_loss:.6f} "
             f"val_loss={val_scalar:.6f} val_near_ade={float(val_near_ade):.4f} "
+            f"val_latency_ade={float(val_latency_ade):.4f} "
             f"val_ade={float(val_ade):.4f} val_fde={float(val_fde):.4f}"
         )
 
@@ -442,6 +487,9 @@ def main(argv: list[str] | None = None) -> int:
         "model_type": args.model_type,
         "near_horizon_frames": max(1, min(prediction_horizon, int(args.near_horizon_frames))),
         "near_horizon_weight": max(1.0, float(args.near_horizon_weight)),
+        "latency_focus_start_frame": max(1, int(args.latency_focus_start_frame)),
+        "latency_focus_end_frame": max(1, int(args.latency_focus_end_frame)),
+        "latency_focus_weight": max(0.0, float(args.latency_focus_weight)),
         "dataset": str(resolve_repo_path(args.dataset)),
         "real_world_data": str(resolve_repo_path(args.real_world_data)) if args.real_world_data else "",
         "fine_tuned": bool(args.fine_tune),
@@ -473,6 +521,9 @@ def main(argv: list[str] | None = None) -> int:
         "model_type": args.model_type,
         "near_horizon_frames": max(1, min(prediction_horizon, int(args.near_horizon_frames))),
         "near_horizon_weight": max(1.0, float(args.near_horizon_weight)),
+        "latency_focus_start_frame": max(1, int(args.latency_focus_start_frame)),
+        "latency_focus_end_frame": max(1, int(args.latency_focus_end_frame)),
+        "latency_focus_weight": max(0.0, float(args.latency_focus_weight)),
         "best_validation_loss": best_val,
         "dataset": str(resolve_repo_path(args.dataset)),
         "real_world_data": str(resolve_repo_path(args.real_world_data)) if args.real_world_data else "",

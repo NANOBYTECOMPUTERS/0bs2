@@ -120,7 +120,7 @@ class TemporalPredictorContractTest(unittest.TestCase):
         predictor_cpp = self.read("neural/TemporalPredictor.cpp")
 
         self.assertIn("temporal_prediction_enabled = false", config_cpp)
-        self.assertIn("temporal_prediction_interval_frames = 2", config_cpp)
+        self.assertIn("temporal_prediction_interval_frames = 1", config_cpp)
         self.assertIn("updateFrameCounter_ - t.lastTemporalPredictionFrame < interval", target_cpp)
         self.assertIn("worker.clear()", target_cpp)
         self.assertIn("nextLoadAttempt", predictor_cpp)
@@ -177,7 +177,7 @@ class TemporalPredictorContractTest(unittest.TestCase):
             'temporal_prediction_enabled = get_bool("temporal_prediction_enabled", false)',
             "temporal_prediction_history_length = 12",
             "temporal_prediction_horizon = 16",
-            "temporal_prediction_interval_frames = 2",
+            "temporal_prediction_interval_frames = 1",
             "temporal_prediction_feed_forward_enabled = false",
             "base_prediction_influence = 0.30f",
             "temporal_prediction_influence = base_prediction_influence",
@@ -210,6 +210,8 @@ class TemporalPredictorContractTest(unittest.TestCase):
             "maxPredictionSpeed",
             "confidenceFloor",
             "directionCosine < -0.35",
+            "selectedFutureIndex",
+            "selectedFuture",
             "clampVectorLength",
             "smoothStep01",
         ):

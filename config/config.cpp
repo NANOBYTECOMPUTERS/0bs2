@@ -73,8 +73,8 @@ bool Config::loadConfig(const std::string& filename)
 
         // Target
         disable_headshot = false;
-        body_y_offset = 0.15f;
-        head_y_offset = 0.05f;
+        body_y_offset = kBodyYOffsetDefault;
+        head_y_offset = kHeadYOffsetDefault;
         auto_aim = false;
 
         // Mouse
@@ -181,7 +181,7 @@ bool Config::loadConfig(const std::string& filename)
         temporal_prediction_model_path = "neural_models/temporal_predictor.onnx";
         temporal_prediction_history_length = 12;
         temporal_prediction_horizon = 16;
-        temporal_prediction_interval_frames = 2;
+        temporal_prediction_interval_frames = 1;
         temporal_prediction_feed_forward_enabled = false;
         adaptive_prediction_enabled = true;
         base_prediction_influence = 0.30f;
@@ -489,8 +489,14 @@ bool Config::loadConfig(const std::string& filename)
 
     // Target
     disable_headshot = get_bool("disable_headshot", false);
-    body_y_offset = (float)get_double("body_y_offset", 0.15);
-    head_y_offset = (float)get_double("head_y_offset", 0.05);
+    body_y_offset = std::clamp(
+        static_cast<float>(get_double("body_y_offset", kBodyYOffsetDefault)),
+        kBodyYOffsetMin,
+        kBodyYOffsetMax);
+    head_y_offset = std::clamp(
+        static_cast<float>(get_double("head_y_offset", kHeadYOffsetDefault)),
+        kHeadYOffsetMin,
+        kHeadYOffsetMax);
     auto_aim = get_bool("auto_aim", false);
 
     // Mouse
@@ -586,7 +592,7 @@ bool Config::loadConfig(const std::string& filename)
     // Neural tracker association
     neural_tracker_enabled = get_bool("neural_tracker_enabled", false);
     neural_tracker_runtime = get_string("neural_tracker_runtime", "CPU");
-    neural_tracker_model_path = get_string("neural_tracker_model_path", "training/models/neural_tracker.onnx");
+    neural_tracker_model_path = get_string("neural_tracker_model_path", "neural_models/neural_tracker.onnx");
     neural_tracker_blend = (float)get_double("neural_tracker_blend", 0.35);
     neural_tracker_log_enabled = get_bool("neural_tracker_log_enabled", false);
     neural_tracker_debug_enabled = get_bool("neural_tracker_debug_enabled", false);
@@ -597,7 +603,7 @@ bool Config::loadConfig(const std::string& filename)
     temporal_prediction_model_path = get_string("temporal_prediction_model_path", "models/temporal_predictor.onnx");
     temporal_prediction_history_length = get_long("temporal_prediction_history_length", 12);
     temporal_prediction_horizon = get_long("temporal_prediction_horizon", 16);
-    temporal_prediction_interval_frames = get_long("temporal_prediction_interval_frames", 2);
+    temporal_prediction_interval_frames = get_long("temporal_prediction_interval_frames", 1);
     temporal_prediction_feed_forward_enabled = get_bool("temporal_prediction_feed_forward_enabled", false);
     temporal_prediction_influence = (float)get_double("temporal_prediction_influence", 0.30);
     base_prediction_influence = (float)get_double("base_prediction_influence", temporal_prediction_influence);
@@ -1425,7 +1431,7 @@ bool Config::saveConfig(const std::string& filename)
         << "ego_motion_compensation_strength = " << ego_motion_compensation_strength << "\n"
         << "ego_motion_compensation_max_shift_px = " << ego_motion_compensation_max_shift_px << "\n"
         << "ego_motion_compensation_max_age_ms = " << ego_motion_compensation_max_age_ms << "\n"
-        << "# WIN32, GHUB, RAZER, ARDUINO, TEENSY41, TEENSY41_HID, KMBOX_NET, KMBOX_A, MAKCU\n"
+        << "# WIN32, GHUB, RAZER (direct in-process), DIRECT (stub/high-risk research slot), ARDUINO, TEENSY41, TEENSY41_HID, KMBOX_NET, KMBOX_A, MAKCU\n"
         << "input_method = " << input_method << "\n\n";
 
     file << "# Pure PID mouse control\n"

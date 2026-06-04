@@ -143,9 +143,7 @@
     <None Include="ghub_mouse.dll">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
-    <None Include="modules\razer-controls\x64\Release\rzctl.dll">
-      <Link>rzctl.dll</Link>
-    </None>
+    <!-- rzctl.dll support removed: Razer logic is now inlined directly in mouse/rzctl.cpp (stealth). -->
   </ItemGroup>
   <ItemGroup>
     <AppxManifest Include="Package.appxmanifest" />
@@ -216,9 +214,7 @@
     <Import Project="packages\Microsoft.AI.DirectML.1.15.4\build\Microsoft.AI.DirectML.targets" Condition="Exists('packages\Microsoft.AI.DirectML.1.15.4\build\Microsoft.AI.DirectML.targets')" />
     <Import Project="packages\Microsoft.ML.OnnxRuntime.DirectML.1.22.0\build\native\Microsoft.ML.OnnxRuntime.DirectML.targets" Condition="Exists('packages\Microsoft.ML.OnnxRuntime.DirectML.1.22.0\build\native\Microsoft.ML.OnnxRuntime.DirectML.targets')" />
   </ImportGroup>
-  <Target Name="CopyRazerControlsDll" AfterTargets="Build" Condition="Exists('modules\razer-controls\x64\Release\rzctl.dll')">
-    <Copy SourceFiles="modules\razer-controls\x64\Release\rzctl.dll" DestinationFiles="$(OutDir)rzctl.dll" SkipUnchangedFiles="true" />
-  </Target>
+  <!-- Razer DLL copy target removed (logic inlined directly for stealth; no external rzctl.dll required). -->
   <Target Name="EnsureNuGetPackageBuildImports" BeforeTargets="PrepareForBuild">
     <PropertyGroup>
       <ErrorText>This project references NuGet package(s) that are missing on this computer. Use NuGet Package Restore to download them.  For more information, see http://go.microsoft.com/fwlink/?LinkID=322105. The missing file is {0}.</ErrorText>

@@ -86,7 +86,7 @@ def rows_to_tensors(torch, rows):
 
 
 def try_train_gbm_teacher(rows, feature_columns, label_columns, args, mean, std):
-    """Train a LightGBM multi-output regressor teacher if available."""
+    """Train one LightGBM regressor per PID output and stack soft targets."""
     try:
         import lightgbm as lgb
         import numpy as np
@@ -98,30 +98,35 @@ def try_train_gbm_teacher(rows, feature_columns, label_columns, args, mean, std)
     print(f"Training LightGBM teacher for PID Governor ({args.gbm_boosting_rounds} rounds)...")
     X = np.array([[float(row[col]) for col in feature_columns] for row in rows], dtype=np.float32)
     X = (X - mean.numpy()) / std.numpy()
-    Y = np.array([[float(row[col]) for col in label_columns] for row in rows], dtype=np.float32)
+    y_matrix = np.array([[float(row[col]) for col in label_columns] for row in rows], dtype=np.float32)
 
-    # LightGBM supports multi-output regression natively
-    train_data = lgb.Dataset(X, label=Y)
+    gbm_models = []
+    soft_columns = []
+    for output_index, label_column in enumerate(label_columns):
+        train_data = lgb.Dataset(X, label=y_matrix[:, output_index])
+        params = {
+            "objective": "regression",
+            "metric": "l2",
+            "learning_rate": args.gbm_learning_rate,
+            "max_depth": args.gbm_max_depth,
+            "num_leaves": 63,
+            "verbose": -1,
+            "seed": args.seed + output_index,
+        }
 
-    params = {
-        "objective": "regression",
-        "metric": "l2",
-        "learning_rate": args.gbm_learning_rate,
-        "max_depth": args.gbm_max_depth,
-        "num_leaves": 63,
-        "verbose": -1,
-        "seed": args.seed,
-    }
+        model = lgb.train(
+            params,
+            train_data,
+            num_boost_round=args.gbm_boosting_rounds,
+        )
+        prediction = np.asarray(model.predict(X), dtype=np.float32)
+        soft_columns.append(np.clip(prediction, 0.0, 1.0))
+        gbm_models.append(model)
+        print(f"  trained teacher output: {label_column}")
 
-    gbm = lgb.train(
-        params,
-        train_data,
-        num_boost_round=args.gbm_boosting_rounds,
-    )
-
-    soft_targets = gbm.predict(X)
+    soft_targets = np.stack(soft_columns, axis=1)
     print(f"  GBM teacher trained. Soft target shape: {soft_targets.shape}")
-    return gbm, soft_targets.astype(np.float32)
+    return gbm_models, soft_targets.astype(np.float32)
 
 
 def make_summary_writer(enabled: bool, log_dir: str | None):

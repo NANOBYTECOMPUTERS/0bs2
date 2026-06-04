@@ -1082,8 +1082,8 @@ std::pair<double, double> MouseThread::computePredictionFeedForwardLead(
         return { 0.0, 0.0 };
     }
 
-    const auto first = lockInfo.predictedFuture.front();
-    if (!std::isfinite(first.first) || !std::isfinite(first.second) ||
+    const auto anchor = lockInfo.predictedFuture.front();
+    if (!std::isfinite(anchor.first) || !std::isfinite(anchor.second) ||
         !std::isfinite(target.smoothX) || !std::isfinite(target.smoothY))
     {
         resetAdaptivePredictionInfluence();
@@ -1092,19 +1092,40 @@ std::pair<double, double> MouseThread::computePredictionFeedForwardLead(
 
     const bool highResolution = config.detection_resolution >= 640;
     const double maxFirstPointDistance = highResolution ? 65.0 : 50.0;
-    const double firstPointDistance = std::hypot(first.first - target.smoothX, first.second - target.smoothY);
+    const double firstPointDistance = std::hypot(anchor.first - target.smoothX, anchor.second - target.smoothY);
     if (!std::isfinite(firstPointDistance) || firstPointDistance > maxFirstPointDistance)
     {
         resetAdaptivePredictionInfluence();
         return { 0.0, 0.0 };
     }
 
-    double predictionVx = first.first - target.smoothX;
-    double predictionVy = first.second - target.smoothY;
+    const size_t selectedFutureIndex = std::min(
+        lockInfo.predictedFuture.size() - 1,
+        static_cast<size_t>(std::max(0, lockInfo.predictedFutureAgeFrames + 1)));
+    const auto selectedFuture = lockInfo.predictedFuture[selectedFutureIndex];
+    if (!std::isfinite(selectedFuture.first) || !std::isfinite(selectedFuture.second))
+    {
+        resetAdaptivePredictionInfluence();
+        return { 0.0, 0.0 };
+    }
+
+    double predictionVx = selectedFuture.first - target.smoothX;
+    double predictionVy = selectedFuture.second - target.smoothY;
     if (lockInfo.predictedFuture.size() > 1)
     {
-        predictionVx = lockInfo.predictedFuture[1].first - first.first;
-        predictionVy = lockInfo.predictedFuture[1].second - first.second;
+        const size_t velocityBaseIndex = selectedFutureIndex;
+        const size_t velocityNextIndex = std::min(lockInfo.predictedFuture.size() - 1, velocityBaseIndex + 1);
+        const size_t velocityPrevIndex = velocityBaseIndex > 0 ? velocityBaseIndex - 1 : velocityBaseIndex;
+        if (velocityNextIndex != velocityBaseIndex)
+        {
+            predictionVx = lockInfo.predictedFuture[velocityNextIndex].first - lockInfo.predictedFuture[velocityBaseIndex].first;
+            predictionVy = lockInfo.predictedFuture[velocityNextIndex].second - lockInfo.predictedFuture[velocityBaseIndex].second;
+        }
+        else if (velocityPrevIndex != velocityBaseIndex)
+        {
+            predictionVx = lockInfo.predictedFuture[velocityBaseIndex].first - lockInfo.predictedFuture[velocityPrevIndex].first;
+            predictionVy = lockInfo.predictedFuture[velocityBaseIndex].second - lockInfo.predictedFuture[velocityPrevIndex].second;
+        }
     }
 
     const double predictionFps = 60.0;
@@ -1165,8 +1186,8 @@ std::pair<double, double> MouseThread::computePredictionFeedForwardLead(
         : influence * confidence * speed_weight * near_damping;
     if (config.temporal_prediction_feed_forward_enabled && weight > 1e-6)
     {
-        const double rawLeadX = first.first - target.smoothX;
-        const double rawLeadY = first.second - target.smoothY;
+        const double rawLeadX = selectedFuture.first - target.smoothX;
+        const double rawLeadY = selectedFuture.second - target.smoothY;
         phase2Lead = clampVectorLength(
             rawLeadX * weight,
             rawLeadY * weight,

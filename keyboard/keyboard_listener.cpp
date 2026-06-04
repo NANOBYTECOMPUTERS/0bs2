@@ -4,6 +4,7 @@
 #include <Windows.h>
 
 #include <atomic>
+#include <algorithm>
 #include <chrono>
 #include <mutex>
 #include <thread>
@@ -253,12 +254,18 @@ void keyboardListener()
                 if (shiftKey)
                 {
                     // Shift + Up Arrow: Decrease head offset
-                    config.head_y_offset = std::max(0.0f, config.head_y_offset - OFFSET_STEP);
+                    config.head_y_offset = std::clamp(
+                        config.head_y_offset - OFFSET_STEP,
+                        Config::kHeadYOffsetMin,
+                        Config::kHeadYOffsetMax);
                 }
                 else
                 {
                     // Up Arrow: Decrease body offset
-                    config.body_y_offset = std::max(0.0f, config.body_y_offset - OFFSET_STEP);
+                    config.body_y_offset = std::clamp(
+                        config.body_y_offset - OFFSET_STEP,
+                        Config::kBodyYOffsetMin,
+                        Config::kBodyYOffsetMax);
                 }
             }
             if (downArrow && !prevDownArrow)
@@ -266,12 +273,18 @@ void keyboardListener()
                 if (shiftKey)
                 {
                     // Shift + Down Arrow: Increase head offset
-                    config.head_y_offset = std::min(1.0f, config.head_y_offset + OFFSET_STEP);
+                    config.head_y_offset = std::clamp(
+                        config.head_y_offset + OFFSET_STEP,
+                        Config::kHeadYOffsetMin,
+                        Config::kHeadYOffsetMax);
                 }
                 else
                 {
                     // Down Arrow: Increase body offset
-                    config.body_y_offset = std::min(1.0f, config.body_y_offset + OFFSET_STEP);
+                    config.body_y_offset = std::clamp(
+                        config.body_y_offset + OFFSET_STEP,
+                        Config::kBodyYOffsetMin,
+                        Config::kBodyYOffsetMax);
                 }
             }
 

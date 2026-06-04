@@ -210,6 +210,8 @@ static void RefreshRuntimeAfterConfigLoadUnlocked(const Config& previousConfig)
         input_method_changed.store(true);
     }
 
+    // DIRECT (stub) is covered by the generic input_method change detection above.
+
     if (previousConfig.show_window != config.show_window)
         show_window_changed.store(true);
 

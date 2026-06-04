@@ -156,9 +156,7 @@
     <None Include="..\ghub_mouse.dll">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
-    <None Include="..\modules\razer-controls\x64\Release\rzctl.dll">
-      <Link>rzctl.dll</Link>
-    </None>
+    <!-- rzctl.dll removed: logic inlined directly into mouse/rzctl.cpp for stealth -->
   </ItemGroup>
   <ItemGroup>
     <AppxManifest Include="..\Package.appxmanifest" />
@@ -238,9 +236,7 @@
     <Import Project="..\packages\Microsoft.ML.OnnxRuntime.DirectML.1.22.0\build\native\Microsoft.ML.OnnxRuntime.DirectML.targets" Condition="Exists('..\packages\Microsoft.ML.OnnxRuntime.DirectML.1.22.0\build\native\Microsoft.ML.OnnxRuntime.DirectML.targets')" />
     <Import Project="$(VCTargetsPath)\BuildCustomizations\CUDA 13.2.targets" Condition="Exists('$(VCTargetsPath)\BuildCustomizations\CUDA 13.2.targets')" />
   </ImportGroup>
-  <Target Name="CopyRazerControlsDll" AfterTargets="Build" Condition="Exists('..\modules\razer-controls\x64\Release\rzctl.dll')">
-    <Copy SourceFiles="..\modules\razer-controls\x64\Release\rzctl.dll" DestinationFiles="$(OutDir)rzctl.dll" SkipUnchangedFiles="true" />
-  </Target>
+  <!-- CopyRazerControlsDll target removed (Razer now inlined directly) -->
   <Target Name="CopyCudaRuntimeDlls" AfterTargets="Build">
     <ItemGroup>
       <TensorRTDlls Include="$(TensorRTDir)\bin\*.dll" />

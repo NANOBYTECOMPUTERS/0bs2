@@ -26,6 +26,14 @@ public:
     int virtual_camera_heigth;
 
     // Target
+    // Vertical aim offsets are normalized box-space Y values from top (0) to bottom (1).
+    static constexpr float kHeadYOffsetMin = 0.05f;
+    static constexpr float kHeadYOffsetMax = 0.55f;
+    static constexpr float kHeadYOffsetDefault = 0.05f;
+    static constexpr float kBodyYOffsetMin = kHeadYOffsetMin;
+    static constexpr float kBodyYOffsetMax = 0.90f;
+    static constexpr float kBodyYOffsetDefault = 0.15f;
+
     bool disable_headshot;
     float body_y_offset;
     float head_y_offset;
@@ -73,7 +81,7 @@ public:
 
     bool easynorecoil;
     float easynorecoilstrength;
-    std::string input_method; // "WIN32", "GHUB", "ARDUINO", "TEENSY41", "TEENSY41_HID", "KMBOX_NET", "KMBOX_A", "MAKCU"
+    std::string input_method; // "WIN32", "GHUB", "RAZER", "DIRECT", "ARDUINO", "TEENSY41", "TEENSY41_HID", "KMBOX_NET", "KMBOX_A", "MAKCU"
 
     // Wind mouse
     bool wind_mouse_enabled;

@@ -39,6 +39,7 @@ class TemporalTrainerContractTests(unittest.TestCase):
             "constant_velocity",
             "acceleration",
             "curve",
+            "fast_maneuver",
             "partial_occlusion",
             "camera_shake",
             "np.savez_compressed",
@@ -65,6 +66,9 @@ class TemporalTrainerContractTests(unittest.TestCase):
             "smoothness_loss",
             "velocity_consistency_loss",
             "near_horizon_weight",
+            "latency_focus_loss",
+            "latency_focus_weight",
+            "val_latency_ade",
             "weighted_position_loss",
             "torch.onnx.export",
             "models/temporal_predictor.onnx",
@@ -74,6 +78,7 @@ class TemporalTrainerContractTests(unittest.TestCase):
 
         for token in (
             "Average Displacement Error",
+            "latency_ade",
             "Final Displacement Error",
             "smoothness_score",
             "matplotlib",

@@ -99,6 +99,74 @@ python training/evaluate_pid_governor.py `
   --model training/models/pid_governor.pt
 ```
 
+# Neural Tracker Training
+
+This trains the optional association helper used by `MultiTargetTracker`. The
+runtime still owns gating and convergence; the neural tracker only adds a small
+advisory score bonus/penalty to candidate association.
+
+## Generate Association Data
+
+```powershell
+python training/generate_neural_tracker_dataset.py `
+  --output training/data/neural_tracker_dataset.csv `
+  --samples 20000
+```
+
+Synthetic generation now writes grouped candidate pairs. Each group contains a
+true match plus at least one hard distractor when possible, including near
+duplicates, pivot-offset errors, heading conflicts, size mismatches, and allowed
+head/body swap compatibility (`class_compatible = 0.5`). Runtime logs remain an
+optional add-on:
+
+```powershell
+python training/generate_neural_tracker_dataset.py `
+  --merge-log training/logs/neural_tracker_association.csv
+```
+
+## Train And Export
+
+```powershell
+python training/train_neural_tracker.py `
+  --dataset training/data/neural_tracker_dataset.csv `
+  --output neural_models/neural_tracker.pt `
+  --metadata neural_models/neural_tracker.json `
+  --use-gbm-teacher `
+  --distill-weight 0.20 `
+  --ranking-loss-weight 0.20 `
+  --learning-rate 0.00045 `
+  --weight-decay 0.00012 `
+  --epochs 30 `
+  --patience 8
+
+python training/export_neural_tracker_onnx.py `
+  --model neural_models/neural_tracker.pt `
+  --output neural_models/neural_tracker.onnx
+```
+
+The trainer uses grouped train/validation splitting, optional train-only
+LightGBM distillation, pairwise ranking loss, and validation-set temperature
+calibration. Real-world/log rows are optional and disabled by default:
+
+```powershell
+python training/train_neural_tracker.py `
+  --dataset training/data/neural_tracker_dataset.csv `
+  --real-world-data training/logs/neural_tracker_association.csv
+```
+
+## Evaluate
+
+```powershell
+python training/evaluate_neural_tracker.py `
+  --dataset training/data/neural_tracker_dataset.csv `
+  --model neural_models/neural_tracker.pt `
+  --output training/models/neural_tracker_eval.json
+```
+
+Prefer grouped metrics over plain threshold accuracy. The evaluator reports
+weighted BCE, Brier score, ECE calibration error, ROC/PR AUC, and grouped top-1
+association accuracy.
+
 # Temporal Predictor Training
 
 This trains the learned future-position predictor used by the optional C++
@@ -135,15 +203,26 @@ changes, stop-and-go motion, partial occlusion, jitter, and camera shake.
 
 ```powershell
 python training/train_temporal.py `
-  --dataset training/datasets/temporal_tracks.npz `
+  --dataset training/datasets/temporal_tracks_v2.npz `
   --output training/models/temporal_predictor.pt `
   --onnx-output models/temporal_predictor.onnx `
   --metadata training/models/temporal_predictor.json `
   --model-type gru `
   --hidden-size 160 `
-  --near-horizon-frames 6 `
-  --near-horizon-weight 2.5 `
-  --epochs 40
+  --auto-generate-samples 65536 `
+  --max-speed-px-s 1800 `
+  --jitter-px 0.55 `
+  --camera-shake-px 0.75 `
+  --occlusion-probability 0.12 `
+  --near-horizon-frames 8 `
+  --near-horizon-weight 3.5 `
+  --latency-focus-start-frame 3 `
+  --latency-focus-end-frame 6 `
+  --latency-focus-weight 0.75 `
+  --velocity-weight 0.10 `
+  --smoothness-weight 0.008 `
+  --epochs 60 `
+  --patience 10
 ```
 
 If the dataset path does not exist, `train_temporal.py` auto-generates it using
@@ -156,6 +235,9 @@ default because it is small, fast, and matches the runtime latency goal.
 The default loss weights the first six predicted frames more heavily than the
 far end of the horizon, which makes the exported model more useful for PID
 feed-forward and less likely to over-optimize distant positions.
+The latency-focus loss additionally weights frames 3-6 by default, matching the
+age-compensated runtime feed-forward point used when async predictions are a few
+frames old.
 
 ## Evaluate
 
@@ -167,7 +249,8 @@ python training/evaluate.py `
 ```
 
 Evaluation writes `metrics.json` with ADE, FDE, and smoothness score, plus
-trajectory comparison plots when `matplotlib` is installed.
+latency-frame ADE and trajectory comparison plots when `matplotlib` is
+installed.
 
 ## Runtime Config
 
@@ -178,7 +261,7 @@ temporal_prediction_enabled = true
 temporal_prediction_model_path = models/temporal_predictor.onnx
 temporal_prediction_history_length = 12
 temporal_prediction_horizon = 16
-temporal_prediction_interval_frames = 2
+temporal_prediction_interval_frames = 1
 ```
 
 Training-only knobs such as `hidden_size` and `model_type` are CLI arguments,

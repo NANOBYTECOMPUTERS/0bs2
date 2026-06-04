@@ -206,7 +206,7 @@ These launchers do not rebuild OpenCV. They reuse the current repository build p
 | --- | --- | --- | --- | --- | --- |
 | Game Profile | Active Game Profile | active_game | profile names | UNIFIED | Selects the active game profile. |
 | Manage Profiles | Game profile rows | Games.<profile> | name = sens,yaw,pitch[,true,baseFOV] | profile/local | Custom profiles can be added/deleted; UNIFIED is read-only. |
-| Input Method | Mouse Input Method | input_method | WIN32, GHUB, RAZER, ARDUINO, TEENSY41, KMBOX_NET, KMBOX_A, MAKCU | RAZER | Changes active mouse backend. All methods support the hardened switch path with actuator telemetry reset. |
+| Input Method | Mouse Input Method | input_method | WIN32, GHUB, RAZER (direct), DIRECT (research slot), ARDUINO, TEENSY41, TEENSY41_HID, KMBOX_NET, KMBOX_A, MAKCU | RAZER | Changes active mouse backend. All methods support the hardened switch path with actuator telemetry reset. |
 | Input Method | Arduino/Teensy Port | arduino_port | COM1-COM30 | COM0 | Arduino and Teensy 4.1 *serial* input. |
 | Input Method | Arduino/Teensy Baudrate | arduino_baudrate | 9600-115200 | 115200 | Arduino and Teensy 4.1 *serial* input. |
 

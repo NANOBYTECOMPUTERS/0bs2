@@ -62,7 +62,8 @@ BoxTarget* sortTargets(
         {
             if (classes[i] == config.class_head)
             {
-                int headOffsetY = static_cast<int>(boxes[i].height * config.head_y_offset);
+                const float headOffset = std::clamp(config.head_y_offset, Config::kHeadYOffsetMin, Config::kHeadYOffsetMax);
+                int headOffsetY = static_cast<int>(boxes[i].height * headOffset);
                 cv::Point targetPoint(boxes[i].x + boxes[i].width / 2, boxes[i].y + headOffsetY);
                 double distance = std::pow(targetPoint.x - center.x, 2) + std::pow(targetPoint.y - center.y, 2);
                 if (distance < minDistance)
@@ -85,7 +86,8 @@ BoxTarget* sortTargets(
 
             if (classes[i] == config.class_player)
             {
-                int offsetY = static_cast<int>(boxes[i].height * config.body_y_offset);
+                const float bodyOffset = std::clamp(config.body_y_offset, Config::kBodyYOffsetMin, Config::kBodyYOffsetMax);
+                int offsetY = static_cast<int>(boxes[i].height * bodyOffset);
                 cv::Point targetPoint(boxes[i].x + boxes[i].width / 2, boxes[i].y + offsetY);
                 double distance = std::pow(targetPoint.x - center.x, 2) + std::pow(targetPoint.y - center.y, 2);
                 if (distance < minDistance)
@@ -106,7 +108,8 @@ BoxTarget* sortTargets(
     int finalY = 0;
     if (classes[nearestIdx] == config.class_head)
     {
-        int headOffsetY = static_cast<int>(boxes[nearestIdx].height * config.head_y_offset);
+        const float headOffset = std::clamp(config.head_y_offset, Config::kHeadYOffsetMin, Config::kHeadYOffsetMax);
+        int headOffsetY = static_cast<int>(boxes[nearestIdx].height * headOffset);
         finalY = boxes[nearestIdx].y + headOffsetY - boxes[nearestIdx].height / 2;
     }
     else
@@ -197,11 +200,17 @@ cv::Point2d MultiTargetTracker::computeInnerAimPoint(const cv::Rect2f& box, int 
     double yBias = 0.5;
     if (classId == config.class_head)
     {
-        yBias = std::clamp(static_cast<double>(config.head_y_offset), 0.05, 0.55);
+        yBias = std::clamp(
+            static_cast<double>(config.head_y_offset),
+            static_cast<double>(Config::kHeadYOffsetMin),
+            static_cast<double>(Config::kHeadYOffsetMax));
     }
     else if (classId == config.class_player)
     {
-        yBias = std::clamp(static_cast<double>(config.body_y_offset), 0.20, 0.90);
+        yBias = std::clamp(
+            static_cast<double>(config.body_y_offset),
+            static_cast<double>(Config::kBodyYOffsetMin),
+            static_cast<double>(Config::kBodyYOffsetMax));
     }
     else if (box.width < smallBoxThreshold)
     {
@@ -777,8 +786,9 @@ void MultiTargetTracker::update(
                     {
                         playerHasHeadPivot[bestPlayer] = 1;
                         playerHeadPivotDist[bestPlayer] = bestDist;
-                        playerHeadPivotX[bestPlayer] = h.box.x + h.box.width * 0.5;
-                        playerHeadPivotY[bestPlayer] = h.box.y + h.box.height * config.head_y_offset;
+                        const cv::Point2d playerHeadPivot = computeInnerAimPoint(h.box, config.class_head);
+                        playerHeadPivotX[bestPlayer] = playerHeadPivot.x;
+                        playerHeadPivotY[bestPlayer] = playerHeadPivot.y;
                         dets[bestPlayer].confidence = std::max(dets[bestPlayer].confidence, h.confidence);
                     }
                 }
@@ -868,7 +878,7 @@ void MultiTargetTracker::update(
                                    double maxDist,
                                    double overlap,
                                    double headingAlignment,
-                                   bool classCompatible,
+                                   float classCompatibility,
                                    bool relaxedForLocked) -> aim::neural::NeuralTrackerFeatures
         {
             const double predictedArea = std::max(1.0, static_cast<double>(predictedBox.width * predictedBox.height));
@@ -888,7 +898,7 @@ void MultiTargetTracker::update(
             features.trackMissedNorm = static_cast<float>(std::clamp(t.missed / 12.0, 0.0, 1.0));
             features.trackHitsNorm = static_cast<float>(std::clamp(t.hits / 12.0, 0.0, 1.0));
             features.isLocked = (t.id == lockedTrackId_) ? 1.0f : 0.0f;
-            features.classCompatible = classCompatible ? 1.0f : 0.0f;
+            features.classCompatible = static_cast<float>(std::clamp(static_cast<double>(classCompatibility), 0.0, 1.0));
             features.dt = static_cast<float>(std::clamp(dt, 0.0, 0.25));
             features.speedNorm = static_cast<float>(std::clamp(speed / (screenScale * 3.5), 0.0, 2.0));
             features.targetSizeNorm = static_cast<float>(std::clamp(std::sqrt(detArea) / screenScale, 0.0, 1.0));
@@ -903,6 +913,7 @@ void MultiTargetTracker::update(
             AssociationBreakdown breakdown;
 
             const bool sameClass = (d.classId == t.classId);
+            double classCompatibilityScore = sameClass ? 1.0 : 0.0;
             double classPenalty = 0.0;
             if (!sameClass)
             {
@@ -914,6 +925,7 @@ void MultiTargetTracker::update(
                     return breakdown;
 
                 classPenalty = 0.18;
+                classCompatibilityScore = 0.5;
             }
 
             const double dt = std::clamp(
@@ -1045,7 +1057,7 @@ void MultiTargetTracker::update(
                     maxDist,
                     overlap,
                     headingAlignment,
-                    true,
+                    static_cast<float>(classCompatibilityScore),
                     relaxedForLocked);
 
                 if (auto tracker = getNeuralTracker())
