@@ -205,13 +205,52 @@ public:
 
     const char* name() const override { return "RAZER"; }
     bool isOpen() const override { return device_ && device_->isOpen(); }
-    bool move(int dx, int dy) override { return isOpen() && device_->mouse_xy(dx, dy); }
-    bool leftDown() override { return isOpen() && device_->mouse_down(); }
-    bool leftUp() override { return isOpen() && device_->mouse_up(); }
+    bool move(int dx, int dy) override { return device_ && device_->mouse_xy(dx, dy); }
+    bool leftDown() override { return device_ && device_->mouse_down(); }
+    bool leftUp() override { return device_ && device_->mouse_up(); }
     RzctlMouse* razer() override { return device_.get(); }
 
 private:
     std::unique_ptr<RzctlMouse> device_;
+};
+
+// -----------------------------------------------------------------------------
+// DIRECT (direct driver injection) backend — stealth-first stub.
+// Per the approved plan, this is initially a non-functional research slot.
+// A real implementation (kernel or otherwise) is only added if future research
+// demonstrates it is currently *less* detectable than the hardened inlined RAZER
+// path or the hardware backends on the target ACs.
+// The class provides the standard IMouseInput surface so hot-swap and UI work.
+// -----------------------------------------------------------------------------
+class DirectMouseInput final : public IMouseInput
+{
+public:
+    DirectMouseInput() = default;
+
+    const char* name() const override { return "DIRECT"; }
+    bool isOpen() const override { return false; }   // stub: not active until a real payload is justified
+
+    bool move(int dx, int dy) override
+    {
+        // Intentionally a no-op with diagnostic. Real implementation (if any) would
+        // go here (e.g. talk to a kernel driver that injects MOUSE_INPUT_DATA).
+        // Do not silently fall back — the user must see that DIRECT is not providing input.
+        static bool warned = false;
+        if (!warned)
+        {
+            std::cerr << "[Direct] DIRECT driver injection is a research slot. "
+                      << "Currently inactive (isOpen()==false). See plan for stealth requirements." << std::endl;
+            warned = true;
+        }
+        return false;
+    }
+
+    bool leftDown() override { return false; }
+    bool leftUp() override { return false; }
+
+    // No special global accessor needed for the stub (falls back to generic isOpen/move).
+    // If a future real impl needs one, add:
+    // DirectMouseInput* direct() override { return this; }
 };
 
 class KmboxNetMouseInput final : public IMouseInput
@@ -331,6 +370,8 @@ std::optional<MouseInputMethod> ParseMouseInputMethod(const std::string& method)
         return MouseInputMethod::GHub;
     if (method == "RAZER")
         return MouseInputMethod::Razer;
+    if (method == "DIRECT")
+        return MouseInputMethod::Direct;
     if (method == "ARDUINO")
         return MouseInputMethod::Arduino;
     if (method == "TEENSY41")
@@ -352,6 +393,7 @@ std::string MouseInputMethodName(MouseInputMethod method)
     {
     case MouseInputMethod::GHub: return "GHUB";
     case MouseInputMethod::Razer: return "RAZER";
+    case MouseInputMethod::Direct: return "DIRECT";
     case MouseInputMethod::Arduino: return "ARDUINO";
     case MouseInputMethod::Teensy41: return "TEENSY41";
     case MouseInputMethod::Teensy41Hid: return "TEENSY41_HID";
@@ -379,6 +421,8 @@ std::unique_ptr<IMouseInput> CreateMouseInputDevice(const Config& config)
         return std::make_unique<GHubMouseInput>();
     case MouseInputMethod::Razer:
         return std::make_unique<RazerMouseInput>();
+    case MouseInputMethod::Direct:
+        return std::make_unique<DirectMouseInput>();
     case MouseInputMethod::KmboxNet:
         return std::make_unique<KmboxNetMouseInput>(config.kmbox_net_ip, config.kmbox_net_port, config.kmbox_net_uuid);
     case MouseInputMethod::KmboxA:

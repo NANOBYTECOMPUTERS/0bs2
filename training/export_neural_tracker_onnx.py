@@ -42,10 +42,16 @@ def main(argv: list[str] | None = None) -> int:
             self.core = model
             self.register_buffer("mean", torch.tensor(artifact["feature_mean"], dtype=torch.float32))
             self.register_buffer("std", torch.tensor(artifact["feature_std"], dtype=torch.float32).clamp_min(1e-6))
+            self.register_buffer(
+                "temperature",
+                torch.tensor(float(artifact.get("calibration_temperature", 1.0)), dtype=torch.float32).clamp(0.05, 20.0),
+            )
 
         def forward(self, neural_tracker_features):
             normalized = (neural_tracker_features - self.mean) / self.std
-            return self.core(normalized)
+            score = self.core(normalized).clamp(1e-6, 1.0 - 1e-6)
+            logit = torch.logit(score)
+            return torch.sigmoid(logit / self.temperature)
 
     wrapped = NormalizedModel()
     wrapped.eval()
@@ -78,6 +84,7 @@ def main(argv: list[str] | None = None) -> int:
         "input_shape": [1, len(feature_columns)],
         "output_shape": [1, 1],
         "feature_columns": feature_columns,
+        "calibration_temperature": float(artifact.get("calibration_temperature", 1.0)),
     }
     metadata_path = resolve_repo_path(args.metadata)
     metadata_path.parent.mkdir(parents=True, exist_ok=True)

@@ -207,7 +207,7 @@ void drawProfileManager()
 
 void drawInputMethod()
 {
-    std::vector<std::string> inputMethods = { "WIN32", "GHUB", "RAZER", "ARDUINO", "TEENSY41", "TEENSY41_HID", "KMBOX_NET", "KMBOX_A", "MAKCU" };
+    std::vector<std::string> inputMethods = { "WIN32", "GHUB", "RAZER", "DIRECT", "ARDUINO", "TEENSY41", "TEENSY41_HID", "KMBOX_NET", "KMBOX_A", "MAKCU" };
     std::vector<const char*> methodItems;
     methodItems.reserve(inputMethods.size());
     for (const auto& item : inputMethods)
@@ -425,11 +425,24 @@ void drawInputMethod()
     else if (config.input_method == "RAZER")
     {
         if (razerControl && razerControl->isOpen())
-            ImGui::TextColored(ImVec4(0, 255, 0, 255), "Razer rzctl connected");
+            ImGui::TextColored(ImVec4(0, 255, 0, 255), "Razer (direct in-process) connected");
         else
-            ImGui::TextColored(ImVec4(255, 0, 0, 255), "Razer rzctl not connected");
+            ImGui::TextColored(ImVec4(255, 0, 0, 255), "Razer (direct) not connected");
 
-        ImGui::Text("Requires rzctl.dll next to 0BS.exe.");
+        ImGui::TextWrapped("Uses in-process Razer Synapse driver interface (RZCONTROL). On recent Synapse versions a physical Razer device is often required for the driver to expose the control device.");
+    }
+    else if (config.input_method == "DIRECT")
+    {
+        // DIRECT is a research/architecture slot per the stealth-first plan.
+        // Real kernel-level "direct driver injection" is high-risk on modern ACs
+        // (driver load telemetry). The slot exists so the architecture stays uniform.
+        // Initial implementation is a safe stub (isOpen()==false).
+        if (activeMouseInputOwner && activeMouseInputOwner->isOpen())
+            ImGui::TextColored(ImVec4(0, 255, 0, 255), "DIRECT active");
+        else
+            ImGui::TextColored(ImVec4(255, 165, 0, 255), "DIRECT (research slot) — inactive");
+
+        ImGui::TextWrapped("Direct driver injection slot. On many 2025-2026 ACs a custom kernel driver often carries HIGHER detection risk than the inlined RAZER path or hardware backends. Only enable after current research confirms a lower-signal technique for your targets. Most implementations require admin + a kernel component.");
     }
     else if (config.input_method == "WIN32")
     {

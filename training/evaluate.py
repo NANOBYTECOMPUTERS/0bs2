@@ -64,20 +64,37 @@ def predict_with_onnx(model_path: Path, history: np.ndarray) -> np.ndarray:
     return np.asarray(output, dtype=np.float32)
 
 
-def compute_metrics(prediction: np.ndarray, target: np.ndarray, near_horizon_frames: int = 6) -> dict:
+def compute_metrics(
+    prediction: np.ndarray,
+    target: np.ndarray,
+    near_horizon_frames: int = 6,
+    latency_focus_start_frame: int = 3,
+    latency_focus_end_frame: int = 6,
+) -> dict:
     error = np.linalg.norm(prediction - target, axis=-1)
     near_frames = max(1, min(int(near_horizon_frames), prediction.shape[1]))
+    latency_start = max(0, min(prediction.shape[1] - 1, int(latency_focus_start_frame) - 1))
+    latency_end = max(latency_start + 1, min(prediction.shape[1], int(latency_focus_end_frame)))
     deltas = np.diff(prediction, axis=1)
     smoothness_score = float(np.var(deltas, axis=(0, 1)).sum()) if deltas.size else 0.0
     return {
         "ade": float(np.mean(error)),  # Average Displacement Error
         "near_ade": float(np.mean(error[:, :near_frames])),
+        "latency_ade": float(np.mean(error[:, latency_start:latency_end])),
         "fde": float(np.mean(error[:, -1])),  # Final Displacement Error
         "smoothness_score": smoothness_score,
         "samples": int(prediction.shape[0]),
         "prediction_horizon": int(prediction.shape[1]),
         "near_horizon_frames": int(near_frames),
+        "latency_focus_start_frame": int(latency_start + 1),
+        "latency_focus_end_frame": int(latency_end),
     }
+
+
+def predict_any_model(model_path: Path, history: np.ndarray, device_name: str) -> np.ndarray:
+    if model_path.suffix.lower() == ".onnx":
+        return predict_with_onnx(model_path, history)
+    return predict_with_checkpoint(model_path, history, device_name)
 
 
 def write_plots(history: np.ndarray, target: np.ndarray, prediction: np.ndarray, output_dir: Path, count: int) -> int:
@@ -110,32 +127,64 @@ def write_plots(history: np.ndarray, target: np.ndarray, prediction: np.ndarray,
 def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Evaluate temporal predictor trajectories.")
     parser.add_argument("--dataset", default="training/datasets/temporal_tracks.npz")
+    parser.add_argument("--real-world-data", default=None, help="Optional held-out real-world temporal dataset.")
     parser.add_argument("--model", default="training/models/temporal_predictor.pt")
+    parser.add_argument("--compare-model", default=None, help="Optional baseline model for before/after comparison.")
     parser.add_argument("--output-dir", default="training/models/temporal_eval")
     parser.add_argument("--samples-to-plot", type=int, default=8)
     parser.add_argument("--near-horizon-frames", type=int, default=6)
+    parser.add_argument("--latency-focus-start-frame", type=int, default=3)
+    parser.add_argument("--latency-focus-end-frame", type=int, default=6)
     parser.add_argument("--device", default="auto", choices=["auto", "cpu", "cuda"])
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
     args = build_arg_parser().parse_args(argv)
-    dataset = load_temporal_npz(args.dataset)
+    dataset = load_temporal_npz(args.real_world_data or args.dataset)
     model_path = resolve_repo_path(args.model)
     output_dir = resolve_repo_path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    if model_path.suffix.lower() == ".onnx":
-        prediction = predict_with_onnx(model_path, dataset.history)
-    else:
-        prediction = predict_with_checkpoint(model_path, dataset.history, args.device)
+    prediction = predict_any_model(model_path, dataset.history, args.device)
 
     if prediction.shape != dataset.future.shape:
         raise SystemExit(
             f"Model output shape {prediction.shape} does not match target shape {dataset.future.shape}."
         )
 
-    metrics = compute_metrics(prediction, dataset.future, args.near_horizon_frames)
+    metrics = compute_metrics(
+        prediction,
+        dataset.future,
+        args.near_horizon_frames,
+        args.latency_focus_start_frame,
+        args.latency_focus_end_frame,
+    )
+    if args.compare_model:
+        compare_path = resolve_repo_path(args.compare_model)
+        compare_prediction = predict_any_model(compare_path, dataset.history, args.device)
+        if compare_prediction.shape != dataset.future.shape:
+            raise SystemExit(
+                f"Compare model output shape {compare_prediction.shape} does not match target shape {dataset.future.shape}."
+            )
+        compare_metrics = compute_metrics(
+            compare_prediction,
+            dataset.future,
+            args.near_horizon_frames,
+            args.latency_focus_start_frame,
+            args.latency_focus_end_frame,
+        )
+        metrics["comparison"] = {
+            "candidate_model": str(model_path),
+            "compare_model": str(compare_path),
+            "candidate": {key: metrics[key] for key in ("near_ade", "latency_ade", "ade", "fde", "smoothness_score")},
+            "baseline": {key: compare_metrics[key] for key in ("near_ade", "latency_ade", "ade", "fde", "smoothness_score")},
+            "delta_vs_baseline": {
+                key: metrics[key] - compare_metrics[key]
+                for key in ("near_ade", "latency_ade", "ade", "fde", "smoothness_score")
+            },
+        }
+
     plot_count = write_plots(dataset.history, dataset.future, prediction, output_dir, args.samples_to_plot)
     metrics["plots"] = int(plot_count)
     metrics_path = output_dir / "metrics.json"
@@ -143,9 +192,17 @@ def main(argv: list[str] | None = None) -> int:
 
     print(
         "Temporal predictor evaluation: "
-        f"near_ADE={metrics['near_ade']:.4f} ADE={metrics['ade']:.4f} FDE={metrics['fde']:.4f} "
+        f"near_ADE={metrics['near_ade']:.4f} latency_ADE={metrics['latency_ade']:.4f} "
+        f"ADE={metrics['ade']:.4f} FDE={metrics['fde']:.4f} "
         f"smoothness={metrics['smoothness_score']:.4f}"
     )
+    if "comparison" in metrics:
+        delta = metrics["comparison"]["delta_vs_baseline"]
+        print(
+            "Comparison delta vs baseline: "
+            f"near_ADE={delta['near_ade']:.4f} latency_ADE={delta['latency_ade']:.4f} ADE={delta['ade']:.4f} "
+            f"FDE={delta['fde']:.4f} smoothness={delta['smoothness_score']:.4f}"
+        )
     print(f"Saved metrics to {metrics_path}")
     return 0
 

@@ -19,6 +19,7 @@ enum class MouseInputMethod
     Win32,
     GHub,
     Razer,
+    Direct,      // Direct driver injection slot (initially stub; see stealth plan)
     Arduino,
     Teensy41,
     Teensy41Hid,

@@ -98,7 +98,7 @@ class NeuralTargetingHeadContractTest(unittest.TestCase):
         for token in (
             "neural_targeting_enabled = false",
             'neural_targeting_enabled = get_bool("neural_targeting_enabled", false)',
-            "neural_targeting_model_path = \"models/neural_targeting_head.onnx\"",
+            "neural_targeting_model_path = \"neural_models/neural_targeting_head.onnx\"",
             "neural_targeting_influence = 0.40f",
             "neural_targeting_max_refinement_px = 35.0f",
         ):

@@ -7,6 +7,7 @@
 #include <chrono>
 #include <random>
 #include <utility>
+#include <array>
 
 #include "aim_kalman.h"
 #include "aim_imm.h"
@@ -79,6 +80,7 @@ struct LockedTargetInfo
     double targetVelocityX = 0.0;
     double targetVelocityY = 0.0;
     double targetBoxScaleVelocity = 0.0;
+    std::vector<std::array<float, 8>> trackHistory;
 };
 
 struct TrackDebugInfo

@@ -63,6 +63,11 @@ class InnerAimTrackingContractTest(unittest.TestCase):
         ):
             self.assertIn(token, target_cpp)
 
+        self.assertIn("Config::kHeadYOffsetMin", target_cpp)
+        self.assertIn("Config::kBodyYOffsetMin", target_cpp)
+        self.assertIn("computeInnerAimPoint(h.box, config.class_head)", target_cpp)
+        self.assertNotIn("h.box.y + h.box.height * config.head_y_offset", target_cpp)
+
     def test_association_kalman_and_pid_handoff_use_inneraim(self):
         target_cpp = self.read("mouse/BoxTarget.cpp")
         target_h = self.read("mouse/BoxTarget.h")

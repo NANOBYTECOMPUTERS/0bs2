@@ -26,6 +26,22 @@ Ego-motion compensation is an opt-in tracker stabilizer. It subtracts bounded, r
 
 The Neural tab exposes Balanced, Aggressive, Smooth, and Sniper presets. Presets tune prediction influence, neural refinement range, and SmartBlender damping/jerk limits while retaining opt-in master toggles. Optional telemetry can show current adaptive influence, confidence, predicted lead, neural refinement, and SmartBlender jitter/oscillation state on the game overlay, or write a throttled CSV log for tuning.
 
+## Legacy Prediction Compatibility
+
+This pass is conservative. Legacy prediction and snap-curve settings are **Deprecated but retained** so older configs still load and the game overlay / aim simulation remains comparable to earlier builds. PID/Kalman remains the convergence owner, and the temporal predictor, Neural Targeting Head, adaptive influence, SmartBlender, and PID governor remain advisory layers only.
+
+| Key | Status | Current owner / use | Removal gate |
+| --- | --- | --- | --- |
+| `minSpeedMultiplier` | Deprecated but retained | Game overlay target-correction demo and aim simulation speed curve | Remove only after disabled-neural behavior stays identical against a captured regression baseline. |
+| `maxSpeedMultiplier` | Deprecated but retained | Game overlay target-correction demo and aim simulation speed curve | Remove only after disabled-neural behavior stays identical against a captured regression baseline. |
+| `predictionInterval` | Deprecated but retained | Aim simulation latency visualization / auxiliary prediction timing | Remove only after disabled-neural behavior stays identical against a captured regression baseline. |
+| `snapRadius` | Deprecated but retained | Game overlay target-correction demo and aim simulation snap curve | Remove only after disabled-neural behavior stays identical against a captured regression baseline. |
+| `nearRadius` | Deprecated but retained | Game overlay target-correction demo and aim simulation speed curve | Remove only after disabled-neural behavior stays identical against a captured regression baseline. |
+| `speedCurveExponent` | Deprecated but retained | Game overlay target-correction demo and aim simulation speed curve | Remove only after disabled-neural behavior stays identical against a captured regression baseline. |
+| `snapBoostFactor` | Deprecated but retained | Game overlay target-correction demo and aim simulation snap multiplier | Remove only after disabled-neural behavior stays identical against a captured regression baseline. |
+| `kalman_warmup_frames` | Retained active compatibility | State-estimator warmup, including non-neural mode and aim simulation | Do not remove while latency-sweep and non-neural estimator tests depend on it. |
+| `kalman_acquisition_frames` | Retained active control | State-estimator acquisition ramp | Do not remove; this is still an active estimator control. |
+
 ## Build Launchers
 
 0BS includes double-click and noninteractive build launchers modeled after `sunone_aimbot_2` while retaining the existing Visual Studio/MSBuild project flow:
@@ -190,7 +206,7 @@ These launchers do not rebuild OpenCV. They reuse the current repository build p
 | --- | --- | --- | --- | --- | --- |
 | Game Profile | Active Game Profile | active_game | profile names | UNIFIED | Selects the active game profile. |
 | Manage Profiles | Game profile rows | Games.<profile> | name = sens,yaw,pitch[,true,baseFOV] | profile/local | Custom profiles can be added/deleted; UNIFIED is read-only. |
-| Input Method | Mouse Input Method | input_method | WIN32, GHUB, RAZER, ARDUINO, TEENSY41, KMBOX_NET, KMBOX_A, MAKCU | RAZER | Changes active mouse backend. All methods support the hardened switch path with actuator telemetry reset. |
+| Input Method | Mouse Input Method | input_method | WIN32, GHUB, RAZER (direct), DIRECT (research slot), ARDUINO, TEENSY41, TEENSY41_HID, KMBOX_NET, KMBOX_A, MAKCU | RAZER | Changes active mouse backend. All methods support the hardened switch path with actuator telemetry reset. |
 | Input Method | Arduino/Teensy Port | arduino_port | COM1-COM30 | COM0 | Arduino and Teensy 4.1 *serial* input. |
 | Input Method | Arduino/Teensy Baudrate | arduino_baudrate | 9600-115200 | 115200 | Arduino and Teensy 4.1 *serial* input. |
 

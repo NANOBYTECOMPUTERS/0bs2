@@ -81,6 +81,12 @@ def compute_metrics(prediction: np.ndarray, refinement: np.ndarray, confidence: 
     }
 
 
+def predict_any_model(model_path: Path, features: np.ndarray, device_name: str) -> np.ndarray:
+    if model_path.suffix.lower() == ".onnx":
+        return predict_with_onnx(model_path, features)
+    return predict_with_checkpoint(model_path, features, device_name)
+
+
 def write_plots(features: np.ndarray, target: np.ndarray, prediction: np.ndarray, output_dir: Path, count: int) -> int:
     try:
         import matplotlib.pyplot as plt
@@ -128,7 +134,9 @@ def write_plots(features: np.ndarray, target: np.ndarray, prediction: np.ndarray
 def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Evaluate neural targeting refinement predictions.")
     parser.add_argument("--dataset", default="training/datasets/neural_targeting_tracks.npz")
+    parser.add_argument("--real-world-data", default=None, help="Optional held-out real-world neural targeting dataset.")
     parser.add_argument("--model", default="training/models/neural_targeting_head.pt")
+    parser.add_argument("--compare-model", default=None, help="Optional baseline model for before/after comparison.")
     parser.add_argument("--output-dir", default="training/models/neural_targeting_eval")
     parser.add_argument("--samples-to-plot", type=int, default=8)
     parser.add_argument("--device", default="auto", choices=["auto", "cpu", "cuda"])
@@ -137,20 +145,40 @@ def build_arg_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = build_arg_parser().parse_args(argv)
-    dataset = load_neural_targeting_npz(args.dataset)
+    dataset = load_neural_targeting_npz(args.real_world_data or args.dataset)
     model_path = resolve_repo_path(args.model)
     output_dir = resolve_repo_path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    if model_path.suffix.lower() == ".onnx":
-        prediction = predict_with_onnx(model_path, dataset.features)
-    else:
-        prediction = predict_with_checkpoint(model_path, dataset.features, args.device)
+    prediction = predict_any_model(model_path, dataset.features, args.device)
 
     if prediction.shape != (dataset.features.shape[0], 3):
         raise SystemExit(f"Model output shape {prediction.shape} does not match expected {(dataset.features.shape[0], 3)}.")
 
     metrics = compute_metrics(prediction, dataset.refinement, dataset.confidence)
+    if args.compare_model:
+        compare_path = resolve_repo_path(args.compare_model)
+        compare_prediction = predict_any_model(compare_path, dataset.features, args.device)
+        if compare_prediction.shape != (dataset.features.shape[0], 3):
+            raise SystemExit(
+                f"Compare model output shape {compare_prediction.shape} does not match expected {(dataset.features.shape[0], 3)}."
+            )
+        compare_metrics = compute_metrics(compare_prediction, dataset.refinement, dataset.confidence)
+        comparison_keys = (
+            "refinement_mae",
+            "refinement_rmse",
+            "refinement_vector_error",
+            "confidence_mae",
+            "bad_overconfidence_rate",
+        )
+        metrics["comparison"] = {
+            "candidate_model": str(model_path),
+            "compare_model": str(compare_path),
+            "candidate": {key: metrics[key] for key in comparison_keys},
+            "baseline": {key: compare_metrics[key] for key in comparison_keys},
+            "delta_vs_baseline": {key: metrics[key] - compare_metrics[key] for key in comparison_keys},
+        }
+
     plot_count = write_plots(dataset.features, dataset.refinement, prediction, output_dir, args.samples_to_plot)
     metrics["plots"] = int(plot_count)
     metrics_path = output_dir / "metrics.json"
@@ -163,6 +191,14 @@ def main(argv: list[str] | None = None) -> int:
         f"confidence_MAE={metrics['confidence_mae']:.4f} "
         f"bad_overconfidence={metrics['bad_overconfidence_rate']:.4f}"
     )
+    if "comparison" in metrics:
+        delta = metrics["comparison"]["delta_vs_baseline"]
+        print(
+            "Comparison delta vs baseline: "
+            f"refinement_MAE={delta['refinement_mae']:.4f} "
+            f"refinement_RMSE={delta['refinement_rmse']:.4f} "
+            f"confidence_MAE={delta['confidence_mae']:.4f}"
+        )
     print(f"Saved metrics to {metrics_path}")
     return 0
 

@@ -3,6 +3,8 @@
 #include <winsock2.h>
 #include <Windows.h>
 
+#include <algorithm>
+
 #include "d3d11.h"
 #include "imgui/imgui.h"
 
@@ -38,8 +40,8 @@ void draw_target()
         ImGui::TextColored(ImVec4(1.0f, 1.0f, 0.0f, 1.0f), "Arrow keys: Adjust body offset");
         ImGui::TextColored(ImVec4(1.0f, 1.0f, 0.0f, 1.0f), "Shift+Arrow keys: Adjust head offset");
 
-        ImGui::SliderFloat("Approximate Body Y Offset", &config.body_y_offset, 0.0f, 1.0f, "%.2f");
-        ImGui::SliderFloat("Approximate Head Y Offset", &config.head_y_offset, 0.0f, 1.0f, "%.2f");
+        ImGui::SliderFloat("Approximate Body Y Offset", &config.body_y_offset, Config::kBodyYOffsetMin, Config::kBodyYOffsetMax, "%.2f");
+        ImGui::SliderFloat("Approximate Head Y Offset", &config.head_y_offset, Config::kHeadYOffsetMin, Config::kHeadYOffsetMax, "%.2f");
         OverlayUI::EndSection();
     }
 
@@ -54,15 +56,14 @@ void draw_target()
 
             ImDrawList* draw_list = ImGui::GetWindowDrawList();
 
-            float normalized_body_value = (config.body_y_offset - 1.0f) / 1.0f;
-            float body_line_y = image_pos.y + (1.0f + normalized_body_value) * image_size.y;
+            const float bodyOffset = std::clamp(config.body_y_offset, Config::kBodyYOffsetMin, Config::kBodyYOffsetMax);
+            const float headOffset = std::clamp(config.head_y_offset, Config::kHeadYOffsetMin, Config::kHeadYOffsetMax);
+            float body_line_y = image_pos.y + bodyOffset * image_size.y;
             ImVec2 body_line_start = ImVec2(image_pos.x, body_line_y);
             ImVec2 body_line_end = ImVec2(image_pos.x + image_size.x, body_line_y);
             draw_list->AddLine(body_line_start, body_line_end, IM_COL32(255, 0, 0, 255), 2.0f);
 
-            float body_y_pos_at_015 = image_pos.y + (1.0f + (0.15f - 1.0f) / 1.0f) * image_size.y;
-            float head_top_pos = image_pos.y;
-            float head_line_y = head_top_pos + (config.head_y_offset * (body_y_pos_at_015 - head_top_pos));
+            float head_line_y = image_pos.y + headOffset * image_size.y;
 
             ImVec2 head_line_start = ImVec2(image_pos.x, head_line_y);
             ImVec2 head_line_end = ImVec2(image_pos.x + image_size.x, head_line_y);

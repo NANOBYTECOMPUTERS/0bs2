@@ -17,25 +17,14 @@ public:
     bool mouse_close();
 
 private:
-    using InitFn = bool (*)();
-    using MouseMoveFn = void (*)(int, int, bool);
-    using MouseMoveStatusFn = BOOL (*)(int, int, BOOL);
-    using MouseClickFn = void (*)(int);
-    using MouseClickStatusFn = BOOL (*)(int);
-    using KeyboardInputFn = void (*)(short, int);
+    // NOTE: All loader-related members (HMODULE, function pointers, dllPath) have been
+    // removed. The implementation is now fully in-process / direct to the RZCONTROL
+    // device (stealth-hardened: dynamic NT resolution, runtime string/IOCTL hiding,
+    // lazy device open). The public API surface is unchanged.
 
-    std::filesystem::path dllPath;
-    HMODULE rzctl = nullptr;
-    bool rzctlOk = false;
+    bool rzctlOk = false;   // reflects last known success of a send
 
-    InitFn init = nullptr;
-    MouseMoveFn mouseMove = nullptr;
-    MouseMoveStatusFn mouseMoveStatus = nullptr;
-    MouseClickFn mouseClick = nullptr;
-    MouseClickStatusFn mouseClickStatus = nullptr;
-    KeyboardInputFn keyboardInput = nullptr;
-
-    static std::filesystem::path resolveDllPath();
+    // Local mapping helpers (kept as before for exact behavioral compatibility).
     static int downFlagForKey(int key);
     static int upFlagForKey(int key);
 };

@@ -296,6 +296,7 @@ void MouseThread::pidActuatorLoop()
             if (command.active)
             {
                 recordEgoMotionDelta(command.pixelDx, command.pixelDy, now);
+                updateLastAppliedMouseDelta(command.pixelDx, command.pixelDy);
                 std::pair<double, double> counts{ 0.0, 0.0 };
                 if (command.angularOutputActive)
                 {
@@ -566,8 +567,46 @@ std::pair<double, double> MouseThread::pixelDeltaToCounts(double pixelDx, double
 
 void MouseThread::recordEgoMotionDelta(double pixelDx, double pixelDy, std::chrono::steady_clock::time_point timestamp)
 {
+    updateEgoMotionVelocityEstimate(pixelDx, pixelDy, timestamp);
     egoMotionCompensator.setSettings(buildEgoMotionSettingsFromConfig());
     egoMotionCompensator.recordDelta(pixelDx, pixelDy, timestamp);
+}
+
+void MouseThread::updateEgoMotionVelocityEstimate(
+    double pixelDx,
+    double pixelDy,
+    std::chrono::steady_clock::time_point timestamp)
+{
+    if (!std::isfinite(pixelDx) || !std::isfinite(pixelDy))
+        return;
+
+    const double movementPx = std::hypot(pixelDx, pixelDy);
+    std::lock_guard<std::mutex> lock(egoMotionVelocityMutex);
+
+    double dt = 1.0 / std::clamp(static_cast<double>(config.pid_actuator_hz), 30.0, 2000.0);
+    if (egoMotionVelocityLastTimestamp.time_since_epoch().count() != 0 && timestamp > egoMotionVelocityLastTimestamp)
+        dt = std::chrono::duration<double>(timestamp - egoMotionVelocityLastTimestamp).count();
+    egoMotionVelocityLastTimestamp = timestamp;
+
+    dt = std::clamp(dt, 1.0 / 2000.0, 0.25);
+    const double rawVelocity = std::clamp(movementPx / dt, 0.0, 4000.0);
+    constexpr double egoVelocityAlpha = 0.35;
+    egoMotionCameraVelocityPxPerSec += (rawVelocity - egoMotionCameraVelocityPxPerSec) * egoVelocityAlpha;
+}
+
+double MouseThread::currentEgoMotionCameraVelocityPxPerSec() const
+{
+    std::lock_guard<std::mutex> lock(egoMotionVelocityMutex);
+    if (egoMotionVelocityLastTimestamp.time_since_epoch().count() == 0)
+        return 0.0;
+
+    const double ageSec = std::chrono::duration<double>(
+        std::chrono::steady_clock::now() - egoMotionVelocityLastTimestamp).count();
+    if (ageSec > 0.25)
+        return egoMotionCameraVelocityPxPerSec * 0.25;
+    if (ageSec > 0.10)
+        return egoMotionCameraVelocityPxPerSec * 0.65;
+    return egoMotionCameraVelocityPxPerSec;
 }
 
 std::pair<double, double> MouseThread::consumeEgoMotionCompensation(
@@ -585,6 +624,9 @@ void MouseThread::resetEgoMotionCompensation()
 {
     egoMotionCompensator.setSettings(buildEgoMotionSettingsFromConfig());
     egoMotionCompensator.reset();
+    std::lock_guard<std::mutex> lock(egoMotionVelocityMutex);
+    egoMotionVelocityLastTimestamp = {};
+    egoMotionCameraVelocityPxPerSec = 0.0;
 }
 
 void MouseThread::publishPidObservation(
@@ -717,7 +759,10 @@ std::pair<double, double> MouseThread::consumeNeuralTargetingResult(
     const LockedTargetInfo& lockInfo)
 {
     if (!config.neural_targeting_enabled)
+    {
+        neuralTargetingRefinementConfidence = 0.0;
         return { 0.0, 0.0 };
+    }
 
     aim::neural::NeuralTargetingWorker::Result targetingResult;
     if (!aim::neural::NeuralTargetingWorker::instance().tryGet(lockInfo.trackId, targetingResult))
@@ -736,6 +781,7 @@ std::pair<double, double> MouseThread::consumeNeuralTargetingResult(
     {
         neuralTargetingRefinementValid = false;
         neuralTargetingRefinement = { 0.0, 0.0 };
+        neuralTargetingRefinementConfidence = 0.0;
         return { 0.0, 0.0 };
     }
 
@@ -763,13 +809,20 @@ std::pair<double, double> MouseThread::consumeNeuralTargetingResult(
         neuralRefinement.second * influence
     };
     neuralTargetingLastResultTrackId = lockInfo.trackId;
+    neuralTargetingRefinementConfidence = std::clamp(
+        static_cast<double>(targetingResult.output.confidence),
+        0.0,
+        1.0);
     neuralTargetingRefinementValid =
         std::isfinite(neuralTargetingRefinement.first) &&
         std::isfinite(neuralTargetingRefinement.second) &&
         std::hypot(neuralTargetingRefinement.first, neuralTargetingRefinement.second) > 1e-6;
 
     if (!neuralTargetingRefinementValid)
+    {
         neuralTargetingRefinement = { 0.0, 0.0 };
+        neuralTargetingRefinementConfidence = 0.0;
+    }
 
     return neuralTargetingRefinement;
 }
@@ -784,6 +837,7 @@ void MouseThread::submitNeuralTargetingRequest(
         neuralTargetingPending = false;
         neuralTargetingPendingTrackId = -1;
         neuralTargetingRefinementValid = false;
+        neuralTargetingRefinementConfidence = 0.0;
         return;
     }
 
@@ -847,12 +901,13 @@ double MouseThread::computeAdaptivePredictionInfluence(
     int trackId,
     double distanceToCrosshair,
     double measuredSpeed,
+    double egoMotionCameraVelocityPxPerSec,
     double directionCosine,
     double confidence,
     int predictionAgeFrames,
     double baseInfluence)
 {
-    if (!config.temporal_prediction_adaptive_influence_enabled)
+    if (!config.adaptive_prediction_enabled)
         return baseInfluence;
 
     if (trackId != adaptivePredictionTrackId)
@@ -865,18 +920,19 @@ double MouseThread::computeAdaptivePredictionInfluence(
     if (predictionAgeFrames > 5)
     {
         adaptivePredictionInfluenceEma *= 0.35;
-        return std::clamp(adaptivePredictionInfluenceEma, 0.0, 0.85);
+        return std::clamp(adaptivePredictionInfluenceEma, 0.0, 1.0);
     }
 
-    const double distanceBand =
-        smoothStepRange(35.0, 90.0, distanceToCrosshair) *
-        (1.0 - smoothStepRange(180.0, 320.0, distanceToCrosshair));
-    const double adaptiveSpeedFactor = std::clamp(measuredSpeed / 1000.0, 0.0, 1.0);
-    const double direction_factor = (directionCosine < -0.35 && confidence < 0.82) ? 0.30 : 1.0;
+    const double distanceBand = smoothStepRange(30.0, 120.0, distanceToCrosshair);
+    const double relativeSpeed = std::max(0.0, measuredSpeed - egoMotionCameraVelocityPxPerSec);
+    const double adaptiveSpeedFactor = std::clamp(relativeSpeed / 1100.0, 0.0, 1.0);
+    const double egoStability = 1.0 - std::clamp(egoMotionCameraVelocityPxPerSec / 800.0, 0.0, 0.7);
+    const double confidenceWeight = std::clamp(confidence, 0.0, 1.0);
+    const double direction_factor = (directionCosine < -0.35 && confidenceWeight < 0.82) ? 0.30 : 1.0;
     const double age_factor = (predictionAgeFrames <= 3) ? 1.0 : 0.35;
     double rawInfluence =
-        baseInfluence * distanceBand * adaptiveSpeedFactor * confidence * direction_factor * age_factor;
-    rawInfluence = std::clamp(rawInfluence, 0.0, 0.85);
+        baseInfluence * distanceBand * adaptiveSpeedFactor * confidenceWeight * direction_factor * age_factor * egoStability;
+    rawInfluence = std::clamp(rawInfluence, 0.0, 1.0);
     if (!adaptivePredictionInfluenceActive && rawInfluence >= AdaptiveInfluenceActivateThreshold)
         adaptivePredictionInfluenceActive = true;
     else if (adaptivePredictionInfluenceActive && rawInfluence <= AdaptiveInfluenceDeactivateThreshold)
@@ -891,7 +947,7 @@ double MouseThread::computeAdaptivePredictionInfluence(
         1.0);
 
     adaptivePredictionInfluenceEma += (rawInfluence - adaptivePredictionInfluenceEma) * emaAlpha;
-    return std::clamp(adaptivePredictionInfluenceEma, 0.0, 0.85);
+    return std::clamp(adaptivePredictionInfluenceEma, 0.0, 1.0);
 }
 
 void MouseThread::resetAdaptivePredictionInfluence()
@@ -989,6 +1045,18 @@ void MouseThread::updateNeuralControlActuatorTelemetry(const aim::PidMouseComman
     neuralControlTelemetry.oscillationPenalty = command.smartBlendOscillationPenalty;
 }
 
+void MouseThread::updateLastAppliedMouseDelta(double dx, double dy)
+{
+    std::lock_guard<std::mutex> lock(lastAppliedMouseDeltaMutex);
+    lastAppliedMouseDelta = { dx, dy };
+}
+
+std::pair<double, double> MouseThread::getLastAppliedMouseDelta() const
+{
+    std::lock_guard<std::mutex> lock(lastAppliedMouseDeltaMutex);
+    return lastAppliedMouseDelta;
+}
+
 std::pair<double, double> MouseThread::computePredictionFeedForwardLead(
     const BoxTarget& target,
     const LockedTargetInfo& lockInfo)
@@ -1014,8 +1082,8 @@ std::pair<double, double> MouseThread::computePredictionFeedForwardLead(
         return { 0.0, 0.0 };
     }
 
-    const auto first = lockInfo.predictedFuture.front();
-    if (!std::isfinite(first.first) || !std::isfinite(first.second) ||
+    const auto anchor = lockInfo.predictedFuture.front();
+    if (!std::isfinite(anchor.first) || !std::isfinite(anchor.second) ||
         !std::isfinite(target.smoothX) || !std::isfinite(target.smoothY))
     {
         resetAdaptivePredictionInfluence();
@@ -1024,19 +1092,40 @@ std::pair<double, double> MouseThread::computePredictionFeedForwardLead(
 
     const bool highResolution = config.detection_resolution >= 640;
     const double maxFirstPointDistance = highResolution ? 65.0 : 50.0;
-    const double firstPointDistance = std::hypot(first.first - target.smoothX, first.second - target.smoothY);
+    const double firstPointDistance = std::hypot(anchor.first - target.smoothX, anchor.second - target.smoothY);
     if (!std::isfinite(firstPointDistance) || firstPointDistance > maxFirstPointDistance)
     {
         resetAdaptivePredictionInfluence();
         return { 0.0, 0.0 };
     }
 
-    double predictionVx = first.first - target.smoothX;
-    double predictionVy = first.second - target.smoothY;
+    const size_t selectedFutureIndex = std::min(
+        lockInfo.predictedFuture.size() - 1,
+        static_cast<size_t>(std::max(0, lockInfo.predictedFutureAgeFrames + 1)));
+    const auto selectedFuture = lockInfo.predictedFuture[selectedFutureIndex];
+    if (!std::isfinite(selectedFuture.first) || !std::isfinite(selectedFuture.second))
+    {
+        resetAdaptivePredictionInfluence();
+        return { 0.0, 0.0 };
+    }
+
+    double predictionVx = selectedFuture.first - target.smoothX;
+    double predictionVy = selectedFuture.second - target.smoothY;
     if (lockInfo.predictedFuture.size() > 1)
     {
-        predictionVx = lockInfo.predictedFuture[1].first - first.first;
-        predictionVy = lockInfo.predictedFuture[1].second - first.second;
+        const size_t velocityBaseIndex = selectedFutureIndex;
+        const size_t velocityNextIndex = std::min(lockInfo.predictedFuture.size() - 1, velocityBaseIndex + 1);
+        const size_t velocityPrevIndex = velocityBaseIndex > 0 ? velocityBaseIndex - 1 : velocityBaseIndex;
+        if (velocityNextIndex != velocityBaseIndex)
+        {
+            predictionVx = lockInfo.predictedFuture[velocityNextIndex].first - lockInfo.predictedFuture[velocityBaseIndex].first;
+            predictionVy = lockInfo.predictedFuture[velocityNextIndex].second - lockInfo.predictedFuture[velocityBaseIndex].second;
+        }
+        else if (velocityPrevIndex != velocityBaseIndex)
+        {
+            predictionVx = lockInfo.predictedFuture[velocityBaseIndex].first - lockInfo.predictedFuture[velocityPrevIndex].first;
+            predictionVy = lockInfo.predictedFuture[velocityBaseIndex].second - lockInfo.predictedFuture[velocityPrevIndex].second;
+        }
     }
 
     const double predictionFps = 60.0;
@@ -1076,29 +1165,35 @@ std::pair<double, double> MouseThread::computePredictionFeedForwardLead(
     const double distanceToCrosshair = std::hypot(target.smoothX - center_x, target.smoothY - center_y);
     const double near_damping = smoothStep01(distanceToCrosshair / 80.0);
     const double speed_weight = std::clamp(measuredSpeed / 1200.0, 0.0, 1.0);
-    const double baseInfluence = std::clamp(static_cast<double>(config.temporal_prediction_influence), 0.0, 1.0);
+    const double egoMotionCameraVelocityPxPerSec = currentEgoMotionCameraVelocityPxPerSec();
+    std::pair<double, double> neuralRefinement = consumeNeuralTargetingResult(target, lockInfo);
+    const double adaptiveConfidence =
+        config.neural_targeting_enabled
+            ? (neuralTargetingRefinementValid ? neuralTargetingRefinementConfidence : 0.0)
+            : confidence;
+    const double baseInfluence = std::clamp(static_cast<double>(config.base_prediction_influence), 0.0, 1.0);
     const double influence = computeAdaptivePredictionInfluence(
         lockInfo.trackId,
         distanceToCrosshair,
         measuredSpeed,
+        egoMotionCameraVelocityPxPerSec,
         directionCosine,
-        confidence,
+        adaptiveConfidence,
         lockInfo.predictedFutureAgeFrames,
         baseInfluence);
-    const double weight = config.temporal_prediction_adaptive_influence_enabled
+    const double weight = config.adaptive_prediction_enabled
         ? influence
         : influence * confidence * speed_weight * near_damping;
     if (config.temporal_prediction_feed_forward_enabled && weight > 1e-6)
     {
-        const double rawLeadX = first.first - target.smoothX;
-        const double rawLeadY = first.second - target.smoothY;
+        const double rawLeadX = selectedFuture.first - target.smoothX;
+        const double rawLeadY = selectedFuture.second - target.smoothY;
         phase2Lead = clampVectorLength(
             rawLeadX * weight,
             rawLeadY * weight,
             std::clamp(static_cast<double>(config.temporal_prediction_max_lead_px), 20.0, 80.0));
     }
 
-    std::pair<double, double> neuralRefinement = consumeNeuralTargetingResult(target, lockInfo);
     submitNeuralTargetingRequest(target, lockInfo);
 
     const double phase2Magnitude = std::hypot(phase2Lead.first, phase2Lead.second);

@@ -11,6 +11,7 @@
 #include "capture.h"
 #include "mouse.h"
 #include "0BS_box_2.h"
+#include "real_world_data_logger.h"
 #include "runtime/thread_loops.h"
 
 void createInputDevices();
@@ -33,12 +34,18 @@ void mouseThreadFunction(MouseThread& mouseThread)
     MultiTargetTracker targetTracker;
     std::optional<BoxTarget> activeTarget;
     std::pair<double, double> learnedPredictionLead{ 0.0, 0.0 };
+    aim::RealWorldDataLogger realWorldLogger;
     auto lastTrackerUpdate = std::chrono::steady_clock::time_point::min();
     unsigned long long seenDetectionResolutionGeneration =
         detection_resolution_generation.load(std::memory_order_relaxed);
 
     while (!shouldExit)
     {
+        realWorldLogger.setEnabled(
+            config.log_real_world_data,
+            config.real_world_data_log_dir,
+            config.temporal_prediction_history_length);
+
         bool hasNewDetection = false;
         bool hasAimObservation = false;
         std::chrono::steady_clock::time_point bufferCaptureTimestamp{};
@@ -172,6 +179,13 @@ void mouseThreadFunction(MouseThread& mouseThread)
                     );
                     mouseThread.storeFuturePositions(futurePositions);
                 }
+
+                realWorldLogger.append(
+                    lockInfo,
+                    *activeTarget,
+                    learnedPredictionLead,
+                    mouseThread.getLastAppliedMouseDelta(),
+                    config.detection_resolution);
             }
             else
             {

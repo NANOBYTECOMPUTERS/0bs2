@@ -73,8 +73,8 @@ bool Config::loadConfig(const std::string& filename)
 
         // Target
         disable_headshot = false;
-        body_y_offset = 0.15f;
-        head_y_offset = 0.05f;
+        body_y_offset = kBodyYOffsetDefault;
+        head_y_offset = kHeadYOffsetDefault;
         auto_aim = false;
 
         // Mouse
@@ -181,10 +181,12 @@ bool Config::loadConfig(const std::string& filename)
         temporal_prediction_model_path = "neural_models/temporal_predictor.onnx";
         temporal_prediction_history_length = 12;
         temporal_prediction_horizon = 16;
-        temporal_prediction_interval_frames = 2;
+        temporal_prediction_interval_frames = 1;
         temporal_prediction_feed_forward_enabled = false;
-        temporal_prediction_influence = 0.35f;
-        temporal_prediction_adaptive_influence_enabled = false;
+        adaptive_prediction_enabled = true;
+        base_prediction_influence = 0.30f;
+        temporal_prediction_influence = base_prediction_influence;
+        temporal_prediction_adaptive_influence_enabled = adaptive_prediction_enabled;
         temporal_prediction_adaptive_ema_alpha = 0.62f;
         temporal_prediction_max_lead_px = 45.0f;
 
@@ -199,6 +201,12 @@ bool Config::loadConfig(const std::string& filename)
         neural_control_telemetry_logging_enabled = false;
         neural_control_telemetry_log_path = "logs/neural_control_telemetry.csv";
         neural_control_telemetry_log_interval_ms = 250;
+        log_real_world_data = false;
+        real_world_data_log_dir = "training/datasets/real_world";
+
+        // Real-world fine-tuned variants (see convert_real_world_logs.py + train_* --fine-tune)
+        temporal_realworld_model_path = "neural_models/temporal_predictor_realworld.onnx";
+        neural_targeting_realworld_model_path = "neural_models/neural_targeting_head_realworld.onnx";
 
         // Arduino
         arduino_baudrate = 115200;
@@ -481,8 +489,14 @@ bool Config::loadConfig(const std::string& filename)
 
     // Target
     disable_headshot = get_bool("disable_headshot", false);
-    body_y_offset = (float)get_double("body_y_offset", 0.15);
-    head_y_offset = (float)get_double("head_y_offset", 0.05);
+    body_y_offset = std::clamp(
+        static_cast<float>(get_double("body_y_offset", kBodyYOffsetDefault)),
+        kBodyYOffsetMin,
+        kBodyYOffsetMax);
+    head_y_offset = std::clamp(
+        static_cast<float>(get_double("head_y_offset", kHeadYOffsetDefault)),
+        kHeadYOffsetMin,
+        kHeadYOffsetMax);
     auto_aim = get_bool("auto_aim", false);
 
     // Mouse
@@ -578,7 +592,7 @@ bool Config::loadConfig(const std::string& filename)
     // Neural tracker association
     neural_tracker_enabled = get_bool("neural_tracker_enabled", false);
     neural_tracker_runtime = get_string("neural_tracker_runtime", "CPU");
-    neural_tracker_model_path = get_string("neural_tracker_model_path", "training/models/neural_tracker.onnx");
+    neural_tracker_model_path = get_string("neural_tracker_model_path", "neural_models/neural_tracker.onnx");
     neural_tracker_blend = (float)get_double("neural_tracker_blend", 0.35);
     neural_tracker_log_enabled = get_bool("neural_tracker_log_enabled", false);
     neural_tracker_debug_enabled = get_bool("neural_tracker_debug_enabled", false);
@@ -589,10 +603,14 @@ bool Config::loadConfig(const std::string& filename)
     temporal_prediction_model_path = get_string("temporal_prediction_model_path", "models/temporal_predictor.onnx");
     temporal_prediction_history_length = get_long("temporal_prediction_history_length", 12);
     temporal_prediction_horizon = get_long("temporal_prediction_horizon", 16);
-    temporal_prediction_interval_frames = get_long("temporal_prediction_interval_frames", 2);
+    temporal_prediction_interval_frames = get_long("temporal_prediction_interval_frames", 1);
     temporal_prediction_feed_forward_enabled = get_bool("temporal_prediction_feed_forward_enabled", false);
-    temporal_prediction_influence = (float)get_double("temporal_prediction_influence", 0.35);
-    temporal_prediction_adaptive_influence_enabled = get_bool("temporal_prediction_adaptive_influence_enabled", false);
+    temporal_prediction_influence = (float)get_double("temporal_prediction_influence", 0.30);
+    base_prediction_influence = (float)get_double("base_prediction_influence", temporal_prediction_influence);
+    temporal_prediction_influence = base_prediction_influence;
+    temporal_prediction_adaptive_influence_enabled = get_bool("temporal_prediction_adaptive_influence_enabled", true);
+    adaptive_prediction_enabled = get_bool("adaptive_prediction_enabled", temporal_prediction_adaptive_influence_enabled);
+    temporal_prediction_adaptive_influence_enabled = adaptive_prediction_enabled;
     temporal_prediction_adaptive_ema_alpha = (float)get_double("temporal_prediction_adaptive_ema_alpha", 0.62);
     temporal_prediction_max_lead_px = (float)get_double("temporal_prediction_max_lead_px", 45.0);
 
@@ -607,6 +625,12 @@ bool Config::loadConfig(const std::string& filename)
     neural_control_telemetry_logging_enabled = get_bool("neural_control_telemetry_logging_enabled", false);
     neural_control_telemetry_log_path = get_string("neural_control_telemetry_log_path", "logs/neural_control_telemetry.csv");
     neural_control_telemetry_log_interval_ms = get_long("neural_control_telemetry_log_interval_ms", 250);
+    log_real_world_data = get_bool("log_real_world_data", false);
+    real_world_data_log_dir = get_string("real_world_data_log_dir", "training/datasets/real_world");
+
+    // Real-world fine-tuned model variants
+    temporal_realworld_model_path = get_string("temporal_realworld_model_path", "neural_models/temporal_predictor_realworld.onnx");
+    neural_targeting_realworld_model_path = get_string("neural_targeting_realworld_model_path", "neural_models/neural_targeting_head_realworld.onnx");
 
     // Arduino
     arduino_baudrate = get_long("arduino_baudrate", 115200);
@@ -914,8 +938,10 @@ bool Config::loadConfig(const std::string& filename)
     if (temporal_prediction_horizon > 64) temporal_prediction_horizon = 64;
     if (temporal_prediction_interval_frames < 1) temporal_prediction_interval_frames = 1;
     if (temporal_prediction_interval_frames > 16) temporal_prediction_interval_frames = 16;
-    if (temporal_prediction_influence < 0.0f) temporal_prediction_influence = 0.0f;
-    if (temporal_prediction_influence > 1.0f) temporal_prediction_influence = 1.0f;
+    if (base_prediction_influence < 0.0f) base_prediction_influence = 0.0f;
+    if (base_prediction_influence > 1.0f) base_prediction_influence = 1.0f;
+    temporal_prediction_influence = base_prediction_influence;
+    temporal_prediction_adaptive_influence_enabled = adaptive_prediction_enabled;
     if (temporal_prediction_adaptive_ema_alpha < 0.05f) temporal_prediction_adaptive_ema_alpha = 0.05f;
     if (temporal_prediction_adaptive_ema_alpha > 1.0f) temporal_prediction_adaptive_ema_alpha = 1.0f;
     if (temporal_prediction_max_lead_px < 20.0f) temporal_prediction_max_lead_px = 20.0f;
@@ -935,6 +961,7 @@ bool Config::loadConfig(const std::string& filename)
     if (neural_control_telemetry_log_path.empty()) neural_control_telemetry_log_path = "logs/neural_control_telemetry.csv";
     if (neural_control_telemetry_log_interval_ms < 50) neural_control_telemetry_log_interval_ms = 50;
     if (neural_control_telemetry_log_interval_ms > 5000) neural_control_telemetry_log_interval_ms = 5000;
+    if (real_world_data_log_dir.empty()) real_world_data_log_dir = "training/datasets/real_world";
 
     // Classes
     class_player = get_long("class_player", 0);
@@ -1102,10 +1129,20 @@ bool Config::loadConfigMerged(const std::string& filename)
     MERGE_FIELD("temporal_prediction_horizon", temporal_prediction_horizon);
     MERGE_FIELD("temporal_prediction_interval_frames", temporal_prediction_interval_frames);
     MERGE_FIELD("temporal_prediction_feed_forward_enabled", temporal_prediction_feed_forward_enabled);
+    MERGE_FIELD("adaptive_prediction_enabled", adaptive_prediction_enabled);
+    MERGE_FIELD("base_prediction_influence", base_prediction_influence);
     MERGE_FIELD("temporal_prediction_influence", temporal_prediction_influence);
     MERGE_FIELD("temporal_prediction_adaptive_influence_enabled", temporal_prediction_adaptive_influence_enabled);
     MERGE_FIELD("temporal_prediction_adaptive_ema_alpha", temporal_prediction_adaptive_ema_alpha);
     MERGE_FIELD("temporal_prediction_max_lead_px", temporal_prediction_max_lead_px);
+    if (hasKey("base_prediction_influence"))
+        temporal_prediction_influence = base_prediction_influence;
+    else if (hasKey("temporal_prediction_influence"))
+        base_prediction_influence = temporal_prediction_influence;
+    if (hasKey("adaptive_prediction_enabled"))
+        temporal_prediction_adaptive_influence_enabled = adaptive_prediction_enabled;
+    else if (hasKey("temporal_prediction_adaptive_influence_enabled"))
+        adaptive_prediction_enabled = temporal_prediction_adaptive_influence_enabled;
     MERGE_FIELD("neural_targeting_enabled", neural_targeting_enabled);
     MERGE_FIELD("neural_targeting_model_path", neural_targeting_model_path);
     MERGE_FIELD("neural_targeting_influence", neural_targeting_influence);
@@ -1116,6 +1153,10 @@ bool Config::loadConfigMerged(const std::string& filename)
     MERGE_FIELD("neural_control_telemetry_logging_enabled", neural_control_telemetry_logging_enabled);
     MERGE_FIELD("neural_control_telemetry_log_path", neural_control_telemetry_log_path);
     MERGE_FIELD("neural_control_telemetry_log_interval_ms", neural_control_telemetry_log_interval_ms);
+    MERGE_FIELD("log_real_world_data", log_real_world_data);
+    MERGE_FIELD("real_world_data_log_dir", real_world_data_log_dir);
+    MERGE_FIELD("temporal_realworld_model_path", temporal_realworld_model_path);
+    MERGE_FIELD("neural_targeting_realworld_model_path", neural_targeting_realworld_model_path);
 
     MERGE_FIELD("arduino_baudrate", arduino_baudrate);
     MERGE_FIELD("arduino_port", arduino_port);
@@ -1390,7 +1431,7 @@ bool Config::saveConfig(const std::string& filename)
         << "ego_motion_compensation_strength = " << ego_motion_compensation_strength << "\n"
         << "ego_motion_compensation_max_shift_px = " << ego_motion_compensation_max_shift_px << "\n"
         << "ego_motion_compensation_max_age_ms = " << ego_motion_compensation_max_age_ms << "\n"
-        << "# WIN32, GHUB, RAZER, ARDUINO, TEENSY41, TEENSY41_HID, KMBOX_NET, KMBOX_A, MAKCU\n"
+        << "# WIN32, GHUB, RAZER (direct in-process), DIRECT (stub/high-risk research slot), ARDUINO, TEENSY41, TEENSY41_HID, KMBOX_NET, KMBOX_A, MAKCU\n"
         << "input_method = " << input_method << "\n\n";
 
     file << "# Pure PID mouse control\n"
@@ -1459,6 +1500,8 @@ bool Config::saveConfig(const std::string& filename)
         << "temporal_prediction_interval_frames = " << temporal_prediction_interval_frames << "\n"
         << "temporal_prediction_feed_forward_enabled = " << (temporal_prediction_feed_forward_enabled ? "true" : "false") << "\n"
         << std::fixed << std::setprecision(3)
+        << "adaptive_prediction_enabled = " << (adaptive_prediction_enabled ? "true" : "false") << "\n"
+        << "base_prediction_influence = " << base_prediction_influence << "\n"
         << "temporal_prediction_influence = " << temporal_prediction_influence << "\n"
         << "temporal_prediction_adaptive_influence_enabled = " << (temporal_prediction_adaptive_influence_enabled ? "true" : "false") << "\n"
         << "temporal_prediction_adaptive_ema_alpha = " << temporal_prediction_adaptive_ema_alpha << "\n"
@@ -1475,7 +1518,9 @@ bool Config::saveConfig(const std::string& filename)
         << "neural_control_telemetry_overlay_enabled = " << (neural_control_telemetry_overlay_enabled ? "true" : "false") << "\n"
         << "neural_control_telemetry_logging_enabled = " << (neural_control_telemetry_logging_enabled ? "true" : "false") << "\n"
         << "neural_control_telemetry_log_path = " << neural_control_telemetry_log_path << "\n"
-        << "neural_control_telemetry_log_interval_ms = " << neural_control_telemetry_log_interval_ms << "\n\n";
+        << "neural_control_telemetry_log_interval_ms = " << neural_control_telemetry_log_interval_ms << "\n"
+        << "log_real_world_data = " << (log_real_world_data ? "true" : "false") << "\n"
+        << "real_world_data_log_dir = " << real_world_data_log_dir << "\n\n";
 
     // Arduino
     file << "# Arduino\n"

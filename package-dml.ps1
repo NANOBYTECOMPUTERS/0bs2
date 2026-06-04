@@ -109,8 +109,8 @@ if (Test-Path -LiteralPath $outputPath) {
 New-Item -ItemType Directory -Path $outputPath -Force | Out-Null
 
 Copy-RequiredFile -Name "0BS.exe" -From $sourcePath -To $outputPath
-Copy-RequiredFile -Name "rzctl.dll" -From $sourcePath -To $outputPath
-
+# rzctl.dll is no longer required: Razer logic has been inlined directly into the executable
+# (stealth improvement). It may still appear in some historical builds but is optional.
 Copy-OptionalMatches -Patterns @(
     "ghub_mouse.dll",
     "opencv_*.dll",

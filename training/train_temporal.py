@@ -10,12 +10,14 @@ import random
 import sys
 from pathlib import Path
 
+import numpy as np
+
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from training.data_gen.generate_track_data import TrackDataConfig, save_dataset
-from training.temporal_predictor.dataset import FEATURE_COLUMNS, load_temporal_npz, resolve_repo_path
+from training.temporal_predictor.dataset import FEATURE_COLUMNS, TemporalDataset, load_temporal_npz, resolve_repo_path
 from training.temporal_predictor.model import NormalizedTemporalPredictor, make_model
 
 
@@ -71,12 +73,88 @@ def weighted_position_loss(torch, prediction, target, horizon_weights):
     return torch.mean(squared * weights)
 
 
+def latency_focus_loss(torch, prediction, target, start_frame: int, end_frame: int):
+    horizon = int(prediction.shape[1])
+    if horizon <= 0:
+        return prediction.sum() * 0.0
+    start = max(0, min(horizon - 1, int(start_frame) - 1))
+    end = max(start + 1, min(horizon, int(end_frame)))
+    return torch.mean((prediction[:, start:end, :] - target[:, start:end, :]) ** 2)
+
+
+def latency_focus_ade(torch, prediction, target, start_frame: int, end_frame: int):
+    horizon = int(prediction.shape[1])
+    if horizon <= 0:
+        return prediction.sum() * 0.0
+    start = max(0, min(horizon - 1, int(start_frame) - 1))
+    end = max(start + 1, min(horizon, int(end_frame)))
+    return torch.mean(torch.linalg.norm(prediction[:, start:end, :] - target[:, start:end, :], dim=-1))
+
+
+def arg_supplied(argv_tokens: list[str], option: str) -> bool:
+    return any(token == option or token.startswith(f"{option}=") for token in argv_tokens)
+
+
+def _profiles(dataset: TemporalDataset, fallback: str) -> np.ndarray:
+    if dataset.profiles.shape[0] == dataset.history.shape[0]:
+        return dataset.profiles
+    return np.full((dataset.history.shape[0],), fallback, dtype="<U24")
+
+
+def mix_temporal_datasets(
+    synthetic: TemporalDataset,
+    real_world: TemporalDataset,
+    mix_ratio: float,
+    seed: int,
+) -> TemporalDataset:
+    if synthetic.history.shape[1:] != real_world.history.shape[1:]:
+        raise ValueError("real-world temporal history shape does not match the training dataset")
+    if synthetic.future.shape[1:] != real_world.future.shape[1:]:
+        raise ValueError("real-world temporal future shape does not match the training dataset")
+
+    ratio = float(np.clip(mix_ratio, 0.0, 1.0))
+    if ratio <= 0.0:
+        return synthetic
+    if ratio >= 1.0:
+        metadata = dict(real_world.metadata)
+        metadata.update({"source": "real_world", "mix_ratio_real": 1.0, "samples": int(real_world.history.shape[0])})
+        return TemporalDataset(
+            history=real_world.history,
+            future=real_world.future,
+            profiles=_profiles(real_world, "real_world"),
+            metadata=metadata,
+        )
+
+    desired_synthetic = int(round(real_world.history.shape[0] * (1.0 - ratio) / max(1e-6, ratio)))
+    desired_synthetic = max(1, min(desired_synthetic, synthetic.history.shape[0]))
+    rng = np.random.default_rng(int(seed))
+    idx = rng.choice(synthetic.history.shape[0], size=desired_synthetic, replace=False)
+    history = np.concatenate([real_world.history, synthetic.history[idx]], axis=0).astype(np.float32, copy=False)
+    future = np.concatenate([real_world.future, synthetic.future[idx]], axis=0).astype(np.float32, copy=False)
+    profiles = np.concatenate([_profiles(real_world, "real_world"), _profiles(synthetic, "synthetic")[idx]], axis=0)
+    metadata = dict(synthetic.metadata)
+    metadata.update(
+        {
+            "source": "mixed_real_world",
+            "real_world_samples": int(real_world.history.shape[0]),
+            "synthetic_samples": int(desired_synthetic),
+            "mix_ratio_real": ratio,
+            "samples": int(history.shape[0]),
+        }
+    )
+    return TemporalDataset(history=history, future=future, profiles=profiles, metadata=metadata)
+
+
 def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Train the learned temporal predictor.")
     parser.add_argument("--dataset", default="training/datasets/temporal_tracks.npz")
     parser.add_argument("--output", default="neural_models/temporal_predictor.pt")
     parser.add_argument("--onnx-output", default="neural_models/temporal_predictor.onnx")
     parser.add_argument("--metadata", default="neural_models/temporal_predictor.json")
+    parser.add_argument("--fine-tune", action="store_true", help="Continue training from an existing checkpoint.")
+    parser.add_argument("--checkpoint", default="neural_models/temporal_predictor.pt")
+    parser.add_argument("--real-world-data", default=None, help="Optional converted real-world temporal .npz dataset.")
+    parser.add_argument("--mix-ratio", type=float, default=0.40, help="Fraction of training samples to draw from real-world data.")
     parser.add_argument("--epochs", type=int, default=40)
     parser.add_argument("--batch-size", type=int, default=256)
     parser.add_argument("--hidden-size", type=int, default=160)
@@ -89,6 +167,9 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--velocity-weight", type=float, default=0.050)
     parser.add_argument("--near-horizon-frames", type=int, default=6)
     parser.add_argument("--near-horizon-weight", type=float, default=2.5)
+    parser.add_argument("--latency-focus-start-frame", type=int, default=3)
+    parser.add_argument("--latency-focus-end-frame", type=int, default=6)
+    parser.add_argument("--latency-focus-weight", type=float, default=0.75)
     parser.add_argument("--validation-fraction", type=float, default=0.15)
     parser.add_argument("--patience", type=int, default=8, help="Early stopping patience.")
     parser.add_argument("--seed", type=int, default=1337)
@@ -154,8 +235,33 @@ def export_onnx(torch, model, artifact: dict, output_path: Path, opset: int) -> 
 
 
 def main(argv: list[str] | None = None) -> int:
+    argv_tokens = list(sys.argv[1:] if argv is None else argv)
     args = build_arg_parser().parse_args(argv)
     torch = import_torch()
+
+    checkpoint_artifact = None
+    if args.fine_tune:
+        if not arg_supplied(argv_tokens, "--output"):
+            args.output = "neural_models/temporal_predictor_realworld.pt"
+        if not arg_supplied(argv_tokens, "--onnx-output"):
+            args.onnx_output = "neural_models/temporal_predictor_realworld.onnx"  # realworld.onnx
+        if not arg_supplied(argv_tokens, "--metadata"):
+            args.metadata = "neural_models/temporal_predictor_realworld.json"
+        if not arg_supplied(argv_tokens, "--learning-rate"):
+            args.learning_rate = min(float(args.learning_rate), 1e-4)
+
+        checkpoint_path = resolve_repo_path(args.checkpoint)
+        if not checkpoint_path.exists():
+            raise SystemExit(f"Fine-tune checkpoint not found: {checkpoint_path}")
+        checkpoint_artifact = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
+        if not arg_supplied(argv_tokens, "--history-length"):
+            args.history_length = int(checkpoint_artifact.get("history_length", args.history_length))
+        if not arg_supplied(argv_tokens, "--prediction-horizon"):
+            args.prediction_horizon = int(checkpoint_artifact.get("prediction_horizon", args.prediction_horizon))
+        if not arg_supplied(argv_tokens, "--hidden-size"):
+            args.hidden_size = int(checkpoint_artifact.get("hidden_size", args.hidden_size))
+        if not arg_supplied(argv_tokens, "--model-type"):
+            args.model_type = str(checkpoint_artifact.get("model_type", args.model_type))
 
     random.seed(args.seed)
     torch.manual_seed(args.seed)
@@ -187,6 +293,10 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Auto-generated missing temporal dataset at {generated}")
 
     dataset = load_temporal_npz(dataset_path)
+    if args.real_world_data:
+        real_world_dataset = load_temporal_npz(args.real_world_data)
+        dataset = mix_temporal_datasets(dataset, real_world_dataset, args.mix_ratio, args.seed)
+
     history_length = int(args.history_length)
     prediction_horizon = int(args.prediction_horizon)
     if dataset.history.shape[1] != history_length:
@@ -239,6 +349,8 @@ def main(argv: list[str] | None = None) -> int:
         hidden_size=args.hidden_size,
         model_type=args.model_type,
     ).to(device)
+    if checkpoint_artifact is not None:
+        model.load_state_dict(checkpoint_artifact["state_dict"])
 
     optimizer = torch.optim.AdamW(
         model.parameters(),
@@ -278,10 +390,18 @@ def main(argv: list[str] | None = None) -> int:
             main_loss = weighted_position_loss(torch, prediction, by, horizon_weights)
             smooth_loss = smoothness_loss(torch, prediction)
             velocity_loss = velocity_consistency_loss(torch, prediction, by)
+            latency_loss = latency_focus_loss(
+                torch,
+                prediction,
+                by,
+                args.latency_focus_start_frame,
+                args.latency_focus_end_frame,
+            )
             loss = (
                 main_loss
                 + max(0.0, args.smoothness_weight) * smooth_loss
                 + max(0.0, args.velocity_weight) * velocity_loss
+                + max(0.0, args.latency_focus_weight) * latency_loss
             )
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
@@ -302,10 +422,24 @@ def main(argv: list[str] | None = None) -> int:
             )
             val_ade = torch.mean(torch.linalg.norm(val_prediction - val_y, dim=-1))
             val_fde = torch.mean(torch.linalg.norm(val_prediction[:, -1, :] - val_y[:, -1, :], dim=-1))
+            val_latency_ade = latency_focus_ade(
+                torch,
+                val_prediction,
+                val_y,
+                args.latency_focus_start_frame,
+                args.latency_focus_end_frame,
+            )
             val_total = (
                 val_mse
                 + max(0.0, args.smoothness_weight) * smoothness_loss(torch, val_prediction)
                 + max(0.0, args.velocity_weight) * velocity_consistency_loss(torch, val_prediction, val_y)
+                + max(0.0, args.latency_focus_weight) * latency_focus_loss(
+                    torch,
+                    val_prediction,
+                    val_y,
+                    args.latency_focus_start_frame,
+                    args.latency_focus_end_frame,
+                )
             )
 
         train_loss = total_loss / max(1, seen)
@@ -315,12 +449,14 @@ def main(argv: list[str] | None = None) -> int:
             writer.add_scalar("loss/train", train_loss, epoch)
             writer.add_scalar("loss/val", val_scalar, epoch)
             writer.add_scalar("metrics/val_near_ade", float(val_near_ade.detach().cpu()), epoch)
+            writer.add_scalar("metrics/val_latency_ade", float(val_latency_ade.detach().cpu()), epoch)
             writer.add_scalar("metrics/val_ade", float(val_ade.detach().cpu()), epoch)
             writer.add_scalar("metrics/val_fde", float(val_fde.detach().cpu()), epoch)
 
         print(
             f"epoch={epoch:03d} train_loss={train_loss:.6f} "
             f"val_loss={val_scalar:.6f} val_near_ade={float(val_near_ade):.4f} "
+            f"val_latency_ade={float(val_latency_ade):.4f} "
             f"val_ade={float(val_ade):.4f} val_fde={float(val_fde):.4f}"
         )
 
@@ -351,7 +487,14 @@ def main(argv: list[str] | None = None) -> int:
         "model_type": args.model_type,
         "near_horizon_frames": max(1, min(prediction_horizon, int(args.near_horizon_frames))),
         "near_horizon_weight": max(1.0, float(args.near_horizon_weight)),
+        "latency_focus_start_frame": max(1, int(args.latency_focus_start_frame)),
+        "latency_focus_end_frame": max(1, int(args.latency_focus_end_frame)),
+        "latency_focus_weight": max(0.0, float(args.latency_focus_weight)),
         "dataset": str(resolve_repo_path(args.dataset)),
+        "real_world_data": str(resolve_repo_path(args.real_world_data)) if args.real_world_data else "",
+        "fine_tuned": bool(args.fine_tune),
+        "checkpoint": str(resolve_repo_path(args.checkpoint)) if args.fine_tune else "",
+        "mix_ratio_real": float(np.clip(args.mix_ratio, 0.0, 1.0)) if args.real_world_data else 0.0,
         "samples": int(sample_count),
         "fps": float(dataset.metadata.get("fps", 60.0)),
         "best_validation_loss": best_val,
@@ -378,7 +521,16 @@ def main(argv: list[str] | None = None) -> int:
         "model_type": args.model_type,
         "near_horizon_frames": max(1, min(prediction_horizon, int(args.near_horizon_frames))),
         "near_horizon_weight": max(1.0, float(args.near_horizon_weight)),
+        "latency_focus_start_frame": max(1, int(args.latency_focus_start_frame)),
+        "latency_focus_end_frame": max(1, int(args.latency_focus_end_frame)),
+        "latency_focus_weight": max(0.0, float(args.latency_focus_weight)),
         "best_validation_loss": best_val,
+        "dataset": str(resolve_repo_path(args.dataset)),
+        "real_world_data": str(resolve_repo_path(args.real_world_data)) if args.real_world_data else "",
+        "fine_tuned": bool(args.fine_tune),
+        "checkpoint": str(resolve_repo_path(args.checkpoint)) if args.fine_tune else "",
+        "mix_ratio_real": float(np.clip(args.mix_ratio, 0.0, 1.0)) if args.real_world_data else 0.0,
+        "samples": int(sample_count),
     }
     metadata_path = resolve_repo_path(args.metadata)
     metadata_path.parent.mkdir(parents=True, exist_ok=True)

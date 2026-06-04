@@ -108,6 +108,35 @@ class ConfigGuiControlContractTests(unittest.TestCase):
         self.assertIn('ImGui::Checkbox("Adaptive output scaling"', draw_mouse)
         self.assertIn('ImGui::SliderFloat("Derivative smoothing multiplier"', draw_mouse)
 
+    def test_target_offset_controls_share_tracker_clamp_ranges(self):
+        config_h = self.read("config/config.h")
+        config_cpp = self.read("config/config.cpp")
+        draw_target = self.read("overlay/draw_target.cpp")
+        keyboard = self.read("keyboard/keyboard_listener.cpp")
+        settings_reference = self.read("docs/settings-reference/generate_settings_reference.py")
+
+        for token in (
+            "kBodyYOffsetMin",
+            "kBodyYOffsetMax",
+            "kBodyYOffsetDefault",
+            "kHeadYOffsetMin",
+            "kHeadYOffsetMax",
+            "kHeadYOffsetDefault",
+        ):
+            self.assertIn(token, config_h)
+
+        self.assertIn("std::clamp", config_cpp)
+        self.assertIn("Config::kBodyYOffsetMin", draw_target)
+        self.assertIn("Config::kBodyYOffsetMax", draw_target)
+        self.assertIn("Config::kHeadYOffsetMin", draw_target)
+        self.assertIn("Config::kHeadYOffsetMax", draw_target)
+        self.assertIn("Config::kBodyYOffsetMin", keyboard)
+        self.assertIn("Config::kHeadYOffsetMin", keyboard)
+        self.assertIn("kBodyYOffsetMin = kHeadYOffsetMin", config_h)
+        self.assertIn("kBodyYOffsetDefault = 0.15f", config_h)
+        self.assertIn("0.05-0.90", settings_reference)
+        self.assertIn("0.05-0.55", settings_reference)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -24,6 +24,7 @@ PROFILE_NAMES = [
     "acceleration",
     "curve",
     "abrupt_change",
+    "fast_maneuver",
     "stop_and_go",
     "partial_occlusion",
     "camera_shake",
@@ -84,7 +85,10 @@ def _simulate_truth(
         ],
         dtype=np.float32,
     )
-    speed = rng.uniform(cfg.max_speed_px_s * 0.05, cfg.max_speed_px_s * 0.45)
+    if profile == "fast_maneuver":
+        speed = rng.uniform(cfg.max_speed_px_s * 0.28, cfg.max_speed_px_s * 0.82)
+    else:
+        speed = rng.uniform(cfg.max_speed_px_s * 0.05, cfg.max_speed_px_s * 0.45)
     velocity = _unit_vector(rng) * speed
     accel = _unit_vector(rng) * rng.uniform(35.0, 420.0)
     turn_rate = rng.uniform(-2.6, 2.6)
@@ -112,6 +116,10 @@ def _simulate_truth(
             )
         elif profile == "abrupt_change" and step == abrupt_step:
             velocity = _unit_vector(rng) * rng.uniform(cfg.max_speed_px_s * 0.20, cfg.max_speed_px_s * 0.65)
+        elif profile == "fast_maneuver":
+            if step == abrupt_step or (step > cfg.history_length // 2 and rng.random() < 0.10):
+                velocity = _unit_vector(rng) * rng.uniform(cfg.max_speed_px_s * 0.35, cfg.max_speed_px_s * 0.90)
+            velocity += _unit_vector(rng) * rng.uniform(120.0, 760.0) * dt
         elif profile == "stop_and_go":
             gate = 0.18 + 0.82 * abs(math.sin(phase * math.tau * 1.4 + 0.35))
             velocity += accel * dt * 0.25
