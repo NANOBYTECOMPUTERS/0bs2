@@ -55,8 +55,4 @@ public:
     }
 };
 
-#ifdef USE_CUDA
-cv::Mat getCurrentDetectionSuppressionMask();
-#endif
-
 #endif // CAPTURE_H

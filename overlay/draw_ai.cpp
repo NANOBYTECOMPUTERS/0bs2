@@ -155,8 +155,6 @@ void draw_ai()
         OverlayUI::EndSection();
     }
 
-    draw_depth();
-        
     if (prev_confidence_threshold != config.confidence_threshold ||
         prev_nms_threshold != config.nms_threshold ||
         prev_max_detections != config.max_detections)

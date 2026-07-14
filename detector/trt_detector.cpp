@@ -25,7 +25,6 @@
 #include "other_tools.h"
 #include "postProcess.h"
 #include "cuda_preprocess.h"
-#include "depth/depth_mask.h"
 #include "capture.h"
 
 extern std::atomic<bool> detectionPaused;
@@ -54,79 +53,6 @@ bool tryGetPositiveDimInt(int64_t value, int* out)
     return tryGetDimInt(value, out);
 }
 
-bool intersectsDepthMask(const cv::Rect& box, const cv::Mat& mask)
-{
-    if (box.width <= 0 || box.height <= 0 || mask.empty() || mask.type() != CV_8UC1)
-        return false;
-
-    const cv::Rect imageBounds(0, 0, mask.cols, mask.rows);
-    const cv::Rect clipped = box & imageBounds;
-    if (clipped.width <= 0 || clipped.height <= 0)
-        return false;
-
-    const int cx = clipped.x + clipped.width / 2;
-    const int cy = clipped.y + clipped.height / 2;
-    if (mask.at<uint8_t>(cy, cx) != 0)
-        return true;
-
-    const cv::Mat roi = mask(clipped);
-    return cv::countNonZero(roi) > 0;
-}
-
-void filterDetectionsByDepthMask(std::vector<Detection>& detections)
-{
-    static cv::Mat holdTtl;
-
-    if (detections.empty())
-        return;
-
-    if (!config.depth_inference_enabled || !config.depth_mask_enabled)
-    {
-        holdTtl.release();
-        return;
-    }
-
-    const int holdFrames = std::clamp(config.depth_mask_hold_frames, 0, 120);
-    cv::Mat currentMask = getCurrentDetectionSuppressionMask();
-    cv::Mat suppressionMask;
-
-    if (holdFrames <= 0)
-    {
-        holdTtl.release();
-        suppressionMask = currentMask;
-    }
-    else
-    {
-        if (!currentMask.empty() && currentMask.type() == CV_8UC1)
-        {
-            if (holdTtl.empty() || holdTtl.size() != currentMask.size())
-                holdTtl = cv::Mat::zeros(currentMask.size(), CV_16UC1);
-            cv::subtract(holdTtl, cv::Scalar(1), holdTtl);
-            holdTtl.setTo(cv::Scalar(static_cast<uint16_t>(holdFrames)), currentMask);
-        }
-        else if (!holdTtl.empty())
-        {
-            cv::subtract(holdTtl, cv::Scalar(1), holdTtl);
-        }
-
-        if (!holdTtl.empty() && cv::countNonZero(holdTtl) > 0)
-        {
-            cv::compare(holdTtl, cv::Scalar(0), suppressionMask, cv::CMP_GT);
-        }
-        else
-        {
-            suppressionMask.release();
-        }
-    }
-
-    if (suppressionMask.empty() || suppressionMask.type() != CV_8UC1)
-        return;
-
-    detections.erase(
-        std::remove_if(detections.begin(), detections.end(),
-            [&suppressionMask](const Detection& det) { return intersectsDepthMask(det.box, suppressionMask); }),
-        detections.end());
-}
 } // namespace
 
 TrtDetector::TrtDetector()
@@ -473,21 +399,10 @@ void TrtDetector::initialize(const std::string& modelFile)
 
     // Pre-allocate GPU buffers
     gpuResizedBuffer.create(h, w, CV_8UC3);
-    gpuFloatBuffer.create(h, w, CV_32FC3);
-    gpuChannelBuffers.resize(c);
-    for (int i = 0; i < c; ++i)
-        gpuChannelBuffers[i].create(h, w, CV_32F);
 
     cvStream = cv::cuda::StreamAccessor::wrapStream(stream);
 
     img_scale = static_cast<float>(config.detection_resolution) / w;
-
-    resizedBuffer.create(h, w, CV_8UC3);
-    floatBuffer.create(h, w, CV_32FC3);
-    channelBuffers.clear();
-    channelBuffers.resize(c);
-    for (int i = 0; i < c; ++i)
-        channelBuffers[i].create(h, w, CV_32F);
 
     for (const auto& n : inputNames)
         context->setTensorAddress(n.c_str(), inputBindings[n]);
@@ -963,9 +878,7 @@ void TrtDetector::preProcess(const cv::cuda::GpuMat& frame)
 
     cv::cuda::resize(bgrFrame, gpuResizedBuffer, cv::Size(w, h), 0, 0, cv::INTER_LINEAR, cvStream);
 
-    gpuResizedBuffer.convertTo(gpuFloatBuffer, CV_32FC3, 1.0 / 255.0, 0.0, cvStream);
-
-    launch_hwc_to_chw_norm(gpuFloatBuffer, reinterpret_cast<float*>(inputBuffer), w, h, stream);
+    launch_hwc_to_chw_norm(gpuResizedBuffer, reinterpret_cast<float*>(inputBuffer), w, h, stream);
 
     if (config.verbose)
     {
@@ -1008,7 +921,6 @@ void TrtDetector::postProcess(
         config.nms_threshold,
         nmsTime
     );
-    filterDetectionsByDepthMask(detections);
 
     std::vector<cv::Rect> boxes;
     std::vector<int> classes;

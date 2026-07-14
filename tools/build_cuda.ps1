@@ -3,8 +3,10 @@ param(
     [string]$RepoRoot = "",
     [string]$Configuration = "CUDA",
     [string]$Platform = "x64",
-    [string]$CudaVersion = "13.2",
+    [string]$CudaVersion = "13.3",
+    [string]$CudaToolkitDir = "",
     [string]$TensorRTDir = "",
+    [string]$OpenCVDir = "",
     [switch]$NonInteractive,
     [switch]$DryRun,
     [Parameter(ValueFromRemainingArguments = $true)]
@@ -35,6 +37,12 @@ $args = @(
 )
 if (-not [string]::IsNullOrWhiteSpace($TensorRTDir)) {
     $args += @("-TensorRTDir", $TensorRTDir)
+}
+if (-not [string]::IsNullOrWhiteSpace($CudaToolkitDir)) {
+    $args += @("-CudaToolkitDir", $CudaToolkitDir)
+}
+if (-not [string]::IsNullOrWhiteSpace($OpenCVDir)) {
+    $args += @("-OpenCVDir", $OpenCVDir)
 }
 if ($ExtraArgs) {
     $args += $ExtraArgs

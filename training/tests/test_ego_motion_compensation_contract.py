@@ -163,8 +163,8 @@ class EgoMotionCompensationContractTest(unittest.TestCase):
             "recordEgoMotionDelta",
             "consumeEgoMotionCompensation",
             "resetEgoMotionCompensation",
-            "command.pixelDx",
-            "command.pixelDy",
+            "recordEgoMotionDelta(pixelDx, pixelDy, now)",
+            "updateLastAppliedMouseDelta(pixelDx, pixelDy)",
             "egoMotionCompensator.recordDelta",
         ):
             self.assertIn(token, mouse_h + mouse_cpp)

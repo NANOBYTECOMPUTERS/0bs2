@@ -4,6 +4,8 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cmath>
+#include <limits>
 #include <optional>
 #include <utility>
 #include <vector>
@@ -11,7 +13,6 @@
 #include "capture.h"
 #include "mouse.h"
 #include "0BS_box_2.h"
-#include "real_world_data_logger.h"
 #include "runtime/thread_loops.h"
 
 void createInputDevices();
@@ -25,6 +26,98 @@ void handleEasyNoRecoil(MouseThread& mouseThread)
     }
 }
 
+namespace
+{
+std::optional<BoxTarget> chooseDirectDetectionTarget(
+    const std::vector<cv::Rect>& boxes,
+    const std::vector<int>& classes,
+    const std::vector<float>& confidences,
+    int frameWidth,
+    int frameHeight)
+{
+    if (boxes.empty() || boxes.size() != classes.size())
+        return std::nullopt;
+
+    const double centerX = std::max(1, frameWidth) * 0.5;
+    const double centerY = std::max(1, frameHeight) * 0.5;
+    const double confidenceBiasScale = std::max(1, std::max(frameWidth, frameHeight)) * 0.04;
+    int bestIndex = -1;
+    double bestScore = std::numeric_limits<double>::infinity();
+    double bestPivotX = 0.0;
+    double bestPivotY = 0.0;
+    double bestConfidence = 1.0;
+
+    for (size_t i = 0; i < boxes.size(); ++i)
+    {
+        const int cls = classes[i];
+        if (config.disable_headshot)
+        {
+            if (cls != config.class_player)
+                continue;
+        }
+        else if (cls != config.class_player && cls != config.class_head)
+        {
+            continue;
+        }
+
+        const cv::Rect& box = boxes[i];
+        if (box.width <= 0 || box.height <= 0)
+            continue;
+
+        const double confidence = (i < confidences.size())
+            ? std::clamp(static_cast<double>(confidences[i]), 0.0, 1.0)
+            : 1.0;
+
+        double yBias = 0.5;
+        if (cls == config.class_head)
+        {
+            yBias = std::clamp(
+                static_cast<double>(config.head_y_offset),
+                static_cast<double>(Config::kHeadYOffsetMin),
+                static_cast<double>(Config::kHeadYOffsetMax));
+        }
+        else if (cls == config.class_player)
+        {
+            yBias = std::clamp(
+                static_cast<double>(config.body_y_offset),
+                static_cast<double>(Config::kBodyYOffsetMin),
+                static_cast<double>(Config::kBodyYOffsetMax));
+        }
+
+        const double pivotX = static_cast<double>(box.x) + static_cast<double>(box.width) * 0.5;
+        const double pivotY = static_cast<double>(box.y) + static_cast<double>(box.height) * yBias;
+        const double distance = std::hypot(pivotX - centerX, pivotY - centerY);
+        const double score = distance - confidence * confidenceBiasScale;
+        if (score < bestScore)
+        {
+            bestScore = score;
+            bestIndex = static_cast<int>(i);
+            bestPivotX = pivotX;
+            bestPivotY = pivotY;
+            bestConfidence = confidence;
+        }
+    }
+
+    if (bestIndex < 0)
+        return std::nullopt;
+
+    const cv::Rect& box = boxes[static_cast<size_t>(bestIndex)];
+    BoxTarget target(
+        box.x,
+        box.y,
+        box.width,
+        box.height,
+        classes[static_cast<size_t>(bestIndex)],
+        bestPivotX,
+        bestPivotY,
+        bestConfidence,
+        -1);
+    target.smoothX = bestPivotX;
+    target.smoothY = bestPivotY;
+    return target;
+}
+}
+
 void mouseThreadFunction(MouseThread& mouseThread)
 {
     int lastVersion = -1;
@@ -33,23 +126,17 @@ void mouseThreadFunction(MouseThread& mouseThread)
     std::vector<float> confidences;
     MultiTargetTracker targetTracker;
     std::optional<BoxTarget> activeTarget;
-    std::pair<double, double> learnedPredictionLead{ 0.0, 0.0 };
-    aim::RealWorldDataLogger realWorldLogger;
     auto lastTrackerUpdate = std::chrono::steady_clock::time_point::min();
     unsigned long long seenDetectionResolutionGeneration =
         detection_resolution_generation.load(std::memory_order_relaxed);
 
     while (!shouldExit)
     {
-        realWorldLogger.setEnabled(
-            config.log_real_world_data,
-            config.real_world_data_log_dir,
-            config.temporal_prediction_history_length);
-
         bool hasNewDetection = false;
         bool hasAimObservation = false;
         std::chrono::steady_clock::time_point bufferCaptureTimestamp{};
         std::chrono::steady_clock::time_point bufferPublishTimestamp{};
+        CaptureFrameGeometry bufferGeometry;
 
         {
             std::unique_lock<std::mutex> lock(detectionBuffer.mutex);
@@ -67,6 +154,7 @@ void mouseThreadFunction(MouseThread& mouseThread)
                 confidences = detectionBuffer.confidences;
                 bufferCaptureTimestamp = detectionBuffer.captureTimestamp;
                 bufferPublishTimestamp = detectionBuffer.publishTimestamp;
+                bufferGeometry = detectionBuffer.geometry;
                 lastVersion = detectionBuffer.version;
                 hasNewDetection = true;
             }
@@ -139,12 +227,21 @@ void mouseThreadFunction(MouseThread& mouseThread)
                 mouseThread.resetEgoMotionCompensation();
             }
 
+            const int trackerFrameWidth = bufferGeometry.hasValidModel()
+                ? bufferGeometry.modelWidth
+                : config.detection_resolution;
+            const int trackerFrameHeight = bufferGeometry.hasValidModel()
+                ? bufferGeometry.modelHeight
+                : config.detection_resolution;
+
+            mouseThread.updateDetectionGeometry(trackerFrameWidth, trackerFrameHeight);
+
             targetTracker.update(
                 boxes,
                 classes,
                 confidences,
-                config.detection_resolution,
-                config.detection_resolution,
+                trackerFrameWidth,
+                trackerFrameHeight,
                 config.disable_headshot,
                 aiming.load(),
                 cv::Point2d(egoMotionShift.first, egoMotionShift.second)
@@ -160,18 +257,31 @@ void mouseThreadFunction(MouseThread& mouseThread)
             if (targetTracker.getLockedTarget(lockInfo) && (lockInfo.observedThisFrame || lockInfo.missedFrames <= 2))
             {
                 activeTarget = lockInfo.target;
-                learnedPredictionLead = { 0.0, 0.0 };
                 hasAimObservation = true;
                 mouseThread.setLastTargetTime(std::chrono::steady_clock::now());
                 mouseThread.setTargetDetected(true);
 
-                if (config.temporal_prediction_enabled && !lockInfo.predictedFuture.empty())
+                auto futurePositions = mouseThread.predictFuturePositions(
+                    activeTarget->smoothX,
+                    activeTarget->smoothY,
+                    config.prediction_futurePositions
+                );
+                mouseThread.storeFuturePositions(futurePositions);
+            }
+            else
+            {
+                auto directTarget = chooseDirectDetectionTarget(
+                    boxes,
+                    classes,
+                    confidences,
+                    trackerFrameWidth,
+                    trackerFrameHeight);
+                if (directTarget)
                 {
-                    mouseThread.storeFuturePositions(lockInfo.predictedFuture);
-                    learnedPredictionLead = mouseThread.computePredictionFeedForwardLead(*activeTarget, lockInfo);
-                }
-                else
-                {
+                    activeTarget = *directTarget;
+                    hasAimObservation = true;
+                    mouseThread.setLastTargetTime(std::chrono::steady_clock::now());
+                    mouseThread.setTargetDetected(true);
                     auto futurePositions = mouseThread.predictFuturePositions(
                         activeTarget->smoothX,
                         activeTarget->smoothY,
@@ -179,21 +289,13 @@ void mouseThreadFunction(MouseThread& mouseThread)
                     );
                     mouseThread.storeFuturePositions(futurePositions);
                 }
-
-                realWorldLogger.append(
-                    lockInfo,
-                    *activeTarget,
-                    learnedPredictionLead,
-                    mouseThread.getLastAppliedMouseDelta(),
-                    config.detection_resolution);
-            }
-            else
-            {
-                activeTarget.reset();
-                learnedPredictionLead = { 0.0, 0.0 };
-                mouseThread.clearFuturePositions();
-                mouseThread.setTargetDetected(false);
-                mouseThread.clearQueuedMoves();
+                else
+                {
+                    activeTarget.reset();
+                    mouseThread.clearFuturePositions();
+                    mouseThread.setTargetDetected(false);
+                    mouseThread.clearQueuedMoves();
+                }
             }
         }
 
@@ -204,7 +306,6 @@ void mouseThreadFunction(MouseThread& mouseThread)
             if (std::chrono::steady_clock::now() - lastTrackerUpdate > std::chrono::milliseconds(staleMs))
             {
                 activeTarget.reset();
-                learnedPredictionLead = { 0.0, 0.0 };
                 mouseThread.clearFuturePositions();
                 mouseThread.setTargetDetected(false);
                 mouseThread.clearQueuedMoves();
@@ -220,10 +321,7 @@ void mouseThreadFunction(MouseThread& mouseThread)
                     activeTarget->smoothY,
                     activeTarget->w,
                     activeTarget->h,
-                    activeTarget->confidence,
-                    0.0, 0.0,
-                    learnedPredictionLead.first,
-                    learnedPredictionLead.second);
+                    activeTarget->confidence);
 
                 if (config.auto_shoot)
                 {

@@ -97,7 +97,6 @@ private:
     cv::cuda::GpuMat gpuBgrBuffer;
     cv::cuda::GpuMat gpuResizedBuffer;
     cv::cuda::GpuMat gpuLetterboxBuffer;
-    cv::cuda::GpuMat gpuFloatBuffer;
     LetterboxTransform lastLetterboxTransform;
 
     bool ensureStream(std::string& error);

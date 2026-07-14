@@ -5,8 +5,10 @@ param(
     [ValidateSet("DML", "CUDA", "Debug", "Release", "")]
     [string]$Configuration = "",
     [string]$Platform = "x64",
-    [string]$CudaVersion = "13.2",
+    [string]$CudaVersion = "13.3",
+    [string]$CudaToolkitDir = "",
     [string]$TensorRTDir = "",
+    [string]$OpenCVDir = "",
     [switch]$Help,
     [switch]$NonInteractive,
     [switch]$DryRun,
@@ -49,7 +51,7 @@ if ($Help -or ($BuildArgs -contains "--help") -or ($BuildArgs -contains "/?")) {
     Write-Host "Usage:"
     Write-Host "  .\BUILDER.bat"
     Write-Host "  powershell -ExecutionPolicy Bypass -File .\BUILDER.ps1 -Backend DML"
-    Write-Host "  powershell -ExecutionPolicy Bypass -File .\BUILDER.ps1 -Backend CUDA -TensorRTDir C:\path\TensorRT"
+    Write-Host "  powershell -ExecutionPolicy Bypass -File .\BUILDER.ps1 -Backend CUDA -TensorRTDir C:\path\TensorRT -OpenCVDir C:\path\opencv\install"
     Write-Host "  powershell -ExecutionPolicy Bypass -File .\BUILDER.ps1 -Backend ALL -NonInteractive"
     Write-Host ""
     Write-Host "Targets reuse existing 0BS Visual Studio/MSBuild scripts. OpenCV is not rebuilt by this launcher."
@@ -85,12 +87,18 @@ function Invoke-BackendBuild {
     if ($Target -in @("DML", "CUDA") -and -not [string]::IsNullOrWhiteSpace($Platform)) {
         $forwardedArgs += @("-Platform", $Platform)
     }
-    if ($Target -eq "CUDA") {
+    if ($Target -in @("CUDA", "WORKER")) {
         if (-not [string]::IsNullOrWhiteSpace($CudaVersion)) {
             $forwardedArgs += @("-CudaVersion", $CudaVersion)
         }
+        if (-not [string]::IsNullOrWhiteSpace($CudaToolkitDir)) {
+            $forwardedArgs += @("-CudaToolkitDir", $CudaToolkitDir)
+        }
         if (-not [string]::IsNullOrWhiteSpace($TensorRTDir)) {
             $forwardedArgs += @("-TensorRTDir", $TensorRTDir)
+        }
+        if (-not [string]::IsNullOrWhiteSpace($OpenCVDir)) {
+            $forwardedArgs += @("-OpenCVDir", $OpenCVDir)
         }
     }
 

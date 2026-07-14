@@ -328,7 +328,6 @@ static const OverlayTabItem kOverlayTabs[] = {
     { "Capture",       "Core",    "Frame source and input feed settings.",              draw_capture_settings },
     { "Target",        "Core",    "Target selection and aim point offsets.",             draw_target },
     { "Mouse",         "Core",    "Mouse behavior, input backend and motion profile.",   draw_mouse },
-    { "Neural",        "Core",    "Optional learned association and tracking helpers.",   draw_neural },
     { "AI",            "Core",    "Model and detector thresholds.",                      draw_ai },
     { "Buttons",       "Control", "Hotkeys for features and runtime actions.",           draw_buttons },
     { "Overlay",       "Control", "Editor appearance and privacy options.",              draw_overlay },

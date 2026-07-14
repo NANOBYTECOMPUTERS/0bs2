@@ -11,6 +11,7 @@
 #include <string>
 #include <vector>
 
+#include "trt_compat.h"
 #include "trt_monitor.h"
 
 class TrtLogger : public nvinfer1::ILogger
@@ -69,8 +70,7 @@ inline nvinfer1::ICudaEngine* buildEngineFromOnnx(const std::string& onnxFile, n
         return nullptr;
     }
 
-    const auto explicitBatch =
-        1U << static_cast<uint32_t>(nvinfer1::NetworkDefinitionCreationFlag::kEXPLICIT_BATCH);
+    const auto explicitBatch = trt_compat::explicitBatchNetworkFlags();
     std::unique_ptr<nvinfer1::INetworkDefinition> network(builder->createNetworkV2(explicitBatch));
     std::unique_ptr<nvinfer1::IBuilderConfig> config(builder->createBuilderConfig());
     if (!network || !config)
@@ -109,8 +109,7 @@ inline nvinfer1::ICudaEngine* buildEngineFromOnnx(const std::string& onnxFile, n
         return nullptr;
     }
 
-    if (builder->platformHasFastFp16())
-        config->setFlag(nvinfer1::BuilderFlag::kFP16);
+    trt_compat::enableFp16IfAvailable(builder.get(), config.get());
 
     config->setMemoryPoolLimit(nvinfer1::MemoryPoolType::kWORKSPACE, size_t{ 1 } << 30);
 

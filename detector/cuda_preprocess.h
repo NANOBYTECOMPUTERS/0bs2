@@ -4,7 +4,7 @@
 #include <opencv2/core/cuda.hpp>
 
 void launch_hwc_to_chw_norm(
-    const cv::cuda::GpuMat& hwcFloat3,
+    const cv::cuda::GpuMat& hwcBgr8,
     float* dstChw,
     int width,
     int height,

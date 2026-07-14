@@ -29,6 +29,32 @@ class DetectionTrackingContractTest(unittest.TestCase):
         self.assertIn("targetTracker.update(", loop)
         self.assertIn("activeTarget->confidence", loop)
 
+    def test_mouse_loop_has_direct_detection_fallback_without_overlay_dependency(self):
+        loop = self.read("runtime/mouse_thread_loop.cpp")
+        mouse_h = self.read("mouse/mouse.h")
+        mouse_cpp = self.read("mouse/mouse.cpp")
+
+        for token in (
+            "chooseDirectDetectionTarget(",
+            "boxes",
+            "classes",
+            "confidences",
+            "trackerFrameWidth",
+            "trackerFrameHeight",
+            "BoxTarget target(",
+            "target.smoothX = bestPivotX",
+            "target.smoothY = bestPivotY",
+            "mouseThread.moveMousePivot(",
+        ):
+            self.assertIn(token, loop)
+
+        self.assertIn("void updateDetectionGeometry(int width, int height)", mouse_h)
+        self.assertIn("MouseThread::updateDetectionGeometry", mouse_cpp)
+        self.assertIn("center_x = screen_width * 0.5", mouse_cpp)
+        self.assertIn("center_y = screen_height * 0.5", mouse_cpp)
+        self.assertNotIn('#include "Game_overlay.h"', loop)
+        self.assertNotIn("modelToScreenPoint", loop)
+
     def test_tracker_uses_motcpp_style_association_signals(self):
         target_h = self.read("mouse/BoxTarget.h")
         target_cpp = self.read("mouse/BoxTarget.cpp")
@@ -48,6 +74,58 @@ class DetectionTrackingContractTest(unittest.TestCase):
         self.assertIn("AssociationBreakdown", target_cpp)
         self.assertIn("headingPenalty", target_cpp)
         self.assertIn("lockedBias", target_cpp)
+
+    def test_tracker_v2_uses_global_assignment_and_lifecycle_gates(self):
+        config_h = self.read("config/config.h")
+        config_cpp = self.read("config/config.cpp")
+        target_h = self.read("mouse/BoxTarget.h")
+        target_cpp = self.read("mouse/BoxTarget.cpp")
+
+        for token in (
+            "bool tracker_v2_enabled",
+            "float tracker_v2_high_confidence",
+            "float tracker_v2_new_track_confidence",
+            "int tracker_v2_detector_max_candidates",
+            "float tracker_v2_box_smoothing_alpha",
+            "float tracker_v2_box_prediction_alpha",
+        ):
+            self.assertIn(token, config_h)
+
+        for token in (
+            'tracker_v2_enabled = get_bool("tracker_v2_enabled", true)',
+            'MERGE_FIELD("tracker_v2_enabled", tracker_v2_enabled)',
+            '"tracker_v2_high_confidence = " << tracker_v2_high_confidence',
+            '"tracker_v2_detector_max_candidates = " << tracker_v2_detector_max_candidates',
+        ):
+            self.assertIn(token, config_cpp)
+
+        for token in (
+            "enum class TrackLifecycle",
+            "struct BoxKalmanState",
+            "BoxAxisKalman",
+            "boxKalman",
+            "stableBox",
+            "stableBoxInitialized",
+        ):
+            self.assertIn(token, target_h)
+
+        for token in (
+            "solveHungarianSquare",
+            "assignHungarianPass",
+            "highConfidenceDetections",
+            "lowConfidenceDetections",
+            "kUnassignedAssociationCost",
+            "predictBoxKalman",
+            "correctBoxKalman",
+            "TrackLifecycle::Tentative",
+            "TrackLifecycle::Confirmed",
+            "TrackLifecycle::Lost",
+            "updateStableBox",
+            "outputBoxForTrack",
+            "suppressedByExistingTrackBox",
+            "duplicateIouThreshold",
+        ):
+            self.assertIn(token, target_cpp)
 
     def test_inner_aim_propagates_missed_frames_without_kalman(self):
         target_cpp = self.read("mouse/BoxTarget.cpp")

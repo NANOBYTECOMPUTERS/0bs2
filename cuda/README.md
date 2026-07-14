@@ -22,26 +22,35 @@ writes output to `..\x64\CUDA\`.
 TensorRT is expected to be provided separately. Set `TensorRTDir` to the
 TensorRT install folder if it is not available under `..\modules\tensorrt` or
 an auto-detected `..\modules\TensorRT-*` folder with `include\NvInfer.h` and
-`lib\nvinfer_10.lib`.
-The CUDA project defaults to CUDA Toolkit 13.2 and imports the Visual Studio
+matching `lib\nvinfer_*.lib` / `lib\nvonnxparser_*.lib` import libraries.
+The repository default is `..\modules\TensorRT-11.1.0.106`.
+
+OpenCV is resolved from `..\modules\opencv-5.0.0\build\cuda\install` by
+default and must be a CUDA-enabled OpenCV install (`include\opencv2\cvconfig.h`
+with `HAVE_CUDA`). Override it with `OpenCVDir` or `-OpenCVDir` if needed.
+The CUDA targets link `opencv_world500.lib` by default and copy the OpenCV
+runtime DLLs from the selected install.
+The CUDA project defaults to CUDA Toolkit 13.3 and imports the Visual Studio
 CUDA build customization files directly from the CUDA-enabled project only.
+Pass `-CudaVersion` and/or `-CudaToolkitDir` when testing another installed
+toolkit.
 Post-build copies use the existing prebuilt OpenCV DLL and TensorRT DLLs; the
 CUDA build does not rebuild OpenCV.
 
 Export an ONNX model to a TensorRT engine with:
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\export-engine.ps1 -Onnx ..\training\models\neural_tracker.onnx
+powershell -NoProfile -ExecutionPolicy Bypass -File .\export-engine.ps1 -Onnx ..\models\yolo26.onnx
 ```
 
-The same neural tracker path is `training/models/neural_tracker.onnx` when
-referenced from the repository root.
+The same detector path is `models\yolo26.onnx` when referenced from the
+repository root.
 
 By default the script writes a sibling `.engine` file next to the ONNX model.
 Preview the generated `trtexec.exe` command without writing an engine:
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\export-engine.ps1 -Onnx ..\training\models\neural_tracker.onnx -DryRun
+powershell -NoProfile -ExecutionPolicy Bypass -File .\export-engine.ps1 -Onnx ..\models\yolo26.onnx -DryRun
 ```
 
 For dynamic input models, pass explicit TensorRT shapes, for example:

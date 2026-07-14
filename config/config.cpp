@@ -121,92 +121,22 @@ bool Config::loadConfig(const std::string& filename)
         wind_M = 10.0f;
         wind_D = 8.0f;
 
-        // Pure PID mouse control
-        pid_actuator_hz = 1000;
-        pid_kp = 0.0085f;
-        pid_ki = 0.0003f;
-        pid_kd = 0.0001f;
-        pid_deadzone_px = 0.0f;
-        pid_max_pixel_step = 0.80f;
-        pid_output_scale = 0.10f;
-        pid_min_output_scale = 0.02f;
-        pid_max_output_scale = 0.35f;
-        pid_size_reference_px = 48.0f;
-        pid_size_min_scale = 0.20f;
-        pid_size_max_scale = 1.00f;
-        pid_precision_radius_scale = 0.012f;
-        pid_slowdown_radius_scale = 0.30f;
-        pid_overshoot_brake = 0.35f;
-        pid_divergence_boost = 0.35f;
-        pid_scale_response = 8.0f;
-        pid_max_integral = 120.0f;
-        pid_max_derivative_term = 0.02f;
-        pid_derivative_filter_tau_ms = 18.0f;
-        pid_target_loss_timeout_ms = 90.0f;
-        pid_feed_forward_enabled = true;
-        pid_feed_forward_gain = 0.35f;
-        pid_feed_forward_lookahead_ms = 24.0f;
-        pid_feed_forward_frame_lookahead = 1;
-        pid_feed_forward_max_step = 0.35f;
-        pid_feed_forward_min_speed = 20.0f;
-        pid_feed_forward_confidence_floor = 0.55f;
-        pid_conditional_integration_enabled = true;
-        pid_conditional_integration_error_px = 12.0f;
-        pid_adaptive_output_scaling_enabled = true;
-        pid_adaptive_output_error_scale = 96.0f;
-        pid_derivative_smoothing_multiplier = 1.5f;
-        pid_perspective_fov_mapping_enabled = false;
-        pid_governor_enabled = false;
-        pid_governor_model_path = "neural_models/pid_governor.onnx";
-        pid_governor_blend = 1.0f;
-        pid_governor_max_speed_multiple = 5.0f;
-        pid_smart_blending_enabled = false;
-        pid_smart_blending_aggression = 0.65f;
-        pid_smart_blending_near_damping = 0.75f;
-        pid_smart_blending_deadzone_px = 0.0f;
-        pid_smart_blending_jerk_limit_px = 0.65f;
-        pid_smart_blending_confidence_floor = 0.45f;
+        // Direct targeting movement
+        target_deadzone_px = 0.0f;
+        target_max_pixel_step = 28.0f;
+        target_output_scale = 0.28f;
+        target_calibrated_pixel_counts_enabled = false;
+        target_counts_per_pixel_x = 0.0f;
+        target_counts_per_pixel_y = 0.0f;
 
-        // Neural tracker association
-        neural_tracker_enabled = false;
-        neural_tracker_runtime = "CPU";
-        neural_tracker_model_path = "neural_models/neural_tracker.onnx";
-        neural_tracker_blend = 0.35f;
-        neural_tracker_log_enabled = false;
-        neural_tracker_debug_enabled = false;
-        neural_tracker_log_path = "training/logs/neural_tracker_association.csv";
-
-        // Learned temporal predictor
-        temporal_prediction_enabled = false;
-        temporal_prediction_model_path = "neural_models/temporal_predictor.onnx";
-        temporal_prediction_history_length = 12;
-        temporal_prediction_horizon = 16;
-        temporal_prediction_interval_frames = 1;
-        temporal_prediction_feed_forward_enabled = false;
-        adaptive_prediction_enabled = true;
-        base_prediction_influence = 0.30f;
-        temporal_prediction_influence = base_prediction_influence;
-        temporal_prediction_adaptive_influence_enabled = adaptive_prediction_enabled;
-        temporal_prediction_adaptive_ema_alpha = 0.62f;
-        temporal_prediction_max_lead_px = 45.0f;
-
-        // Neural targeting head
-        neural_targeting_enabled = false;
-        neural_targeting_model_path = "neural_models/neural_targeting_head.onnx";
-        neural_targeting_influence = 0.40f;
-        neural_targeting_max_refinement_px = 35.0f;
-        neural_targeting_max_iterations = 2;
-        neural_control_preset = "Balanced";
-        neural_control_telemetry_overlay_enabled = false;
-        neural_control_telemetry_logging_enabled = false;
-        neural_control_telemetry_log_path = "logs/neural_control_telemetry.csv";
-        neural_control_telemetry_log_interval_ms = 250;
-        log_real_world_data = false;
-        real_world_data_log_dir = "training/datasets/real_world";
-
-        // Real-world fine-tuned variants (see convert_real_world_logs.py + train_* --fine-tune)
-        temporal_realworld_model_path = "neural_models/temporal_predictor_realworld.onnx";
-        neural_targeting_realworld_model_path = "neural_models/neural_targeting_head_realworld.onnx";
+        // Tracker identity pipeline
+        tracker_v2_enabled = true;
+        tracker_v2_high_confidence = 0.45f;
+        tracker_v2_new_track_confidence = 0.55f;
+        tracker_v2_detector_max_candidates = 160;
+        tracker_v2_box_smoothing_alpha = 0.34f;
+        tracker_v2_box_prediction_alpha = 0.18f;
+        yolo26_disable_nms = true;
 
         // Arduino
         arduino_baudrate = 115200;
@@ -292,20 +222,6 @@ bool Config::loadConfig(const std::string& filename)
         overlay_opacity = 225;
         overlay_ui_scale = 1.0f;
         overlay_exclude_from_capture = true;
-
-        // Depth
-        depth_inference_enabled = true;
-        depth_model_path = "depth_anything_v2.engine";
-        depth_fps = 100;
-        depth_colormap = 18;
-        depth_mask_enabled = false;
-        depth_mask_fps = 5;
-        depth_mask_near_percent = 20;
-        depth_mask_expand = 0;
-        depth_mask_hold_frames = 0;
-        depth_mask_alpha = 90;
-        depth_mask_invert = false;
-        depth_debug_overlay_enabled = false;
 
         // Game overlay
         game_overlay_enabled = false;
@@ -543,94 +459,22 @@ bool Config::loadConfig(const std::string& filename)
     wind_M = (float)get_double("wind_M", 10.0f);
     wind_D = (float)get_double("wind_D", 8.0f);
 
-    // Pure PID mouse control
-    pid_actuator_hz = get_long("pid_actuator_hz", get_long("adaptive_pid_actuator_hz", 1000));
-    pid_kp = (float)get_double("pid_kp", get_double("adaptive_pid_kp", 0.0085));
-    pid_ki = (float)get_double("pid_ki", get_double("adaptive_pid_ki", 0.0003));
-    pid_kd = (float)get_double("pid_kd", get_double("adaptive_pid_kd", 0.0001));
-    pid_deadzone_px = (float)get_double("pid_deadzone_px", get_double("adaptive_pid_deadzone", 0.0));
-    pid_max_pixel_step = (float)get_double("pid_max_pixel_step", get_double("adaptive_pid_max_pixel_step", 0.80));
-    pid_output_scale = (float)get_double("pid_output_scale", 0.10);
-    pid_min_output_scale = (float)get_double("pid_min_output_scale", 0.02);
-    pid_max_output_scale = (float)get_double("pid_max_output_scale", 0.35);
-    pid_size_reference_px = (float)get_double("pid_size_reference_px", 48.0);
-    pid_size_min_scale = (float)get_double("pid_size_min_scale", 0.20);
-    pid_size_max_scale = (float)get_double("pid_size_max_scale", 1.00);
-    pid_precision_radius_scale = (float)get_double("pid_precision_radius_scale", 0.012);
-    pid_slowdown_radius_scale = (float)get_double("pid_slowdown_radius_scale", 0.30);
-    pid_overshoot_brake = (float)get_double("pid_overshoot_brake", 0.35);
-    pid_divergence_boost = (float)get_double("pid_divergence_boost", 0.35);
-    pid_scale_response = (float)get_double("pid_scale_response", 8.0);
-    pid_max_integral = (float)get_double("pid_max_integral", get_double("adaptive_pid_max_integral", 120.0));
-    pid_max_derivative_term = (float)get_double("pid_max_derivative_term", 0.02);
-    pid_derivative_filter_tau_ms = (float)get_double("pid_derivative_filter_tau_ms", get_double("adaptive_pid_derivative_filter_tau_ms", 18.0));
-    pid_target_loss_timeout_ms = (float)get_double("pid_target_loss_timeout_ms", get_double("adaptive_pid_target_loss_timeout_ms", 90.0));
-    pid_feed_forward_enabled = get_bool("pid_feed_forward_enabled", true);
-    pid_feed_forward_gain = (float)get_double("pid_feed_forward_gain", 0.35);
-    pid_feed_forward_lookahead_ms = (float)get_double("pid_feed_forward_lookahead_ms", 24.0);
-    pid_feed_forward_frame_lookahead = get_long("pid_feed_forward_frame_lookahead", 1);
-    pid_feed_forward_max_step = (float)get_double("pid_feed_forward_max_step", 0.35);
-    pid_feed_forward_min_speed = (float)get_double("pid_feed_forward_min_speed", 20.0);
-    pid_feed_forward_confidence_floor = (float)get_double("pid_feed_forward_confidence_floor", 0.55);
-    pid_conditional_integration_enabled = get_bool("pid_conditional_integration_enabled", true);
-    pid_conditional_integration_error_px = (float)get_double("pid_conditional_integration_error_px", 12.0);
-    pid_adaptive_output_scaling_enabled = get_bool("pid_adaptive_output_scaling_enabled", true);
-    pid_adaptive_output_error_scale = (float)get_double("pid_adaptive_output_error_scale", 96.0);
-    pid_derivative_smoothing_multiplier = (float)get_double("pid_derivative_smoothing_multiplier", 1.5);
-    pid_perspective_fov_mapping_enabled = get_bool("pid_perspective_fov_mapping_enabled", false);
-    pid_governor_enabled = get_bool("pid_governor_enabled", false);
-    pid_governor_model_path = get_string("pid_governor_model_path", "training/models/pid_governor.onnx");
-    pid_governor_blend = (float)get_double("pid_governor_blend", 1.0);
-    pid_governor_max_speed_multiple = (float)get_double("pid_governor_max_speed_multiple", 5.0);
-    pid_smart_blending_enabled = get_bool("pid_smart_blending_enabled", false);
-    pid_smart_blending_aggression = (float)get_double("pid_smart_blending_aggression", 0.65);
-    pid_smart_blending_near_damping = (float)get_double("pid_smart_blending_near_damping", 0.75);
-    pid_smart_blending_deadzone_px = (float)get_double("pid_smart_blending_deadzone_px", 0.0);
-    pid_smart_blending_jerk_limit_px = (float)get_double("pid_smart_blending_jerk_limit_px", 0.65);
-    pid_smart_blending_confidence_floor = (float)get_double("pid_smart_blending_confidence_floor", 0.45);
+    // Direct targeting movement
+    target_deadzone_px = (float)get_double("target_deadzone_px", 0.0);
+    target_max_pixel_step = (float)get_double("target_max_pixel_step", 28.0);
+    target_output_scale = (float)get_double("target_output_scale", 0.28);
+    target_calibrated_pixel_counts_enabled = get_bool("target_calibrated_pixel_counts_enabled", false);
+    target_counts_per_pixel_x = (float)get_double("target_counts_per_pixel_x", 0.0);
+    target_counts_per_pixel_y = (float)get_double("target_counts_per_pixel_y", 0.0);
 
-    // Neural tracker association
-    neural_tracker_enabled = get_bool("neural_tracker_enabled", false);
-    neural_tracker_runtime = get_string("neural_tracker_runtime", "CPU");
-    neural_tracker_model_path = get_string("neural_tracker_model_path", "neural_models/neural_tracker.onnx");
-    neural_tracker_blend = (float)get_double("neural_tracker_blend", 0.35);
-    neural_tracker_log_enabled = get_bool("neural_tracker_log_enabled", false);
-    neural_tracker_debug_enabled = get_bool("neural_tracker_debug_enabled", false);
-    neural_tracker_log_path = get_string("neural_tracker_log_path", "training/logs/neural_tracker_association.csv");
-
-    // Learned temporal predictor
-    temporal_prediction_enabled = get_bool("temporal_prediction_enabled", false);
-    temporal_prediction_model_path = get_string("temporal_prediction_model_path", "models/temporal_predictor.onnx");
-    temporal_prediction_history_length = get_long("temporal_prediction_history_length", 12);
-    temporal_prediction_horizon = get_long("temporal_prediction_horizon", 16);
-    temporal_prediction_interval_frames = get_long("temporal_prediction_interval_frames", 1);
-    temporal_prediction_feed_forward_enabled = get_bool("temporal_prediction_feed_forward_enabled", false);
-    temporal_prediction_influence = (float)get_double("temporal_prediction_influence", 0.30);
-    base_prediction_influence = (float)get_double("base_prediction_influence", temporal_prediction_influence);
-    temporal_prediction_influence = base_prediction_influence;
-    temporal_prediction_adaptive_influence_enabled = get_bool("temporal_prediction_adaptive_influence_enabled", true);
-    adaptive_prediction_enabled = get_bool("adaptive_prediction_enabled", temporal_prediction_adaptive_influence_enabled);
-    temporal_prediction_adaptive_influence_enabled = adaptive_prediction_enabled;
-    temporal_prediction_adaptive_ema_alpha = (float)get_double("temporal_prediction_adaptive_ema_alpha", 0.62);
-    temporal_prediction_max_lead_px = (float)get_double("temporal_prediction_max_lead_px", 45.0);
-
-    // Neural targeting head
-    neural_targeting_enabled = get_bool("neural_targeting_enabled", false);
-    neural_targeting_model_path = get_string("neural_targeting_model_path", "models/neural_targeting_head.onnx");
-    neural_targeting_influence = (float)get_double("neural_targeting_influence", 0.40);
-    neural_targeting_max_refinement_px = (float)get_double("neural_targeting_max_refinement_px", 35.0);
-    neural_targeting_max_iterations = get_long("neural_targeting_max_iterations", 2);
-    neural_control_preset = get_string("neural_control_preset", "Balanced");
-    neural_control_telemetry_overlay_enabled = get_bool("neural_control_telemetry_overlay_enabled", false);
-    neural_control_telemetry_logging_enabled = get_bool("neural_control_telemetry_logging_enabled", false);
-    neural_control_telemetry_log_path = get_string("neural_control_telemetry_log_path", "logs/neural_control_telemetry.csv");
-    neural_control_telemetry_log_interval_ms = get_long("neural_control_telemetry_log_interval_ms", 250);
-    log_real_world_data = get_bool("log_real_world_data", false);
-    real_world_data_log_dir = get_string("real_world_data_log_dir", "training/datasets/real_world");
-
-    // Real-world fine-tuned model variants
-    temporal_realworld_model_path = get_string("temporal_realworld_model_path", "neural_models/temporal_predictor_realworld.onnx");
-    neural_targeting_realworld_model_path = get_string("neural_targeting_realworld_model_path", "neural_models/neural_targeting_head_realworld.onnx");
+    // Tracker identity pipeline
+    tracker_v2_enabled = get_bool("tracker_v2_enabled", true);
+    tracker_v2_high_confidence = (float)get_double("tracker_v2_high_confidence", 0.45);
+    tracker_v2_new_track_confidence = (float)get_double("tracker_v2_new_track_confidence", 0.55);
+    tracker_v2_detector_max_candidates = get_long("tracker_v2_detector_max_candidates", 160);
+    tracker_v2_box_smoothing_alpha = (float)get_double("tracker_v2_box_smoothing_alpha", 0.34);
+    tracker_v2_box_prediction_alpha = (float)get_double("tracker_v2_box_prediction_alpha", 0.18);
+    yolo26_disable_nms = get_bool("yolo26_disable_nms", true);
 
     // Arduino
     arduino_baudrate = get_long("arduino_baudrate", 115200);
@@ -714,31 +558,6 @@ bool Config::loadConfig(const std::string& filename)
     overlay_opacity = get_long("overlay_opacity", 225);
     overlay_ui_scale = (float)get_double("overlay_ui_scale", 1.0);
     overlay_exclude_from_capture = get_bool("overlay_exclude_from_capture", true);
-
-    // Depth
-    depth_inference_enabled = get_bool("depth_inference_enabled", true);
-    depth_model_path = get_string("depth_model_path", "depth_anything_v2.engine");
-    depth_fps = get_long("depth_fps", 100);
-    if (depth_fps < 0) depth_fps = 0;
-    depth_colormap = get_long("depth_colormap", 18);
-    if (depth_colormap < 0 || depth_colormap > 21) depth_colormap = 18;
-    depth_mask_enabled = get_bool("depth_mask_enabled", false);
-    depth_mask_fps = get_long("depth_mask_fps", 5);
-    if (depth_mask_fps < 0) depth_mask_fps = 0;
-    depth_mask_near_percent = get_long("depth_mask_near_percent", 20);
-    if (depth_mask_near_percent < 1) depth_mask_near_percent = 1;
-    if (depth_mask_near_percent > 100) depth_mask_near_percent = 100;
-    depth_mask_expand = get_long("depth_mask_expand", 0);
-    if (depth_mask_expand < 0) depth_mask_expand = 0;
-    if (depth_mask_expand > 128) depth_mask_expand = 128;
-    depth_mask_hold_frames = get_long("depth_mask_hold_frames", 0);
-    if (depth_mask_hold_frames < 0) depth_mask_hold_frames = 0;
-    if (depth_mask_hold_frames > 120) depth_mask_hold_frames = 120;
-    depth_mask_alpha = get_long("depth_mask_alpha", 90);
-    if (depth_mask_alpha < 0) depth_mask_alpha = 0;
-    if (depth_mask_alpha > 255) depth_mask_alpha = 255;
-    depth_mask_invert = get_bool("depth_mask_invert", false);
-    depth_debug_overlay_enabled = get_bool("depth_debug_overlay_enabled", false);
 
     game_overlay_enabled = get_bool("game_overlay_enabled", false);
     game_overlay_max_fps = get_long("game_overlay_max_fps", 0);
@@ -849,119 +668,28 @@ bool Config::loadConfig(const std::string& filename)
     if (aim_sim_target_stop_chance < 0.0f) aim_sim_target_stop_chance = 0.0f;
     if (aim_sim_target_stop_chance > 0.95f) aim_sim_target_stop_chance = 0.95f;
 
-    if (pid_actuator_hz < 30) pid_actuator_hz = 30;
-    if (pid_actuator_hz > 2000) pid_actuator_hz = 2000;
-    if (pid_kp < 0.0f) pid_kp = 0.0f;
-    if (pid_kp > 5.0f) pid_kp = 5.0f;
-    if (pid_ki < 0.0f) pid_ki = 0.0f;
-    if (pid_ki > 2.0f) pid_ki = 2.0f;
-    if (pid_kd < 0.0f) pid_kd = 0.0f;
-    if (pid_kd > 1.0f) pid_kd = 1.0f;
-    if (pid_deadzone_px < 0.0f) pid_deadzone_px = 0.0f;
-    if (pid_deadzone_px > 10.0f) pid_deadzone_px = 10.0f;
-    if (pid_max_pixel_step < 0.01f) pid_max_pixel_step = 0.01f;
-    if (pid_max_pixel_step > 80.0f) pid_max_pixel_step = 80.0f;
-    if (pid_output_scale < 0.01f) pid_output_scale = 0.01f;
-    if (pid_output_scale > 3.0f) pid_output_scale = 3.0f;
-    if (pid_min_output_scale < 0.0f) pid_min_output_scale = 0.0f;
-    if (pid_min_output_scale > 3.0f) pid_min_output_scale = 3.0f;
-    if (pid_max_output_scale < 0.01f) pid_max_output_scale = 0.01f;
-    if (pid_max_output_scale > 3.0f) pid_max_output_scale = 3.0f;
-    if (pid_min_output_scale > pid_max_output_scale) std::swap(pid_min_output_scale, pid_max_output_scale);
-    if (pid_size_reference_px < 1.0f) pid_size_reference_px = 1.0f;
-    if (pid_size_reference_px > 640.0f) pid_size_reference_px = 640.0f;
-    if (pid_size_min_scale < 0.01f) pid_size_min_scale = 0.01f;
-    if (pid_size_min_scale > 2.0f) pid_size_min_scale = 2.0f;
-    if (pid_size_max_scale < 0.01f) pid_size_max_scale = 0.01f;
-    if (pid_size_max_scale > 2.0f) pid_size_max_scale = 2.0f;
-    if (pid_size_min_scale > pid_size_max_scale) std::swap(pid_size_min_scale, pid_size_max_scale);
-    if (pid_precision_radius_scale < 0.0f) pid_precision_radius_scale = 0.0f;
-    if (pid_precision_radius_scale > 0.25f) pid_precision_radius_scale = 0.25f;
-    if (pid_slowdown_radius_scale < 0.01f) pid_slowdown_radius_scale = 0.01f;
-    if (pid_slowdown_radius_scale > 2.0f) pid_slowdown_radius_scale = 2.0f;
-    if (pid_overshoot_brake < 0.01f) pid_overshoot_brake = 0.01f;
-    if (pid_overshoot_brake > 1.0f) pid_overshoot_brake = 1.0f;
-    if (pid_divergence_boost < 0.0f) pid_divergence_boost = 0.0f;
-    if (pid_divergence_boost > 3.0f) pid_divergence_boost = 3.0f;
-    if (pid_scale_response < 0.1f) pid_scale_response = 0.1f;
-    if (pid_scale_response > 60.0f) pid_scale_response = 60.0f;
-    if (pid_max_integral < 0.0f) pid_max_integral = 0.0f;
-    if (pid_max_integral > 10000.0f) pid_max_integral = 10000.0f;
-    if (pid_max_derivative_term < 0.0f) pid_max_derivative_term = 0.0f;
-    if (pid_max_derivative_term > 20.0f) pid_max_derivative_term = 20.0f;
-    if (pid_derivative_filter_tau_ms < 0.0f) pid_derivative_filter_tau_ms = 0.0f;
-    if (pid_derivative_filter_tau_ms > 250.0f) pid_derivative_filter_tau_ms = 250.0f;
-    if (pid_target_loss_timeout_ms < 10.0f) pid_target_loss_timeout_ms = 10.0f;
-    if (pid_target_loss_timeout_ms > 1000.0f) pid_target_loss_timeout_ms = 1000.0f;
-    if (pid_feed_forward_gain < 0.0f) pid_feed_forward_gain = 0.0f;
-    if (pid_feed_forward_gain > 4.0f) pid_feed_forward_gain = 4.0f;
-    if (pid_feed_forward_lookahead_ms < 0.0f) pid_feed_forward_lookahead_ms = 0.0f;
-    if (pid_feed_forward_lookahead_ms > 120.0f) pid_feed_forward_lookahead_ms = 120.0f;
-    if (pid_feed_forward_frame_lookahead < 0) pid_feed_forward_frame_lookahead = 0;
-    if (pid_feed_forward_frame_lookahead > 2) pid_feed_forward_frame_lookahead = 2;
-    if (pid_feed_forward_max_step < 0.0f) pid_feed_forward_max_step = 0.0f;
-    if (pid_feed_forward_max_step > 5.0f) pid_feed_forward_max_step = 5.0f;
-    if (pid_feed_forward_min_speed < 0.0f) pid_feed_forward_min_speed = 0.0f;
-    if (pid_feed_forward_min_speed > 3000.0f) pid_feed_forward_min_speed = 3000.0f;
-    if (pid_feed_forward_confidence_floor < 0.0f) pid_feed_forward_confidence_floor = 0.0f;
-    if (pid_feed_forward_confidence_floor > 1.0f) pid_feed_forward_confidence_floor = 1.0f;
-    if (pid_conditional_integration_error_px < 0.0f) pid_conditional_integration_error_px = 0.0f;
-    if (pid_conditional_integration_error_px > 240.0f) pid_conditional_integration_error_px = 240.0f;
-    if (pid_adaptive_output_error_scale < 1.0f) pid_adaptive_output_error_scale = 1.0f;
-    if (pid_adaptive_output_error_scale > 640.0f) pid_adaptive_output_error_scale = 640.0f;
-    if (pid_derivative_smoothing_multiplier < 1.0f) pid_derivative_smoothing_multiplier = 1.0f;
-    if (pid_derivative_smoothing_multiplier > 6.0f) pid_derivative_smoothing_multiplier = 6.0f;
-    if (pid_governor_model_path.empty()) pid_governor_model_path = "neural_models/pid_governor.onnx";
-    if (pid_governor_blend < 0.0f) pid_governor_blend = 0.0f;
-    if (pid_governor_blend > 1.0f) pid_governor_blend = 1.0f;
-    if (pid_governor_max_speed_multiple < 1.0f) pid_governor_max_speed_multiple = 1.0f;
-    if (pid_governor_max_speed_multiple > 5.0f) pid_governor_max_speed_multiple = 5.0f;
-    if (pid_smart_blending_aggression < 0.30f) pid_smart_blending_aggression = 0.30f;
-    if (pid_smart_blending_aggression > 1.0f) pid_smart_blending_aggression = 1.0f;
-    if (pid_smart_blending_near_damping < 0.0f) pid_smart_blending_near_damping = 0.0f;
-    if (pid_smart_blending_near_damping > 1.0f) pid_smart_blending_near_damping = 1.0f;
-    if (pid_smart_blending_deadzone_px < 0.0f) pid_smart_blending_deadzone_px = 0.0f;
-    if (pid_smart_blending_deadzone_px > 12.0f) pid_smart_blending_deadzone_px = 12.0f;
-    if (pid_smart_blending_jerk_limit_px < 0.02f) pid_smart_blending_jerk_limit_px = 0.02f;
-    if (pid_smart_blending_jerk_limit_px > 8.0f) pid_smart_blending_jerk_limit_px = 8.0f;
-    if (pid_smart_blending_confidence_floor < 0.0f) pid_smart_blending_confidence_floor = 0.0f;
-    if (pid_smart_blending_confidence_floor > 1.0f) pid_smart_blending_confidence_floor = 1.0f;
-    if (neural_tracker_runtime.empty()) neural_tracker_runtime = "CPU";
-    if (neural_tracker_model_path.empty()) neural_tracker_model_path = "neural_models/neural_tracker.onnx";
-    if (neural_tracker_blend < 0.0f) neural_tracker_blend = 0.0f;
-    if (neural_tracker_blend > 1.0f) neural_tracker_blend = 1.0f;
-    if (neural_tracker_log_path.empty()) neural_tracker_log_path = "training/logs/neural_tracker_association.csv";
-    if (temporal_prediction_model_path.empty()) temporal_prediction_model_path = "neural_models/temporal_predictor.onnx";
-    if (temporal_prediction_history_length < 2) temporal_prediction_history_length = 2;
-    if (temporal_prediction_history_length > 64) temporal_prediction_history_length = 64;
-    if (temporal_prediction_horizon < 1) temporal_prediction_horizon = 1;
-    if (temporal_prediction_horizon > 64) temporal_prediction_horizon = 64;
-    if (temporal_prediction_interval_frames < 1) temporal_prediction_interval_frames = 1;
-    if (temporal_prediction_interval_frames > 16) temporal_prediction_interval_frames = 16;
-    if (base_prediction_influence < 0.0f) base_prediction_influence = 0.0f;
-    if (base_prediction_influence > 1.0f) base_prediction_influence = 1.0f;
-    temporal_prediction_influence = base_prediction_influence;
-    temporal_prediction_adaptive_influence_enabled = adaptive_prediction_enabled;
-    if (temporal_prediction_adaptive_ema_alpha < 0.05f) temporal_prediction_adaptive_ema_alpha = 0.05f;
-    if (temporal_prediction_adaptive_ema_alpha > 1.0f) temporal_prediction_adaptive_ema_alpha = 1.0f;
-    if (temporal_prediction_max_lead_px < 20.0f) temporal_prediction_max_lead_px = 20.0f;
-    if (temporal_prediction_max_lead_px > 80.0f) temporal_prediction_max_lead_px = 80.0f;
-    if (neural_targeting_model_path.empty()) neural_targeting_model_path = "neural_models/neural_targeting_head.onnx";
-    if (neural_targeting_influence < 0.0f) neural_targeting_influence = 0.0f;
-    if (neural_targeting_influence > 1.0f) neural_targeting_influence = 1.0f;
-    if (neural_targeting_max_refinement_px < 1.0f) neural_targeting_max_refinement_px = 1.0f;
-    if (neural_targeting_max_refinement_px > 80.0f) neural_targeting_max_refinement_px = 80.0f;
-    if (neural_targeting_max_iterations < 1) neural_targeting_max_iterations = 1;
-    if (neural_targeting_max_iterations > 2) neural_targeting_max_iterations = 2;
-    if (neural_control_preset.empty()) neural_control_preset = "Balanced";
-    if (neural_control_preset != "Balanced" &&
-        neural_control_preset != "Aggressive" &&
-        neural_control_preset != "Smooth" &&
-        neural_control_preset != "Sniper") neural_control_preset = "Balanced";
-    if (neural_control_telemetry_log_path.empty()) neural_control_telemetry_log_path = "logs/neural_control_telemetry.csv";
-    if (neural_control_telemetry_log_interval_ms < 50) neural_control_telemetry_log_interval_ms = 50;
-    if (neural_control_telemetry_log_interval_ms > 5000) neural_control_telemetry_log_interval_ms = 5000;
-    if (real_world_data_log_dir.empty()) real_world_data_log_dir = "training/datasets/real_world";
+    if (target_deadzone_px < 0.0f) target_deadzone_px = 0.0f;
+    if (target_deadzone_px > 20.0f) target_deadzone_px = 20.0f;
+    if (target_max_pixel_step < 0.25f) target_max_pixel_step = 0.25f;
+    if (target_max_pixel_step > 240.0f) target_max_pixel_step = 240.0f;
+    if (target_output_scale < 0.01f) target_output_scale = 0.01f;
+    if (target_output_scale > 3.0f) target_output_scale = 3.0f;
+    if (target_counts_per_pixel_x < -50.0f) target_counts_per_pixel_x = -50.0f;
+    if (target_counts_per_pixel_x > 50.0f) target_counts_per_pixel_x = 50.0f;
+    if (target_counts_per_pixel_y < -50.0f) target_counts_per_pixel_y = -50.0f;
+    if (target_counts_per_pixel_y > 50.0f) target_counts_per_pixel_y = 50.0f;
+    if (tracker_v2_high_confidence < 0.0f) tracker_v2_high_confidence = 0.0f;
+    if (tracker_v2_high_confidence > 1.0f) tracker_v2_high_confidence = 1.0f;
+    if (tracker_v2_new_track_confidence < 0.0f) tracker_v2_new_track_confidence = 0.0f;
+    if (tracker_v2_new_track_confidence > 1.0f) tracker_v2_new_track_confidence = 1.0f;
+    if (tracker_v2_new_track_confidence < tracker_v2_high_confidence)
+        tracker_v2_new_track_confidence = tracker_v2_high_confidence;
+    if (tracker_v2_detector_max_candidates < 1) tracker_v2_detector_max_candidates = 1;
+    if (tracker_v2_detector_max_candidates > 1024) tracker_v2_detector_max_candidates = 1024;
+    if (tracker_v2_box_smoothing_alpha < 0.02f) tracker_v2_box_smoothing_alpha = 0.02f;
+    if (tracker_v2_box_smoothing_alpha > 1.0f) tracker_v2_box_smoothing_alpha = 1.0f;
+    if (tracker_v2_box_prediction_alpha < 0.02f) tracker_v2_box_prediction_alpha = 0.02f;
+    if (tracker_v2_box_prediction_alpha > 1.0f) tracker_v2_box_prediction_alpha = 1.0f;
 
     // Classes
     class_player = get_long("class_player", 0);
@@ -1071,92 +799,20 @@ bool Config::loadConfigMerged(const std::string& filename)
     MERGE_FIELD("wind_M", wind_M);
     MERGE_FIELD("wind_D", wind_D);
 
-    MERGE_FIELD("pid_actuator_hz", pid_actuator_hz);
-    MERGE_FIELD("pid_kp", pid_kp);
-    MERGE_FIELD("pid_ki", pid_ki);
-    MERGE_FIELD("pid_kd", pid_kd);
-    MERGE_FIELD("pid_deadzone_px", pid_deadzone_px);
-    MERGE_FIELD("pid_max_pixel_step", pid_max_pixel_step);
-    MERGE_FIELD("pid_output_scale", pid_output_scale);
-    MERGE_FIELD("pid_min_output_scale", pid_min_output_scale);
-    MERGE_FIELD("pid_max_output_scale", pid_max_output_scale);
-    MERGE_FIELD("pid_size_reference_px", pid_size_reference_px);
-    MERGE_FIELD("pid_size_min_scale", pid_size_min_scale);
-    MERGE_FIELD("pid_size_max_scale", pid_size_max_scale);
-    MERGE_FIELD("pid_precision_radius_scale", pid_precision_radius_scale);
-    MERGE_FIELD("pid_slowdown_radius_scale", pid_slowdown_radius_scale);
-    MERGE_FIELD("pid_overshoot_brake", pid_overshoot_brake);
-    MERGE_FIELD("pid_divergence_boost", pid_divergence_boost);
-    MERGE_FIELD("pid_scale_response", pid_scale_response);
-    MERGE_FIELD("pid_max_integral", pid_max_integral);
-    MERGE_FIELD("pid_max_derivative_term", pid_max_derivative_term);
-    MERGE_FIELD("pid_derivative_filter_tau_ms", pid_derivative_filter_tau_ms);
-    MERGE_FIELD("pid_target_loss_timeout_ms", pid_target_loss_timeout_ms);
-    MERGE_FIELD("pid_feed_forward_enabled", pid_feed_forward_enabled);
-    MERGE_FIELD("pid_feed_forward_gain", pid_feed_forward_gain);
-    MERGE_FIELD("pid_feed_forward_lookahead_ms", pid_feed_forward_lookahead_ms);
-    MERGE_FIELD("pid_feed_forward_frame_lookahead", pid_feed_forward_frame_lookahead);
-    MERGE_FIELD("pid_feed_forward_max_step", pid_feed_forward_max_step);
-    MERGE_FIELD("pid_feed_forward_min_speed", pid_feed_forward_min_speed);
-    MERGE_FIELD("pid_feed_forward_confidence_floor", pid_feed_forward_confidence_floor);
-    MERGE_FIELD("pid_conditional_integration_enabled", pid_conditional_integration_enabled);
-    MERGE_FIELD("pid_conditional_integration_error_px", pid_conditional_integration_error_px);
-    MERGE_FIELD("pid_adaptive_output_scaling_enabled", pid_adaptive_output_scaling_enabled);
-    MERGE_FIELD("pid_adaptive_output_error_scale", pid_adaptive_output_error_scale);
-    MERGE_FIELD("pid_derivative_smoothing_multiplier", pid_derivative_smoothing_multiplier);
-    MERGE_FIELD("pid_perspective_fov_mapping_enabled", pid_perspective_fov_mapping_enabled);
-    MERGE_FIELD("pid_governor_enabled", pid_governor_enabled);
-    MERGE_FIELD("pid_governor_model_path", pid_governor_model_path);
-    MERGE_FIELD("pid_governor_blend", pid_governor_blend);
-    MERGE_FIELD("pid_governor_max_speed_multiple", pid_governor_max_speed_multiple);
-    MERGE_FIELD("pid_smart_blending_enabled", pid_smart_blending_enabled);
-    MERGE_FIELD("pid_smart_blending_aggression", pid_smart_blending_aggression);
-    MERGE_FIELD("pid_smart_blending_near_damping", pid_smart_blending_near_damping);
-    MERGE_FIELD("pid_smart_blending_deadzone_px", pid_smart_blending_deadzone_px);
-    MERGE_FIELD("pid_smart_blending_jerk_limit_px", pid_smart_blending_jerk_limit_px);
-    MERGE_FIELD("pid_smart_blending_confidence_floor", pid_smart_blending_confidence_floor);
+    MERGE_FIELD("target_deadzone_px", target_deadzone_px);
+    MERGE_FIELD("target_max_pixel_step", target_max_pixel_step);
+    MERGE_FIELD("target_output_scale", target_output_scale);
+    MERGE_FIELD("target_calibrated_pixel_counts_enabled", target_calibrated_pixel_counts_enabled);
+    MERGE_FIELD("target_counts_per_pixel_x", target_counts_per_pixel_x);
+    MERGE_FIELD("target_counts_per_pixel_y", target_counts_per_pixel_y);
 
-    MERGE_FIELD("neural_tracker_enabled", neural_tracker_enabled);
-    MERGE_FIELD("neural_tracker_runtime", neural_tracker_runtime);
-    MERGE_FIELD("neural_tracker_model_path", neural_tracker_model_path);
-    MERGE_FIELD("neural_tracker_blend", neural_tracker_blend);
-    MERGE_FIELD("neural_tracker_log_enabled", neural_tracker_log_enabled);
-    MERGE_FIELD("neural_tracker_debug_enabled", neural_tracker_debug_enabled);
-    MERGE_FIELD("neural_tracker_log_path", neural_tracker_log_path);
-    MERGE_FIELD("temporal_prediction_enabled", temporal_prediction_enabled);
-    MERGE_FIELD("temporal_prediction_model_path", temporal_prediction_model_path);
-    MERGE_FIELD("temporal_prediction_history_length", temporal_prediction_history_length);
-    MERGE_FIELD("temporal_prediction_horizon", temporal_prediction_horizon);
-    MERGE_FIELD("temporal_prediction_interval_frames", temporal_prediction_interval_frames);
-    MERGE_FIELD("temporal_prediction_feed_forward_enabled", temporal_prediction_feed_forward_enabled);
-    MERGE_FIELD("adaptive_prediction_enabled", adaptive_prediction_enabled);
-    MERGE_FIELD("base_prediction_influence", base_prediction_influence);
-    MERGE_FIELD("temporal_prediction_influence", temporal_prediction_influence);
-    MERGE_FIELD("temporal_prediction_adaptive_influence_enabled", temporal_prediction_adaptive_influence_enabled);
-    MERGE_FIELD("temporal_prediction_adaptive_ema_alpha", temporal_prediction_adaptive_ema_alpha);
-    MERGE_FIELD("temporal_prediction_max_lead_px", temporal_prediction_max_lead_px);
-    if (hasKey("base_prediction_influence"))
-        temporal_prediction_influence = base_prediction_influence;
-    else if (hasKey("temporal_prediction_influence"))
-        base_prediction_influence = temporal_prediction_influence;
-    if (hasKey("adaptive_prediction_enabled"))
-        temporal_prediction_adaptive_influence_enabled = adaptive_prediction_enabled;
-    else if (hasKey("temporal_prediction_adaptive_influence_enabled"))
-        adaptive_prediction_enabled = temporal_prediction_adaptive_influence_enabled;
-    MERGE_FIELD("neural_targeting_enabled", neural_targeting_enabled);
-    MERGE_FIELD("neural_targeting_model_path", neural_targeting_model_path);
-    MERGE_FIELD("neural_targeting_influence", neural_targeting_influence);
-    MERGE_FIELD("neural_targeting_max_refinement_px", neural_targeting_max_refinement_px);
-    MERGE_FIELD("neural_targeting_max_iterations", neural_targeting_max_iterations);
-    MERGE_FIELD("neural_control_preset", neural_control_preset);
-    MERGE_FIELD("neural_control_telemetry_overlay_enabled", neural_control_telemetry_overlay_enabled);
-    MERGE_FIELD("neural_control_telemetry_logging_enabled", neural_control_telemetry_logging_enabled);
-    MERGE_FIELD("neural_control_telemetry_log_path", neural_control_telemetry_log_path);
-    MERGE_FIELD("neural_control_telemetry_log_interval_ms", neural_control_telemetry_log_interval_ms);
-    MERGE_FIELD("log_real_world_data", log_real_world_data);
-    MERGE_FIELD("real_world_data_log_dir", real_world_data_log_dir);
-    MERGE_FIELD("temporal_realworld_model_path", temporal_realworld_model_path);
-    MERGE_FIELD("neural_targeting_realworld_model_path", neural_targeting_realworld_model_path);
+    MERGE_FIELD("tracker_v2_enabled", tracker_v2_enabled);
+    MERGE_FIELD("tracker_v2_high_confidence", tracker_v2_high_confidence);
+    MERGE_FIELD("tracker_v2_new_track_confidence", tracker_v2_new_track_confidence);
+    MERGE_FIELD("tracker_v2_detector_max_candidates", tracker_v2_detector_max_candidates);
+    MERGE_FIELD("tracker_v2_box_smoothing_alpha", tracker_v2_box_smoothing_alpha);
+    MERGE_FIELD("tracker_v2_box_prediction_alpha", tracker_v2_box_prediction_alpha);
+    MERGE_FIELD("yolo26_disable_nms", yolo26_disable_nms);
 
     MERGE_FIELD("arduino_baudrate", arduino_baudrate);
     MERGE_FIELD("arduino_port", arduino_port);
@@ -1214,19 +870,6 @@ bool Config::loadConfigMerged(const std::string& filename)
     MERGE_FIELD("overlay_opacity", overlay_opacity);
     MERGE_FIELD("overlay_ui_scale", overlay_ui_scale);
     MERGE_FIELD("overlay_exclude_from_capture", overlay_exclude_from_capture);
-
-    MERGE_FIELD("depth_inference_enabled", depth_inference_enabled);
-    MERGE_FIELD("depth_model_path", depth_model_path);
-    MERGE_FIELD("depth_fps", depth_fps);
-    MERGE_FIELD("depth_colormap", depth_colormap);
-    MERGE_FIELD("depth_mask_enabled", depth_mask_enabled);
-    MERGE_FIELD("depth_mask_fps", depth_mask_fps);
-    MERGE_FIELD("depth_mask_near_percent", depth_mask_near_percent);
-    MERGE_FIELD("depth_mask_expand", depth_mask_expand);
-    MERGE_FIELD("depth_mask_hold_frames", depth_mask_hold_frames);
-    MERGE_FIELD("depth_mask_alpha", depth_mask_alpha);
-    MERGE_FIELD("depth_mask_invert", depth_mask_invert);
-    MERGE_FIELD("depth_debug_overlay_enabled", depth_debug_overlay_enabled);
 
     MERGE_FIELD("game_overlay_enabled", game_overlay_enabled);
     MERGE_FIELD("game_overlay_max_fps", game_overlay_max_fps);
@@ -1308,19 +951,6 @@ bool Config::loadConfigMerged(const std::string& filename)
 
 bool Config::validate()
 {
-    std::transform(neural_tracker_runtime.begin(), neural_tracker_runtime.end(), neural_tracker_runtime.begin(),
-        [](unsigned char c) { return static_cast<char>(std::toupper(c)); });
-    if (neural_tracker_runtime != "CPU"
-#ifdef USE_CUDA
-        && neural_tracker_runtime != "CUDA"
-#endif
-        )
-    {
-        std::cerr << "[Config] Unknown neural_tracker_runtime '" << neural_tracker_runtime
-                  << "', using CPU neural tracker runtime." << std::endl;
-        neural_tracker_runtime = "CPU";
-    }
-
     if (!ParseMouseInputMethod(input_method))
     {
         std::cerr << "[Config] Unknown input_method '" << input_method
@@ -1434,93 +1064,25 @@ bool Config::saveConfig(const std::string& filename)
         << "# WIN32, GHUB, RAZER (direct in-process), DIRECT (stub/high-risk research slot), ARDUINO, TEENSY41, TEENSY41_HID, KMBOX_NET, KMBOX_A, MAKCU\n"
         << "input_method = " << input_method << "\n\n";
 
-    file << "# Pure PID mouse control\n"
-        << "pid_actuator_hz = " << pid_actuator_hz << "\n"
+    file << "# Direct targeting movement\n"
+        << std::fixed << std::setprecision(3)
+        << "target_deadzone_px = " << target_deadzone_px << "\n"
+        << "target_max_pixel_step = " << target_max_pixel_step << "\n"
+        << "target_output_scale = " << target_output_scale << "\n"
+        << "target_calibrated_pixel_counts_enabled = " << (target_calibrated_pixel_counts_enabled ? "true" : "false") << "\n"
         << std::fixed << std::setprecision(4)
-        << "pid_kp = " << pid_kp << "\n"
-        << "pid_ki = " << pid_ki << "\n"
-        << "pid_kd = " << pid_kd << "\n"
-        << std::fixed << std::setprecision(3)
-        << "pid_deadzone_px = " << pid_deadzone_px << "\n"
-        << "pid_max_pixel_step = " << pid_max_pixel_step << "\n"
-        << "pid_output_scale = " << pid_output_scale << "\n"
-        << "pid_min_output_scale = " << pid_min_output_scale << "\n"
-        << "pid_max_output_scale = " << pid_max_output_scale << "\n"
-        << "pid_size_reference_px = " << pid_size_reference_px << "\n"
-        << "pid_size_min_scale = " << pid_size_min_scale << "\n"
-        << "pid_size_max_scale = " << pid_size_max_scale << "\n"
-        << "pid_precision_radius_scale = " << pid_precision_radius_scale << "\n"
-        << "pid_slowdown_radius_scale = " << pid_slowdown_radius_scale << "\n"
-        << "pid_overshoot_brake = " << pid_overshoot_brake << "\n"
-        << "pid_divergence_boost = " << pid_divergence_boost << "\n"
-        << "pid_scale_response = " << pid_scale_response << "\n"
-        << "pid_max_integral = " << pid_max_integral << "\n"
-        << "pid_max_derivative_term = " << pid_max_derivative_term << "\n"
-        << "pid_derivative_filter_tau_ms = " << pid_derivative_filter_tau_ms << "\n"
-        << "pid_target_loss_timeout_ms = " << pid_target_loss_timeout_ms << "\n"
-        << "pid_feed_forward_enabled = " << (pid_feed_forward_enabled ? "true" : "false") << "\n"
-        << "pid_feed_forward_gain = " << pid_feed_forward_gain << "\n"
-        << "pid_feed_forward_lookahead_ms = " << pid_feed_forward_lookahead_ms << "\n"
-        << "pid_feed_forward_frame_lookahead = " << pid_feed_forward_frame_lookahead << "\n"
-        << "pid_feed_forward_max_step = " << pid_feed_forward_max_step << "\n"
-        << "pid_feed_forward_min_speed = " << pid_feed_forward_min_speed << "\n"
-        << "pid_feed_forward_confidence_floor = " << pid_feed_forward_confidence_floor << "\n"
-        << "pid_conditional_integration_enabled = " << (pid_conditional_integration_enabled ? "true" : "false") << "\n"
-        << "pid_conditional_integration_error_px = " << pid_conditional_integration_error_px << "\n"
-        << "pid_adaptive_output_scaling_enabled = " << (pid_adaptive_output_scaling_enabled ? "true" : "false") << "\n"
-        << "pid_adaptive_output_error_scale = " << pid_adaptive_output_error_scale << "\n"
-        << "pid_derivative_smoothing_multiplier = " << pid_derivative_smoothing_multiplier << "\n"
-        << "pid_perspective_fov_mapping_enabled = " << (pid_perspective_fov_mapping_enabled ? "true" : "false") << "\n"
-        << "pid_governor_enabled = " << (pid_governor_enabled ? "true" : "false") << "\n"
-        << "pid_governor_model_path = " << pid_governor_model_path << "\n"
-        << "pid_governor_blend = " << pid_governor_blend << "\n"
-        << "pid_governor_max_speed_multiple = " << pid_governor_max_speed_multiple << "\n"
-        << "pid_smart_blending_enabled = " << (pid_smart_blending_enabled ? "true" : "false") << "\n"
-        << "pid_smart_blending_aggression = " << pid_smart_blending_aggression << "\n"
-        << "pid_smart_blending_near_damping = " << pid_smart_blending_near_damping << "\n"
-        << "pid_smart_blending_deadzone_px = " << pid_smart_blending_deadzone_px << "\n"
-        << "pid_smart_blending_jerk_limit_px = " << pid_smart_blending_jerk_limit_px << "\n"
-        << "pid_smart_blending_confidence_floor = " << pid_smart_blending_confidence_floor << "\n\n";
+        << "target_counts_per_pixel_x = " << target_counts_per_pixel_x << "\n"
+        << "target_counts_per_pixel_y = " << target_counts_per_pixel_y << "\n\n";
 
-    file << "# Neural tracker association\n"
-        << "neural_tracker_enabled = " << (neural_tracker_enabled ? "true" : "false") << "\n"
-        << "neural_tracker_runtime = " << neural_tracker_runtime << "\n"
-        << "neural_tracker_model_path = " << neural_tracker_model_path << "\n"
+    file << "# Tracker identity pipeline\n"
+        << "tracker_v2_enabled = " << (tracker_v2_enabled ? "true" : "false") << "\n"
         << std::fixed << std::setprecision(3)
-        << "neural_tracker_blend = " << neural_tracker_blend << "\n"
-        << "neural_tracker_log_enabled = " << (neural_tracker_log_enabled ? "true" : "false") << "\n"
-        << "neural_tracker_debug_enabled = " << (neural_tracker_debug_enabled ? "true" : "false") << "\n"
-        << "neural_tracker_log_path = " << neural_tracker_log_path << "\n\n";
-
-    file << "# Learned temporal predictor\n"
-        << "temporal_prediction_enabled = " << (temporal_prediction_enabled ? "true" : "false") << "\n"
-        << "temporal_prediction_model_path = " << temporal_prediction_model_path << "\n"
-        << "temporal_prediction_history_length = " << temporal_prediction_history_length << "\n"
-        << "temporal_prediction_horizon = " << temporal_prediction_horizon << "\n"
-        << "temporal_prediction_interval_frames = " << temporal_prediction_interval_frames << "\n"
-        << "temporal_prediction_feed_forward_enabled = " << (temporal_prediction_feed_forward_enabled ? "true" : "false") << "\n"
-        << std::fixed << std::setprecision(3)
-        << "adaptive_prediction_enabled = " << (adaptive_prediction_enabled ? "true" : "false") << "\n"
-        << "base_prediction_influence = " << base_prediction_influence << "\n"
-        << "temporal_prediction_influence = " << temporal_prediction_influence << "\n"
-        << "temporal_prediction_adaptive_influence_enabled = " << (temporal_prediction_adaptive_influence_enabled ? "true" : "false") << "\n"
-        << "temporal_prediction_adaptive_ema_alpha = " << temporal_prediction_adaptive_ema_alpha << "\n"
-        << "temporal_prediction_max_lead_px = " << temporal_prediction_max_lead_px << "\n\n";
-
-    file << "# Neural targeting head\n"
-        << "neural_targeting_enabled = " << (neural_targeting_enabled ? "true" : "false") << "\n"
-        << "neural_targeting_model_path = " << neural_targeting_model_path << "\n"
-        << std::fixed << std::setprecision(3)
-        << "neural_targeting_influence = " << neural_targeting_influence << "\n"
-        << "neural_targeting_max_refinement_px = " << neural_targeting_max_refinement_px << "\n"
-        << "neural_targeting_max_iterations = " << neural_targeting_max_iterations << "\n"
-        << "neural_control_preset = " << neural_control_preset << "\n"
-        << "neural_control_telemetry_overlay_enabled = " << (neural_control_telemetry_overlay_enabled ? "true" : "false") << "\n"
-        << "neural_control_telemetry_logging_enabled = " << (neural_control_telemetry_logging_enabled ? "true" : "false") << "\n"
-        << "neural_control_telemetry_log_path = " << neural_control_telemetry_log_path << "\n"
-        << "neural_control_telemetry_log_interval_ms = " << neural_control_telemetry_log_interval_ms << "\n"
-        << "log_real_world_data = " << (log_real_world_data ? "true" : "false") << "\n"
-        << "real_world_data_log_dir = " << real_world_data_log_dir << "\n\n";
+        << "tracker_v2_high_confidence = " << tracker_v2_high_confidence << "\n"
+        << "tracker_v2_new_track_confidence = " << tracker_v2_new_track_confidence << "\n"
+        << "tracker_v2_detector_max_candidates = " << tracker_v2_detector_max_candidates << "\n"
+        << "tracker_v2_box_smoothing_alpha = " << tracker_v2_box_smoothing_alpha << "\n"
+        << "tracker_v2_box_prediction_alpha = " << tracker_v2_box_prediction_alpha << "\n"
+        << "yolo26_disable_nms = " << (yolo26_disable_nms ? "true" : "false") << "\n\n";
 
     // Arduino
     file << "# Arduino\n"
@@ -1609,20 +1171,6 @@ bool Config::saveConfig(const std::string& filename)
         << std::fixed << std::setprecision(2)
         << "overlay_ui_scale = " << overlay_ui_scale << "\n"
         << "overlay_exclude_from_capture = " << (overlay_exclude_from_capture ? "true" : "false") << "\n\n";
-
-    file << "# Depth\n"
-        << "depth_inference_enabled = " << (depth_inference_enabled ? "true" : "false") << "\n"
-        << "depth_model_path = " << depth_model_path << "\n"
-        << "depth_fps = " << depth_fps << "\n"
-        << "depth_colormap = " << depth_colormap << "\n"
-        << "depth_mask_enabled = " << (depth_mask_enabled ? "true" : "false") << "\n"
-        << "depth_mask_fps = " << depth_mask_fps << "\n"
-        << "depth_mask_near_percent = " << depth_mask_near_percent << "\n"
-        << "depth_mask_expand = " << depth_mask_expand << "\n"
-        << "depth_mask_hold_frames = " << depth_mask_hold_frames << "\n"
-        << "depth_mask_alpha = " << depth_mask_alpha << "\n"
-        << "depth_mask_invert = " << (depth_mask_invert ? "true" : "false") << "\n"
-        << "depth_debug_overlay_enabled = " << (depth_debug_overlay_enabled ? "true" : "false") << "\n\n";
 
     file << "# Game Overlay\n"
         << "game_overlay_enabled = " << (game_overlay_enabled ? "true" : "false") << "\n"

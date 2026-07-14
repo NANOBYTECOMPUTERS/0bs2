@@ -1,6 +1,10 @@
 [CmdletBinding(PositionalBinding = $false)]
 param(
     [string]$RepoRoot = "",
+    [string]$CudaVersion = "13.3",
+    [string]$CudaToolkitDir = "",
+    [string]$TensorRTDir = "",
+    [string]$OpenCVDir = "",
     [switch]$NonInteractive,
     [switch]$DryRun,
     [Parameter(ValueFromRemainingArguments = $true)]
@@ -24,8 +28,18 @@ if (-not (Test-Path -LiteralPath $scriptPath -PathType Leaf)) {
 
 $args = @(
     "-NoProfile", "-ExecutionPolicy", "Bypass",
-    "-File", $scriptPath
+    "-File", $scriptPath,
+    "-CudaVersion", $CudaVersion
 )
+if (-not [string]::IsNullOrWhiteSpace($TensorRTDir)) {
+    $args += @("-TensorRTDir", $TensorRTDir)
+}
+if (-not [string]::IsNullOrWhiteSpace($CudaToolkitDir)) {
+    $args += @("-CudaToolkitDir", $CudaToolkitDir)
+}
+if (-not [string]::IsNullOrWhiteSpace($OpenCVDir)) {
+    $args += @("-OpenCVDir", $OpenCVDir)
+}
 if ($ExtraArgs) {
     $args += $ExtraArgs
 }

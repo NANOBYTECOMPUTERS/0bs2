@@ -17,10 +17,6 @@
 #include "capture.h"
 #include "overlay/ui_sections.h"
 
-#ifdef USE_CUDA
-#include "depth/depth_mask.h"
-#endif
-
 #ifndef SAFE_RELEASE
 #define SAFE_RELEASE(p)       \
     do {                      \
@@ -34,19 +30,12 @@
 int prev_screenshot_delay = config.screenshot_delay;
 bool prev_verbose = config.verbose;
 bool prev_debug_log_file_enabled = config.debug_log_file_enabled;
-bool prev_neural_tracker_log_enabled = config.neural_tracker_log_enabled;
-bool prev_neural_tracker_debug_enabled = config.neural_tracker_debug_enabled;
 static char debugLogFilePathBuf[260] = {};
-static char neuralTrackerLogPathBuf[260] = {};
-static bool neuralDebugUiInitialized = false;
+static bool debugUiInitialized = false;
 
 static ID3D11Texture2D* g_debugTex = nullptr;
 static ID3D11ShaderResourceView* g_debugSRV = nullptr;
 static int texW = 0, texH = 0;
-
-static ID3D11Texture2D* g_maskTex = nullptr;
-static ID3D11ShaderResourceView* g_maskSRV = nullptr;
-static int maskTexW = 0, maskTexH = 0;
 
 static float debug_scale = 0.5f;
 
@@ -176,48 +165,6 @@ static void uploadDebugFrame(const cv::Mat& bgr)
     }
 }
 
-static void uploadMaskFrame(const cv::Mat& rgba)
-{
-    if (rgba.empty()) return;
-
-    if (!g_maskTex || rgba.cols != maskTexW || rgba.rows != maskTexH)
-    {
-        SAFE_RELEASE(g_maskTex);
-        SAFE_RELEASE(g_maskSRV);
-
-        maskTexW = rgba.cols;
-        maskTexH = rgba.rows;
-
-        D3D11_TEXTURE2D_DESC td = {};
-        td.Width = maskTexW;
-        td.Height = maskTexH;
-        td.MipLevels = td.ArraySize = 1;
-        td.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
-        td.SampleDesc.Count = 1;
-        td.Usage = D3D11_USAGE_DYNAMIC;
-        td.BindFlags = D3D11_BIND_SHADER_RESOURCE;
-        td.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
-
-        g_pd3dDevice->CreateTexture2D(&td, nullptr, &g_maskTex);
-
-        D3D11_SHADER_RESOURCE_VIEW_DESC sd = {};
-        sd.Format = td.Format;
-        sd.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
-        sd.Texture2D.MipLevels = 1;
-        g_pd3dDevice->CreateShaderResourceView(g_maskTex, &sd, &g_maskSRV);
-    }
-
-    D3D11_MAPPED_SUBRESOURCE ms;
-    if (SUCCEEDED(g_pd3dDeviceContext->Map(g_maskTex, 0,
-        D3D11_MAP_WRITE_DISCARD, 0, &ms)))
-    {
-        for (int y = 0; y < maskTexH; ++y)
-            memcpy((uint8_t*)ms.pData + ms.RowPitch * y,
-                rgba.ptr(y), maskTexW * 4);
-        g_pd3dDeviceContext->Unmap(g_maskTex, 0);
-    }
-}
-
 void draw_debug_frame()
 {
     cv::Mat frameCopy;
@@ -238,35 +185,6 @@ void draw_debug_frame()
 
     ImVec2 image_pos = ImGui::GetItemRectMin();
     ImDrawList* draw_list = ImGui::GetWindowDrawList();
-
-#ifdef USE_CUDA
-    if (config.depth_mask_enabled)
-    {
-        auto& depthMask = depth_anything::GetDepthMaskGenerator();
-        cv::Mat mask = depthMask.getMask();
-        if (!mask.empty() && mask.size() == frameCopy.size())
-        {
-            cv::Mat alpha(mask.size(), CV_8U, cv::Scalar(0));
-            alpha.setTo(config.depth_mask_alpha, mask);
-
-            std::vector<cv::Mat> channels(4);
-            channels[0] = cv::Mat(mask.size(), CV_8U, cv::Scalar(255));
-            channels[1] = cv::Mat(mask.size(), CV_8U, cv::Scalar(0));
-            channels[2] = cv::Mat(mask.size(), CV_8U, cv::Scalar(0));
-            channels[3] = alpha;
-
-            cv::Mat rgba;
-            cv::merge(channels, rgba);
-            uploadMaskFrame(rgba);
-
-            if (g_maskSRV)
-            {
-                ImVec2 overlay_max(image_pos.x + image_size.x, image_pos.y + image_size.y);
-                draw_list->AddImage(g_maskSRV, image_pos, overlay_max);
-            }
-        }
-    }
-#endif
 
     {
         std::lock_guard<std::mutex> lock(detectionBuffer.mutex);
@@ -354,11 +272,10 @@ void draw_capture_preview()
 
 void draw_debug()
 {
-    if (!neuralDebugUiInitialized)
+    if (!debugUiInitialized)
     {
         strncpy_s(debugLogFilePathBuf, config.debug_log_file_path.c_str(), _TRUNCATE);
-        strncpy_s(neuralTrackerLogPathBuf, config.neural_tracker_log_path.c_str(), _TRUNCATE);
-        neuralDebugUiInitialized = true;
+        debugUiInitialized = true;
     }
 
     if (OverlayUI::BeginSection("Screenshot Buttons", "debug_section_screenshot_buttons"))
@@ -396,30 +313,13 @@ void draw_debug()
         OverlayUI::EndSection();
     }
 
-    if (OverlayUI::BeginSection("Neural Diagnostics", "debug_section_neural_diagnostics"))
-    {
-        ImGui::Checkbox("Log neural tracker associations", &config.neural_tracker_log_enabled);
-        ImGui::Checkbox("Show neural tracker debug", &config.neural_tracker_debug_enabled);
-        ImGui::SetNextItemWidth(OverlayUI::AdaptiveItemWidth(0.78f));
-        if (ImGui::InputText("Neural tracker log", neuralTrackerLogPathBuf, IM_ARRAYSIZE(neuralTrackerLogPathBuf)))
-        {
-            config.neural_tracker_log_path = neuralTrackerLogPathBuf;
-            OverlayConfig_MarkDirty();
-        }
-        OverlayUI::EndSection();
-    }
-
     if (prev_screenshot_delay != config.screenshot_delay ||
         prev_verbose != config.verbose ||
-        prev_debug_log_file_enabled != config.debug_log_file_enabled ||
-        prev_neural_tracker_log_enabled != config.neural_tracker_log_enabled ||
-        prev_neural_tracker_debug_enabled != config.neural_tracker_debug_enabled)
+        prev_debug_log_file_enabled != config.debug_log_file_enabled)
     {
         prev_screenshot_delay = config.screenshot_delay;
         prev_verbose = config.verbose;
         prev_debug_log_file_enabled = config.debug_log_file_enabled;
-        prev_neural_tracker_log_enabled = config.neural_tracker_log_enabled;
-        prev_neural_tracker_debug_enabled = config.neural_tracker_debug_enabled;
         OverlayConfig_MarkDirty();
     }
 }

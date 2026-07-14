@@ -367,11 +367,6 @@ std::vector<std::string> getOnnxFiles()
     return GetModelFilesByExt({ ".onnx" });
 }
 
-std::vector<std::string> getAvailableDepthModels()
-{
-    return GetModelFilesByExtInDir("models/depth", { ".engine", ".onnx", ".trt", ".plan" });
-}
-
 std::vector<std::string>::difference_type getModelIndex(const std::vector<std::string>& engine_models)
 {
     auto it = std::find(engine_models.begin(), engine_models.end(), config.ai_model);

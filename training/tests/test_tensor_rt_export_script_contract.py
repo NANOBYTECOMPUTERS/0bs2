@@ -51,7 +51,7 @@ class TensorRtExportScriptContractTests(unittest.TestCase):
         readme = self.read("cuda/README.md")
 
         self.assertIn("export-engine.ps1", readme)
-        self.assertIn("training/models/neural_tracker.onnx", readme)
+        self.assertIn("models\\yolo26.onnx", readme)
         self.assertIn("-DryRun", readme)
 
 

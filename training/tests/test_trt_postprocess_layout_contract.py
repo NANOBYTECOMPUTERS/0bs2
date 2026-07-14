@@ -39,6 +39,21 @@ class TrtPostProcessLayoutContractTests(unittest.TestCase):
         self.assertIn("hasPlainLayout", resolver)
         self.assertLess(resolver.index("if (hasObjectnessLayout)"), resolver.index("if (hasPlainLayout)"))
 
+    def test_yolo26_and_final_detection_outputs_bypass_local_nms(self):
+        config_h = (REPO_ROOT / "config" / "config.h").read_text(encoding="utf-8")
+        config_cpp = (REPO_ROOT / "config" / "config.cpp").read_text(encoding="utf-8")
+        post_cpp = self.read_postprocess()
+
+        self.assertIn("bool yolo26_disable_nms", config_h)
+        self.assertIn('yolo26_disable_nms = get_bool("yolo26_disable_nms", true)', config_cpp)
+        self.assertIn("tracker_v2_detector_max_candidates", config_h)
+        self.assertIn("currentModelIsYolo26", post_cpp)
+        self.assertIn("shouldBypassLocalNms", post_cpp)
+        self.assertIn("finalizeDetections(detections, layout.nmsOutput", post_cpp)
+        self.assertIn("finalizeDetections(detections, true", post_cpp)
+        self.assertIn("config.yolo26_disable_nms && currentModelIsYolo26()", post_cpp)
+        self.assertIn("config.tracker_v2_detector_max_candidates", post_cpp)
+
     def test_trt_detector_can_pass_positive_class_count_for_nms_shape(self):
         trt_cpp = (REPO_ROOT / "detector" / "trt_detector.cpp").read_text(encoding="utf-8")
 

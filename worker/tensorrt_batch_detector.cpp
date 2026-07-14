@@ -288,7 +288,6 @@ void TensorRtBatchDetector::reset()
     gpuBgrBuffer.release();
     gpuResizedBuffer.release();
     gpuLetterboxBuffer.release();
-    gpuFloatBuffer.release();
     if (stream)
     {
         cudaStreamDestroy(stream);
@@ -504,7 +503,6 @@ bool TensorRtBatchDetector::loadEngine(const std::string& enginePath, std::strin
 
     gpuResizedBuffer.create(inputHeight, inputWidth, CV_8UC3);
     gpuLetterboxBuffer.create(inputHeight, inputWidth, CV_8UC3);
-    gpuFloatBuffer.create(inputHeight, inputWidth, CV_32FC3);
     return true;
 }
 
@@ -753,7 +751,6 @@ bool TensorRtBatchDetector::preprocess(
         cv::Rect(padLeft, padTop, transform.resizedWidth, transform.resizedHeight));
     gpuResizedBuffer.copyTo(roi, cvStream);
 
-    gpuLetterboxBuffer.convertTo(gpuFloatBuffer, CV_32FC3, 1.0 / 255.0, 0.0, cvStream);
     const size_t slotElements = static_cast<size_t>(inputChannels) *
         static_cast<size_t>(inputWidth) *
         static_cast<size_t>(inputHeight);
@@ -763,7 +760,7 @@ bool TensorRtBatchDetector::preprocess(
         dst += static_cast<size_t>(slot) * slotElements;
     }
     launch_hwc_to_chw_norm(
-        gpuFloatBuffer,
+        gpuLetterboxBuffer,
         dst,
         inputWidth,
         inputHeight,

@@ -7,16 +7,12 @@
 #include <limits>
 #include <algorithm>
 #include <numeric>
-#include <memory>
-#include <string>
 #include <utility>
 #include <opencv2/opencv.hpp>
 
 #include "0BS_box_2.h"
 #include "BoxTarget.h"
 #include "config.h"
-#include "neural/NeuralTracker.h"
-#include "neural/TemporalPredictor.h"
 
 BoxTarget::BoxTarget()
     : x(0), y(0), w(0), h(0), classId(0), pivotX(0.0), pivotY(0.0), smoothX(0.0), smoothY(0.0), confidence(1.0), trackId(-1)
@@ -132,6 +128,11 @@ BoxTarget* sortTargets(
     return new BoxTarget(finalX, finalY, finalW, finalH, finalClass, pivotX, pivotY, finalConfidence);
 }
 
+namespace
+{
+double clampedLogSize(double size);
+}
+
 float MultiTargetTracker::iou(const cv::Rect2f& a, const cv::Rect2f& b)
 {
     const float x1 = std::max(a.x, b.x);
@@ -146,6 +147,176 @@ float MultiTargetTracker::iou(const cv::Rect2f& a, const cv::Rect2f& b)
     return inter / ua;
 }
 
+void MultiTargetTracker::initializeBoxKalman(BoxKalmanState& state, const cv::Rect2f& box, const cv::Point2f& velocity)
+{
+    const double cx = static_cast<double>(box.x) + static_cast<double>(box.width) * 0.5;
+    const double cy = static_cast<double>(box.y) + static_cast<double>(box.height) * 0.5;
+
+    state = BoxKalmanState();
+    state.initialized = true;
+    state.cx.pos = cx;
+    state.cy.pos = cy;
+    state.logW.pos = clampedLogSize(box.width);
+    state.logH.pos = clampedLogSize(box.height);
+    state.cx.vel = velocity.x;
+    state.cy.vel = velocity.y;
+
+    state.cx.p00 = 4.0;
+    state.cy.p00 = 4.0;
+    state.logW.p00 = 0.04;
+    state.logH.p00 = 0.04;
+    state.cx.p11 = 1600.0;
+    state.cy.p11 = 1600.0;
+    state.logW.p11 = 0.10;
+    state.logH.p11 = 0.10;
+}
+
+cv::Rect2f MultiTargetTracker::boxKalmanToRect(const BoxKalmanState& state)
+{
+    if (!state.initialized)
+        return {};
+
+    const float width = static_cast<float>(std::exp(std::clamp(state.logW.pos, std::log(1.0), std::log(4096.0))));
+    const float height = static_cast<float>(std::exp(std::clamp(state.logH.pos, std::log(1.0), std::log(4096.0))));
+    const float x = static_cast<float>(state.cx.pos - width * 0.5);
+    const float y = static_cast<float>(state.cy.pos - height * 0.5);
+    return { x, y, width, height };
+}
+
+void MultiTargetTracker::predictBoxKalmanInPlace(BoxKalmanState& state, double dt, const cv::Point2d& egoMotionShift)
+{
+    if (!state.initialized)
+        return;
+
+    dt = std::clamp(dt, 1e-4, 0.25);
+    state.cx.pos -= egoMotionShift.x;
+    state.cy.pos -= egoMotionShift.y;
+
+    auto predictAxis = [dt](BoxAxisKalman& axis, double processPos, double processVel)
+        {
+            axis.pos += axis.vel * dt;
+
+            const double old00 = axis.p00;
+            const double old01 = axis.p01;
+            const double old10 = axis.p10;
+            const double old11 = axis.p11;
+
+            axis.p00 = old00 + dt * (old10 + old01) + dt * dt * old11 + processPos;
+            axis.p01 = old01 + dt * old11;
+            axis.p10 = old10 + dt * old11;
+            axis.p11 = old11 + processVel;
+        };
+
+    predictAxis(state.cx, 1.25, 950.0 * dt);
+    predictAxis(state.cy, 1.25, 950.0 * dt);
+    predictAxis(state.logW, 0.0035, 0.018 * dt);
+    predictAxis(state.logH, 0.0035, 0.018 * dt);
+}
+
+cv::Rect2f MultiTargetTracker::predictBoxKalman(const BoxKalmanState& state, double dt, const cv::Point2d& egoMotionShift)
+{
+    if (!state.initialized)
+        return {};
+
+    BoxKalmanState predicted = state;
+    predictBoxKalmanInPlace(predicted, dt, egoMotionShift);
+    return boxKalmanToRect(predicted);
+}
+
+void MultiTargetTracker::correctBoxKalman(BoxKalmanState& state, const cv::Rect2f& measurement, float confidence)
+{
+    if (!state.initialized)
+    {
+        initializeBoxKalman(state, measurement);
+        return;
+    }
+
+    confidence = std::clamp(confidence, 0.0f, 1.0f);
+    const double positionStd = 2.0 + (1.0 - static_cast<double>(confidence)) * 18.0;
+    const double positionNoise = positionStd * positionStd;
+    const double sizeNoise = 0.004 + (1.0 - static_cast<double>(confidence)) * 0.075;
+
+    auto correctAxis = [](BoxAxisKalman& axis, double measurementValue, double measurementNoise)
+        {
+            const double s = axis.p00 + std::max(1e-9, measurementNoise);
+            const double k0 = axis.p00 / s;
+            const double k1 = axis.p10 / s;
+            const double residual = measurementValue - axis.pos;
+
+            const double old00 = axis.p00;
+            const double old01 = axis.p01;
+            const double old10 = axis.p10;
+            const double old11 = axis.p11;
+
+            axis.pos += k0 * residual;
+            axis.vel += k1 * residual;
+            axis.p00 = (1.0 - k0) * old00;
+            axis.p01 = (1.0 - k0) * old01;
+            axis.p10 = old10 - k1 * old00;
+            axis.p11 = old11 - k1 * old01;
+        };
+
+    const double cx = static_cast<double>(measurement.x) + static_cast<double>(measurement.width) * 0.5;
+    const double cy = static_cast<double>(measurement.y) + static_cast<double>(measurement.height) * 0.5;
+    correctAxis(state.cx, cx, positionNoise);
+    correctAxis(state.cy, cy, positionNoise);
+    correctAxis(state.logW, clampedLogSize(measurement.width), sizeNoise);
+    correctAxis(state.logH, clampedLogSize(measurement.height), sizeNoise);
+    state.logW.pos = std::clamp(state.logW.pos, std::log(1.0), std::log(4096.0));
+    state.logH.pos = std::clamp(state.logH.pos, std::log(1.0), std::log(4096.0));
+}
+
+cv::Point2f MultiTargetTracker::boxKalmanVelocity(const BoxKalmanState& state)
+{
+    if (!state.initialized)
+        return {};
+    return {
+        static_cast<float>(state.cx.vel),
+        static_cast<float>(state.cy.vel)
+    };
+}
+
+cv::Point2f MultiTargetTracker::boxKalmanSizeVelocity(const BoxKalmanState& state)
+{
+    if (!state.initialized)
+        return {};
+
+    const double width = std::exp(std::clamp(state.logW.pos, std::log(1.0), std::log(4096.0)));
+    const double height = std::exp(std::clamp(state.logH.pos, std::log(1.0), std::log(4096.0)));
+    return {
+        static_cast<float>(width * state.logW.vel),
+        static_cast<float>(height * state.logH.vel)
+    };
+}
+
+void MultiTargetTracker::updateStableBox(TrackState& t, float alpha)
+{
+    if (!config.tracker_v2_enabled)
+    {
+        t.stableBox = t.box;
+        t.stableBoxInitialized = true;
+        return;
+    }
+
+    alpha = std::clamp(alpha, 0.02f, 1.0f);
+    if (!t.stableBoxInitialized)
+    {
+        t.stableBox = t.box;
+        t.stableBoxInitialized = true;
+        return;
+    }
+
+    t.stableBox.x = t.stableBox.x * (1.0f - alpha) + t.box.x * alpha;
+    t.stableBox.y = t.stableBox.y * (1.0f - alpha) + t.box.y * alpha;
+    t.stableBox.width = std::max(1.0f, t.stableBox.width * (1.0f - alpha) + t.box.width * alpha);
+    t.stableBox.height = std::max(1.0f, t.stableBox.height * (1.0f - alpha) + t.box.height * alpha);
+}
+
+cv::Rect2f MultiTargetTracker::outputBoxForTrack(const TrackState& t)
+{
+    return (config.tracker_v2_enabled && t.stableBoxInitialized) ? t.stableBox : t.box;
+}
+
 float MultiTargetTracker::scaleFactor() const
 {
     return std::clamp(config.detection_resolution / 320.0f, 0.5f, 2.5f);
@@ -153,6 +324,9 @@ float MultiTargetTracker::scaleFactor() const
 
 namespace
 {
+constexpr double kInvalidAssociationCost = 1.0e6;
+constexpr double kUnassignedAssociationCost = 2.20;
+
 bool useImmEstimator()
 {
     return config.estimator_mode == "imm";
@@ -188,6 +362,89 @@ void applyInnerAimEgoMotion(InnerAimTrack& track, const cv::Point2d& egoMotion)
     track.smoothY += offsetY;
     track.kalman.applyPositionOffset(offsetX, offsetY);
     track.imm.applyPositionOffset(offsetX, offsetY);
+}
+
+std::vector<int> solveHungarianSquare(const std::vector<std::vector<double>>& cost)
+{
+    const int n = static_cast<int>(cost.size());
+    if (n == 0)
+        return {};
+
+    std::vector<double> u(n + 1, 0.0);
+    std::vector<double> v(n + 1, 0.0);
+    std::vector<int> p(n + 1, 0);
+    std::vector<int> way(n + 1, 0);
+
+    for (int i = 1; i <= n; ++i)
+    {
+        p[0] = i;
+        int j0 = 0;
+        std::vector<double> minv(n + 1, std::numeric_limits<double>::infinity());
+        std::vector<char> used(n + 1, 0);
+
+        do
+        {
+            used[j0] = 1;
+            const int i0 = p[j0];
+            double delta = std::numeric_limits<double>::infinity();
+            int j1 = 0;
+
+            for (int j = 1; j <= n; ++j)
+            {
+                if (used[j])
+                    continue;
+
+                const double cur = cost[static_cast<size_t>(i0 - 1)][static_cast<size_t>(j - 1)] - u[i0] - v[j];
+                if (cur < minv[j])
+                {
+                    minv[j] = cur;
+                    way[j] = j0;
+                }
+                if (minv[j] < delta)
+                {
+                    delta = minv[j];
+                    j1 = j;
+                }
+            }
+
+            for (int j = 0; j <= n; ++j)
+            {
+                if (used[j])
+                {
+                    u[p[j]] += delta;
+                    v[j] -= delta;
+                }
+                else
+                {
+                    minv[j] -= delta;
+                }
+            }
+
+            j0 = j1;
+        }
+        while (p[j0] != 0);
+
+        do
+        {
+            const int j1 = way[j0];
+            p[j0] = p[j1];
+            j0 = j1;
+        }
+        while (j0 != 0);
+    }
+
+    std::vector<int> assignment(n, -1);
+    for (int j = 1; j <= n; ++j)
+    {
+        if (p[j] > 0)
+            assignment[static_cast<size_t>(p[j] - 1)] = j - 1;
+    }
+    return assignment;
+}
+
+double clampedLogSize(double size)
+{
+    return std::log(std::clamp(size, 1.0, 4096.0));
 }
 }
 
@@ -413,77 +670,14 @@ void MultiTargetTracker::decayInnerAim(InnerAimTrack& track)
     }
 }
 
-aim::neural::TemporalPredictor::Input MultiTargetTracker::buildTemporalPredictorInput(
-    const TrackState& t,
-    int screenWidth,
-    int screenHeight) const
-{
-    aim::neural::TemporalPredictor::Input input;
-    input.history_length = std::clamp(config.temporal_prediction_history_length, 2, 64);
-
-    if (t.history.empty())
-        return input;
-
-    const size_t needed = static_cast<size_t>(input.history_length);
-    input.history.reserve(needed * aim::neural::TemporalPredictorFeatureCount);
-    const size_t available = t.history.size();
-    const size_t start = available > needed ? available - needed : 0;
-    const auto& pad = t.history.front();
-    const int padCount = static_cast<int>(needed - std::min(needed, available));
-    std::vector<TrackState::TrackHistorySample> selected;
-    selected.reserve(needed);
-
-    for (int i = 0; i < padCount; ++i)
-    {
-        auto padded = pad;
-        padded.egoMotionX = 0.0;
-        padded.egoMotionY = 0.0;
-        selected.push_back(padded);
-    }
-
-    for (size_t i = start; i < available; ++i)
-        selected.push_back(t.history[i]);
-
-    std::vector<cv::Point2d> compensatedPositions(selected.size());
-    double cumulativeEgoX = 0.0;
-    double cumulativeEgoY = 0.0;
-    for (int i = static_cast<int>(selected.size()) - 1; i >= 0; --i)
-    {
-        const auto& s = selected[static_cast<size_t>(i)];
-        compensatedPositions[static_cast<size_t>(i)] = config.ego_motion_compensation_enabled
-            ? cv::Point2d(s.x - cumulativeEgoX, s.y - cumulativeEgoY)
-            : cv::Point2d(s.x, s.y);
-        cumulativeEgoX += s.egoMotionX;
-        cumulativeEgoY += s.egoMotionY;
-    }
-
-    auto appendSample = [&](const TrackState::TrackHistorySample& s, const cv::Point2d& compensatedPosition)
-        {
-            input.history.push_back(static_cast<float>(compensatedPosition.x));
-            input.history.push_back(static_cast<float>(compensatedPosition.y));
-            input.history.push_back(static_cast<float>(s.w));
-            input.history.push_back(static_cast<float>(s.h));
-            input.history.push_back(static_cast<float>(s.vx));
-            input.history.push_back(static_cast<float>(s.vy));
-            input.history.push_back(static_cast<float>(s.boxScaleVel));
-            input.history.push_back(static_cast<float>(std::clamp(s.confidence, 0.0, 1.0)));
-        };
-
-    for (size_t i = 0; i < selected.size(); ++i)
-        appendSample(selected[i], compensatedPositions[i]);
-
-    (void)screenWidth;
-    (void)screenHeight;
-    return input;
-}
-
 void MultiTargetTracker::appendTrackHistory(TrackState& t, const cv::Point2d& egoMotionShift)
 {
+    const cv::Rect2f historyBox = outputBoxForTrack(t);
     TrackState::TrackHistorySample sample;
     sample.x = t.innerAim.smoothX;
     sample.y = t.innerAim.smoothY;
-    sample.w = t.box.width;
-    sample.h = t.box.height;
+    sample.w = historyBox.width;
+    sample.h = historyBox.height;
     sample.vx = t.velocity.x;
     sample.vy = t.velocity.y;
     sample.boxScaleVel = (static_cast<double>(t.sizeVelocity.x) + static_cast<double>(t.sizeVelocity.y)) * 0.5;
@@ -492,79 +686,9 @@ void MultiTargetTracker::appendTrackHistory(TrackState& t, const cv::Point2d& eg
     sample.egoMotionY = egoMotionShift.y;
 
     t.history.push_back(sample);
-    const size_t maxHistory = static_cast<size_t>(std::clamp(config.temporal_prediction_history_length * 2, 8, 128));
+    constexpr size_t maxHistory = 64;
     while (t.history.size() > maxHistory)
         t.history.pop_front();
-}
-
-void MultiTargetTracker::updateTemporalPrediction(TrackState& t, int screenWidth, int screenHeight)
-{
-    auto& worker = aim::neural::TemporalPredictionWorker::instance();
-
-    if (!config.temporal_prediction_enabled)
-    {
-        t.temporalPrediction.clear();
-        t.temporalPredictionValid = false;
-        t.temporalPredictionPending = false;
-        worker.clear();
-        return;
-    }
-
-    const int historyLength = std::clamp(config.temporal_prediction_history_length, 2, 64);
-    if (static_cast<int>(t.history.size()) < historyLength)
-    {
-        t.temporalPrediction.clear();
-        t.temporalPredictionValid = false;
-        t.temporalPredictionPending = false;
-        return;
-    }
-
-    const int interval = std::clamp(config.temporal_prediction_interval_frames, 1, 16);
-    aim::neural::TemporalPredictionWorker::Result workerResult;
-    if (worker.tryGet(t.id, workerResult))
-    {
-        t.temporalPredictionPending = false;
-        if (workerResult.valid &&
-            workerResult.frame_id >= t.lastTemporalPredictionFrame &&
-            !workerResult.output.future_x.empty() &&
-            workerResult.output.future_x.size() == workerResult.output.future_y.size())
-        {
-            t.temporalPrediction.clear();
-            t.temporalPrediction.reserve(workerResult.output.future_x.size());
-            for (size_t i = 0; i < workerResult.output.future_x.size(); ++i)
-            {
-                const double x = std::clamp(static_cast<double>(workerResult.output.future_x[i]), 0.0, static_cast<double>(screenWidth));
-                const double y = std::clamp(static_cast<double>(workerResult.output.future_y[i]), 0.0, static_cast<double>(screenHeight));
-                t.temporalPrediction.emplace_back(x, y);
-            }
-            t.temporalPredictionValid = !t.temporalPrediction.empty();
-            t.lastTemporalPredictionFrame = workerResult.frame_id;
-        }
-    }
-
-    if (t.temporalPredictionValid &&
-        updateFrameCounter_ - t.lastTemporalPredictionFrame < interval)
-    {
-        return;
-    }
-
-    if (t.temporalPredictionPending &&
-        updateFrameCounter_ - t.lastTemporalPredictionRequestFrame < std::max(1, interval * 2))
-    {
-        return;
-    }
-
-    auto input = buildTemporalPredictorInput(t, screenWidth, screenHeight);
-    aim::neural::TemporalPredictionWorker::Request request;
-    request.track_id = t.id;
-    request.frame_id = updateFrameCounter_;
-    request.model_path = config.temporal_prediction_model_path;
-    request.history_length = historyLength;
-    request.prediction_horizon = std::clamp(config.temporal_prediction_horizon, 1, 64);
-    request.input = std::move(input);
-    worker.submit(request);
-    t.temporalPredictionPending = true;
-    t.lastTemporalPredictionRequestFrame = updateFrameCounter_;
 }
 
 bool MultiTargetTracker::shouldAcceptAsNewLock(const DetectionCandidate& det, const InnerAimTrack* current) const
@@ -594,6 +718,9 @@ int MultiTargetTracker::findTrackIndexById(int id) const
 
 int MultiTargetTracker::allowedMissedFrames(const TrackState& t) const
 {
+    if (config.tracker_v2_enabled && t.lifecycle == TrackLifecycle::Tentative)
+        return std::min(maxMissedFrames_, 2);
+
     // Keep the locked target alive longer to survive short occlusion/fast motion bursts.
     const int lockedBonus = (t.id == lockedTrackId_) ? 8 : 0;
     const int historyBonus = std::clamp(t.hits / 3, 0, 4);
@@ -652,7 +779,6 @@ void MultiTargetTracker::reset()
     nextId_ = 1;
     lockedTrackId_ = -1;
     updateFrameCounter_ = 0;
-    aim::neural::TemporalPredictionWorker::instance().clear();
 }
 
 void MultiTargetTracker::update(
@@ -834,86 +960,14 @@ void MultiTargetTracker::update(
         double confidenceBonus = 0.0;
         double innerAssociationCost = 0.0;
         double antiStealPenalty = 0.0;
-        double neuralScore = 0.5;
-        double neuralBonus = 0.0;
-        bool neuralEvaluated = false;
-        aim::neural::NeuralTrackerFeatures neuralFeatures;
         bool accepted = false;
     };
-
-    auto getNeuralTracker = []() -> std::shared_ptr<aim::neural::INeuralTracker>
-        {
-            static std::shared_ptr<aim::neural::INeuralTracker> tracker;
-            static std::string loadedPath;
-            static std::string loadedRuntime;
-            static bool attemptedLoad = false;
-
-            if (!config.neural_tracker_enabled)
-            {
-                tracker.reset();
-                loadedPath.clear();
-                loadedRuntime.clear();
-                attemptedLoad = false;
-                return nullptr;
-            }
-
-            if (!attemptedLoad
-                || loadedPath != config.neural_tracker_model_path
-                || loadedRuntime != config.neural_tracker_runtime)
-            {
-                loadedPath = config.neural_tracker_model_path;
-                loadedRuntime = config.neural_tracker_runtime;
-                tracker = aim::neural::createNeuralTracker(loadedPath, loadedRuntime);
-                attemptedLoad = true;
-            }
-
-            return tracker;
-        };
-
-    auto buildNeuralFeatures = [&](const TrackState& t,
-                                   const DetectionCandidate& d,
-                                   const cv::Rect2f& predictedBox,
-                                   double dt,
-                                   double dist,
-                                   double maxDist,
-                                   double overlap,
-                                   double headingAlignment,
-                                   float classCompatibility,
-                                   bool relaxedForLocked) -> aim::neural::NeuralTrackerFeatures
-        {
-            const double predictedArea = std::max(1.0, static_cast<double>(predictedBox.width * predictedBox.height));
-            const double detArea = std::max(1.0, static_cast<double>(d.box.width * d.box.height));
-            const double predCx = predictedBox.x + predictedBox.width * 0.5;
-            const double predCy = predictedBox.y + predictedBox.height * 0.5;
-            const double speed = std::hypot(t.velocity.x, t.velocity.y);
-            const double screenScale = std::max(1.0, static_cast<double>(std::max(screenWidth, screenHeight)));
-
-            aim::neural::NeuralTrackerFeatures features;
-            features.distanceNorm = static_cast<float>(std::clamp(dist / std::max(1.0, maxDist), 0.0, 3.0));
-            features.iou = static_cast<float>(std::clamp(overlap, 0.0, 1.0));
-            features.sizeLogRatio = static_cast<float>(std::clamp(std::log(detArea / predictedArea), -3.0, 3.0));
-            features.detectionConfidence = std::clamp(d.confidence, 0.0f, 1.0f);
-            features.trackConfidence = std::clamp(t.confidence, 0.0f, 1.0f);
-            features.headingAlignment = static_cast<float>(std::clamp(headingAlignment, -1.0, 1.0));
-            features.trackMissedNorm = static_cast<float>(std::clamp(t.missed / 12.0, 0.0, 1.0));
-            features.trackHitsNorm = static_cast<float>(std::clamp(t.hits / 12.0, 0.0, 1.0));
-            features.isLocked = (t.id == lockedTrackId_) ? 1.0f : 0.0f;
-            features.classCompatible = static_cast<float>(std::clamp(static_cast<double>(classCompatibility), 0.0, 1.0));
-            features.dt = static_cast<float>(std::clamp(dt, 0.0, 0.25));
-            features.speedNorm = static_cast<float>(std::clamp(speed / (screenScale * 3.5), 0.0, 2.0));
-            features.targetSizeNorm = static_cast<float>(std::clamp(std::sqrt(detArea) / screenScale, 0.0, 1.0));
-            features.pivotOffsetXNorm = static_cast<float>(std::clamp((d.pivotX - predCx) / screenScale, -2.0, 2.0));
-            features.pivotOffsetYNorm = static_cast<float>(std::clamp((d.pivotY - predCy) / screenScale, -2.0, 2.0));
-            features.relaxedGate = relaxedForLocked ? 1.0f : 0.0f;
-            return features;
-        };
 
     auto computeAssociationBreakdown = [&](const TrackState& t, const DetectionCandidate& d, bool relaxedForLocked) -> AssociationBreakdown
         {
             AssociationBreakdown breakdown;
 
             const bool sameClass = (d.classId == t.classId);
-            double classCompatibilityScore = sameClass ? 1.0 : 0.0;
             double classPenalty = 0.0;
             if (!sameClass)
             {
@@ -925,7 +979,6 @@ void MultiTargetTracker::update(
                     return breakdown;
 
                 classPenalty = 0.18;
-                classCompatibilityScore = 0.5;
             }
 
             const double dt = std::clamp(
@@ -933,11 +986,21 @@ void MultiTargetTracker::update(
                 1e-4, 0.25
             );
 
-            const float predCx = t.box.x + t.box.width * 0.5f + t.velocity.x * static_cast<float>(dt) - static_cast<float>(compensatedEgoMotion.x);
-            const float predCy = t.box.y + t.box.height * 0.5f + t.velocity.y * static_cast<float>(dt) - static_cast<float>(compensatedEgoMotion.y);
-            const float predW = std::max(1.0f, t.box.width + t.sizeVelocity.x * static_cast<float>(dt));
-            const float predH = std::max(1.0f, t.box.height + t.sizeVelocity.y * static_cast<float>(dt));
-            cv::Rect2f predictedBox(predCx - predW * 0.5f, predCy - predH * 0.5f, predW, predH);
+            cv::Rect2f predictedBox;
+            if (config.tracker_v2_enabled && t.boxKalman.initialized)
+            {
+                predictedBox = predictBoxKalman(t.boxKalman, dt, compensatedEgoMotion);
+            }
+            else
+            {
+                const float predCxLegacy = t.box.x + t.box.width * 0.5f + t.velocity.x * static_cast<float>(dt) - static_cast<float>(compensatedEgoMotion.x);
+                const float predCyLegacy = t.box.y + t.box.height * 0.5f + t.velocity.y * static_cast<float>(dt) - static_cast<float>(compensatedEgoMotion.y);
+                const float predWLegacy = std::max(1.0f, t.box.width + t.sizeVelocity.x * static_cast<float>(dt));
+                const float predHLegacy = std::max(1.0f, t.box.height + t.sizeVelocity.y * static_cast<float>(dt));
+                predictedBox = cv::Rect2f(predCxLegacy - predWLegacy * 0.5f, predCyLegacy - predHLegacy * 0.5f, predWLegacy, predHLegacy);
+            }
+            const double predCx = static_cast<double>(predictedBox.x) + static_cast<double>(predictedBox.width) * 0.5;
+            const double predCy = static_cast<double>(predictedBox.y) + static_cast<double>(predictedBox.height) * 0.5;
 
             const double detCx = d.box.x + d.box.width * 0.5;
             const double detCy = d.box.y + d.box.height * 0.5;
@@ -1046,45 +1109,6 @@ void MultiTargetTracker::update(
                 lockedBias +
                 antiStealPenalty;
 
-            if (config.neural_tracker_enabled)
-            {
-                breakdown.neuralFeatures = buildNeuralFeatures(
-                    t,
-                    d,
-                    predictedBox,
-                    dt,
-                    dist,
-                    maxDist,
-                    overlap,
-                    headingAlignment,
-                    static_cast<float>(classCompatibilityScore),
-                    relaxedForLocked);
-
-                if (auto tracker = getNeuralTracker())
-                {
-                    const aim::neural::NeuralTrackerResult neuralResult = tracker->score(breakdown.neuralFeatures);
-                    if (neuralResult.valid)
-                    {
-                        breakdown.neuralScore = neuralResult.neuralScore;
-                        breakdown.neuralEvaluated = true;
-                        const double blend = std::clamp(static_cast<double>(config.neural_tracker_blend), 0.0, 1.0);
-                        breakdown.neuralBonus = std::clamp((breakdown.neuralScore - 0.5) * 0.40 * blend, -0.20, 0.20);
-                        breakdown.score -= breakdown.neuralBonus;
-                    }
-                }
-
-                if (config.neural_tracker_log_enabled)
-                {
-                    aim::neural::logNeuralTrackerAssociation(
-                        config.neural_tracker_log_path,
-                        breakdown.neuralFeatures,
-                        static_cast<float>(breakdown.neuralScore),
-                        static_cast<float>(breakdown.score + breakdown.neuralBonus),
-                        static_cast<float>(breakdown.score),
-                        true,
-                        false);
-                }
-            }
             return breakdown;
         };
 
@@ -1094,81 +1118,192 @@ void MultiTargetTracker::update(
             return breakdown.accepted ? breakdown.score : std::numeric_limits<double>::infinity();
         };
 
-    auto tryAssignTrack = [&](int trackIndex, bool relaxedForLocked)
-        {
-            if (trackIndex < 0 || trackIndex >= static_cast<int>(tracks_.size()))
-                return;
-            if (trackAssigned[trackIndex] != -1)
-                return;
-
-            double bestScore = std::numeric_limits<double>::infinity();
-            int bestDet = -1;
-            const auto& track = tracks_[trackIndex];
-
-            for (size_t di = 0; di < dets.size(); ++di)
-            {
-                if (detAssigned[di] != -1)
-                    continue;
-
-                const double score = computeMatchScore(track, dets[di], relaxedForLocked);
-                if (score < bestScore)
-                {
-                    bestScore = score;
-                    bestDet = static_cast<int>(di);
-                }
-            }
-
-            if (bestDet >= 0)
-            {
-                trackAssigned[trackIndex] = bestDet;
-                detAssigned[bestDet] = trackIndex;
-            }
-        };
-
-    // Always try to keep the locked track on the same identity first.
-    if (lockedTrackId_ != -1)
+    if (config.tracker_v2_enabled)
     {
-        const int lockedIdx = findTrackIndexById(lockedTrackId_);
-        if (lockedIdx >= 0)
-            tryAssignTrack(lockedIdx, true);
-    }
+        const float highConfidence = std::clamp(config.tracker_v2_high_confidence, 0.0f, 1.0f);
+        std::vector<int> allTrackIndices(tracks_.size());
+        std::iota(allTrackIndices.begin(), allTrackIndices.end(), 0);
 
-    while (true)
-    {
-        double bestScore = std::numeric_limits<double>::max();
-        int bestTi = -1;
-        int bestDi = -1;
-
-        for (size_t ti = 0; ti < tracks_.size(); ++ti)
+        std::vector<int> highConfidenceDetections;
+        std::vector<int> lowConfidenceDetections;
+        highConfidenceDetections.reserve(dets.size());
+        lowConfidenceDetections.reserve(dets.size());
+        for (size_t di = 0; di < dets.size(); ++di)
         {
-            if (trackAssigned[ti] != -1)
-                continue;
-
-            const auto& t = tracks_[ti];
-
-            for (size_t di = 0; di < dets.size(); ++di)
-            {
-                if (detAssigned[di] != -1)
-                    continue;
-                const auto& d = dets[di];
-                const double score = computeMatchScore(t, d, false);
-                if (!std::isfinite(score))
-                    continue;
-
-                if (score < bestScore)
-                {
-                    bestScore = score;
-                    bestTi = static_cast<int>(ti);
-                    bestDi = static_cast<int>(di);
-                }
-            }
+            if (dets[di].confidence >= highConfidence)
+                highConfidenceDetections.push_back(static_cast<int>(di));
+            else
+                lowConfidenceDetections.push_back(static_cast<int>(di));
         }
 
-        if (bestTi < 0 || bestDi < 0)
-            break;
+        auto assignHungarianPass = [&](const std::vector<int>& trackIndices, const std::vector<int>& detectionIndices)
+            {
+                std::vector<int> activeTracks;
+                std::vector<int> activeDetections;
+                activeTracks.reserve(trackIndices.size());
+                activeDetections.reserve(detectionIndices.size());
 
-        trackAssigned[bestTi] = bestDi;
-        detAssigned[bestDi] = bestTi;
+                for (int ti : trackIndices)
+                {
+                    if (ti >= 0 &&
+                        ti < static_cast<int>(tracks_.size()) &&
+                        trackAssigned[static_cast<size_t>(ti)] == -1)
+                    {
+                        activeTracks.push_back(ti);
+                    }
+                }
+
+                for (int di : detectionIndices)
+                {
+                    if (di >= 0 &&
+                        di < static_cast<int>(dets.size()) &&
+                        detAssigned[static_cast<size_t>(di)] == -1)
+                    {
+                        activeDetections.push_back(di);
+                    }
+                }
+
+                if (activeTracks.empty() || activeDetections.empty())
+                    return;
+
+                const int rows = static_cast<int>(activeTracks.size());
+                const int cols = static_cast<int>(activeDetections.size());
+                const int n = rows + cols;
+                std::vector<std::vector<double>> assignmentCost(
+                    static_cast<size_t>(n),
+                    std::vector<double>(static_cast<size_t>(n), 0.0));
+
+                for (int r = 0; r < rows; ++r)
+                {
+                    for (int c = 0; c < cols; ++c)
+                        assignmentCost[static_cast<size_t>(r)][static_cast<size_t>(c)] = kInvalidAssociationCost;
+                    for (int c = cols; c < n; ++c)
+                        assignmentCost[static_cast<size_t>(r)][static_cast<size_t>(c)] = kUnassignedAssociationCost;
+                }
+
+                for (int r = 0; r < rows; ++r)
+                {
+                    const int ti = activeTracks[static_cast<size_t>(r)];
+                    const auto& track = tracks_[static_cast<size_t>(ti)];
+
+                    for (int c = 0; c < cols; ++c)
+                    {
+                        const int di = activeDetections[static_cast<size_t>(c)];
+                        const AssociationBreakdown breakdown = computeAssociationBreakdown(
+                            track,
+                            dets[static_cast<size_t>(di)],
+                            track.id == lockedTrackId_);
+
+                        if (breakdown.accepted && std::isfinite(breakdown.score))
+                            assignmentCost[static_cast<size_t>(r)][static_cast<size_t>(c)] = breakdown.score;
+                    }
+                }
+
+                const std::vector<int> assignment = solveHungarianSquare(assignmentCost);
+                for (int r = 0; r < rows; ++r)
+                {
+                    if (r >= static_cast<int>(assignment.size()))
+                        continue;
+
+                    const int c = assignment[static_cast<size_t>(r)];
+                    if (c < 0 || c >= cols)
+                        continue;
+
+                    if (assignmentCost[static_cast<size_t>(r)][static_cast<size_t>(c)] >= kUnassignedAssociationCost)
+                        continue;
+
+                    const int ti = activeTracks[static_cast<size_t>(r)];
+                    const int di = activeDetections[static_cast<size_t>(c)];
+                    if (trackAssigned[static_cast<size_t>(ti)] == -1 &&
+                        detAssigned[static_cast<size_t>(di)] == -1)
+                    {
+                        trackAssigned[static_cast<size_t>(ti)] = di;
+                        detAssigned[static_cast<size_t>(di)] = ti;
+                    }
+                }
+            };
+
+        assignHungarianPass(allTrackIndices, highConfidenceDetections);
+        assignHungarianPass(allTrackIndices, lowConfidenceDetections);
+    }
+    else
+    {
+        auto tryAssignTrack = [&](int trackIndex, bool relaxedForLocked)
+            {
+                if (trackIndex < 0 || trackIndex >= static_cast<int>(tracks_.size()))
+                    return;
+                if (trackAssigned[trackIndex] != -1)
+                    return;
+
+                double bestScore = std::numeric_limits<double>::infinity();
+                int bestDet = -1;
+                const auto& track = tracks_[trackIndex];
+
+                for (size_t di = 0; di < dets.size(); ++di)
+                {
+                    if (detAssigned[di] != -1)
+                        continue;
+
+                    const double score = computeMatchScore(track, dets[di], relaxedForLocked);
+                    if (score < bestScore)
+                    {
+                        bestScore = score;
+                        bestDet = static_cast<int>(di);
+                    }
+                }
+
+                if (bestDet >= 0)
+                {
+                    trackAssigned[trackIndex] = bestDet;
+                    detAssigned[bestDet] = trackIndex;
+                }
+            };
+
+        // Always try to keep the locked track on the same identity first.
+        if (lockedTrackId_ != -1)
+        {
+            const int lockedIdx = findTrackIndexById(lockedTrackId_);
+            if (lockedIdx >= 0)
+                tryAssignTrack(lockedIdx, true);
+        }
+
+        while (true)
+        {
+            double bestScore = std::numeric_limits<double>::max();
+            int bestTi = -1;
+            int bestDi = -1;
+
+            for (size_t ti = 0; ti < tracks_.size(); ++ti)
+            {
+                if (trackAssigned[ti] != -1)
+                    continue;
+
+                const auto& t = tracks_[ti];
+
+                for (size_t di = 0; di < dets.size(); ++di)
+                {
+                    if (detAssigned[di] != -1)
+                        continue;
+                    const auto& d = dets[di];
+                    const double score = computeMatchScore(t, d, false);
+                    if (!std::isfinite(score))
+                        continue;
+
+                    if (score < bestScore)
+                    {
+                        bestScore = score;
+                        bestTi = static_cast<int>(ti);
+                        bestDi = static_cast<int>(di);
+                    }
+                }
+            }
+
+            if (bestTi < 0 || bestDi < 0)
+                break;
+
+            trackAssigned[bestTi] = bestDi;
+            detAssigned[bestDi] = bestTi;
+        }
     }
 
     for (size_t ti = 0; ti < tracks_.size(); ++ti)
@@ -1213,10 +1348,34 @@ void MultiTargetTracker::update(
                 clampedRawVel *= scale;
             }
 
-            const float blend = (t.id == lockedTrackId_) ? 0.45f : 0.35f;
-            t.velocity = t.velocity * (1.0f - blend) + clampedRawVel * blend;
-            t.sizeVelocity = t.sizeVelocity * (1.0f - blend) + rawSizeVel * blend;
-            t.box = d.box;
+            if (config.tracker_v2_enabled)
+            {
+                if (!t.boxKalman.initialized)
+                    initializeBoxKalman(t.boxKalman, t.box, t.velocity);
+
+                predictBoxKalmanInPlace(t.boxKalman, dt, compensatedEgoMotion);
+                correctBoxKalman(t.boxKalman, d.box, d.confidence);
+                t.box = boxKalmanToRect(t.boxKalman);
+                t.velocity = boxKalmanVelocity(t.boxKalman);
+                t.sizeVelocity = boxKalmanSizeVelocity(t.boxKalman);
+
+                const double filteredSpeed = std::hypot(t.velocity.x, t.velocity.y);
+                if (filteredSpeed > maxReasonableSpeed && filteredSpeed > 1e-4)
+                {
+                    const double scale = maxReasonableSpeed / filteredSpeed;
+                    t.velocity *= static_cast<float>(scale);
+                    t.boxKalman.cx.vel *= scale;
+                    t.boxKalman.cy.vel *= scale;
+                }
+            }
+            else
+            {
+                const float blend = (t.id == lockedTrackId_) ? 0.45f : 0.35f;
+                t.velocity = t.velocity * (1.0f - blend) + clampedRawVel * blend;
+                t.sizeVelocity = t.sizeVelocity * (1.0f - blend) + rawSizeVel * blend;
+                t.box = d.box;
+            }
+            updateStableBox(t, config.tracker_v2_box_smoothing_alpha);
             t.pivotX = d.pivotX;
             t.pivotY = d.pivotY;
             t.classId = d.classId;
@@ -1225,23 +1384,18 @@ void MultiTargetTracker::update(
             t.lastAssociationDistancePx = scoreBreakdown.distancePx;
             t.lastAssociationIou = scoreBreakdown.overlap;
             t.lastHeadingAlignment = scoreBreakdown.headingAlignment;
-            t.lastNeuralScore = scoreBreakdown.neuralScore;
-            t.lastNeuralBonus = scoreBreakdown.neuralBonus;
-            t.lastNeuralEvaluated = scoreBreakdown.neuralEvaluated;
-            if (config.neural_tracker_log_enabled && config.neural_tracker_enabled)
-            {
-                aim::neural::logNeuralTrackerAssociation(
-                    config.neural_tracker_log_path,
-                    scoreBreakdown.neuralFeatures,
-                    static_cast<float>(scoreBreakdown.neuralScore),
-                    static_cast<float>(scoreBreakdown.score + scoreBreakdown.neuralBonus),
-                    static_cast<float>(scoreBreakdown.score),
-                    scoreBreakdown.accepted,
-                    true);
-            }
             t.hits += 1;
             t.age += 1;
             t.missed = 0;
+            if (config.tracker_v2_enabled &&
+                (t.hits >= 2 || d.confidence >= std::max(0.70f, config.tracker_v2_new_track_confidence)))
+            {
+                t.lifecycle = TrackLifecycle::Confirmed;
+            }
+            else if (!config.tracker_v2_enabled)
+            {
+                t.lifecycle = TrackLifecycle::Confirmed;
+            }
             t.observedThisFrame = true;
             t.innerAim.trackId = t.id;
             t.innerAim.classId = d.innerAimClassId;
@@ -1267,10 +1421,25 @@ void MultiTargetTracker::update(
                 std::chrono::duration<double>(now - t.lastUpdate).count(),
                 0.0, 0.2
             );
-            t.box.x += t.velocity.x * static_cast<float>(dt) - static_cast<float>(compensatedEgoMotion.x);
-            t.box.y += t.velocity.y * static_cast<float>(dt) - static_cast<float>(compensatedEgoMotion.y);
-            t.box.width = std::max(1.0f, t.box.width + t.sizeVelocity.x * static_cast<float>(dt));
-            t.box.height = std::max(1.0f, t.box.height + t.sizeVelocity.y * static_cast<float>(dt));
+            if (config.tracker_v2_enabled)
+            {
+                if (!t.boxKalman.initialized)
+                    initializeBoxKalman(t.boxKalman, t.box, t.velocity);
+
+                predictBoxKalmanInPlace(t.boxKalman, dt, compensatedEgoMotion);
+                t.box = boxKalmanToRect(t.boxKalman);
+                t.velocity = boxKalmanVelocity(t.boxKalman);
+                t.sizeVelocity = boxKalmanSizeVelocity(t.boxKalman);
+                t.lifecycle = TrackLifecycle::Lost;
+            }
+            else
+            {
+                t.box.x += t.velocity.x * static_cast<float>(dt) - static_cast<float>(compensatedEgoMotion.x);
+                t.box.y += t.velocity.y * static_cast<float>(dt) - static_cast<float>(compensatedEgoMotion.y);
+                t.box.width = std::max(1.0f, t.box.width + t.sizeVelocity.x * static_cast<float>(dt));
+                t.box.height = std::max(1.0f, t.box.height + t.sizeVelocity.y * static_cast<float>(dt));
+            }
+            updateStableBox(t, config.tracker_v2_box_prediction_alpha);
             t.pivotX += t.velocity.x * dt - compensatedEgoMotion.x;
             t.pivotY += t.velocity.y * dt - compensatedEgoMotion.y;
             applyInnerAimEgoMotion(t.innerAim, compensatedEgoMotion);
@@ -1299,6 +1468,13 @@ void MultiTargetTracker::update(
             const float decay = (t.id == lockedTrackId_) ? 0.90f : 0.84f;
             t.velocity *= decay;
             t.sizeVelocity *= decay;
+            if (config.tracker_v2_enabled && t.boxKalman.initialized)
+            {
+                t.boxKalman.cx.vel *= decay;
+                t.boxKalman.cy.vel *= decay;
+                t.boxKalman.logW.vel *= decay;
+                t.boxKalman.logH.vel *= decay;
+            }
             t.confidence *= (t.id == lockedTrackId_) ? 0.88f : 0.80f;
             t.innerAim.confidence *= (t.id == lockedTrackId_) ? 0.90f : 0.82f;
             t.innerAim.outerBox = cv::Rect(
@@ -1311,9 +1487,6 @@ void MultiTargetTracker::update(
             t.lastAssociationScore = std::numeric_limits<double>::infinity();
             t.lastAssociationDistancePx = 0.0;
             t.lastAssociationIou = 0.0;
-            t.lastNeuralScore = 0.5;
-            t.lastNeuralBonus = 0.0;
-            t.lastNeuralEvaluated = false;
             t.missed += 1;
             t.age += 1;
             t.observedThisFrame = false;
@@ -1321,7 +1494,6 @@ void MultiTargetTracker::update(
         }
 
         appendTrackHistory(t, compensatedEgoMotion);
-        updateTemporalPrediction(t, screenWidth, screenHeight);
     }
 
     auto suppressedByLockedInnerAim = [&](const DetectionCandidate& d) -> bool
@@ -1341,13 +1513,39 @@ void MultiTargetTracker::update(
             return !shouldAcceptAsNewLock(d, &locked);
         };
 
+    auto suppressedByExistingTrackBox = [&](const DetectionCandidate& d) -> bool
+        {
+            if (!config.tracker_v2_enabled)
+                return false;
+
+            constexpr float duplicateIouThreshold = 0.72f;
+            for (const auto& t : tracks_)
+            {
+                if (t.missed > allowedMissedFrames(t))
+                    continue;
+
+                const cv::Rect2f trackBox = outputBoxForTrack(t);
+                if (iou(trackBox, d.box) >= duplicateIouThreshold)
+                    return true;
+            }
+            return false;
+        };
+
     for (size_t di = 0; di < dets.size(); ++di)
     {
         if (detAssigned[di] != -1)
             continue;
 
         const auto& d = dets[di];
+        if (config.tracker_v2_enabled &&
+            d.confidence < std::clamp(config.tracker_v2_new_track_confidence, 0.0f, 1.0f))
+        {
+            continue;
+        }
+
         if (suppressedByLockedInnerAim(d))
+            continue;
+        if (suppressedByExistingTrackBox(d))
             continue;
 
         TrackState t;
@@ -1357,6 +1555,9 @@ void MultiTargetTracker::update(
         t.hits = 1;
         t.missed = 0;
         t.age = 1;
+        t.lifecycle = (config.tracker_v2_enabled && d.confidence < 0.80f)
+            ? TrackLifecycle::Tentative
+            : TrackLifecycle::Confirmed;
         t.confidence = d.confidence;
         t.observedThisFrame = true;
         t.pivotX = d.pivotX;
@@ -1365,14 +1566,12 @@ void MultiTargetTracker::update(
         t.lastAssociationDistancePx = 0.0;
         t.lastAssociationIou = 1.0;
         t.lastHeadingAlignment = 1.0;
-        t.lastNeuralScore = 0.5;
-        t.lastNeuralBonus = 0.0;
-        t.lastNeuralEvaluated = false;
         t.lastUpdate = now;
+        initializeBoxKalman(t.boxKalman, d.box);
+        updateStableBox(t, 1.0f);
         initializeInnerAim(t, d);
         appendTrackHistory(t, cv::Point2d());
-        updateTemporalPrediction(t, screenWidth, screenHeight);
-        tracks_.push_back(t);
+        tracks_.push_back(std::move(t));
     }
 
     pruneDeadTracks();
@@ -1407,11 +1606,12 @@ bool MultiTargetTracker::getLockedTarget(LockedTargetInfo& out) const
     out.trackId = t.id;
     out.observedThisFrame = t.observedThisFrame;
     out.missedFrames = t.missed;
+    const cv::Rect2f outputBox = outputBoxForTrack(t);
     out.target = BoxTarget(
-        static_cast<int>(std::lround(t.box.x)),
-        static_cast<int>(std::lround(t.box.y)),
-        static_cast<int>(std::lround(t.box.width)),
-        static_cast<int>(std::lround(t.box.height)),
+        static_cast<int>(std::lround(outputBox.x)),
+        static_cast<int>(std::lround(outputBox.y)),
+        static_cast<int>(std::lround(outputBox.width)),
+        static_cast<int>(std::lround(outputBox.height)),
         t.classId,
         t.pivotX,
         t.pivotY,
@@ -1420,12 +1620,8 @@ bool MultiTargetTracker::getLockedTarget(LockedTargetInfo& out) const
     );
     out.target.smoothX = t.innerAim.smoothX;
     out.target.smoothY = t.innerAim.smoothY;
-    out.predictedFuture = t.temporalPredictionValid
-        ? t.temporalPrediction
-        : std::vector<std::pair<double, double>>{};
-    out.predictedFutureAgeFrames = t.temporalPredictionValid
-        ? std::max(0, updateFrameCounter_ - t.lastTemporalPredictionFrame)
-        : 9999;
+    out.predictedFuture.clear();
+    out.predictedFutureAgeFrames = 9999;
     out.targetVelocityX = t.velocity.x;
     out.targetVelocityY = t.velocity.y;
     out.targetBoxScaleVelocity = (static_cast<double>(t.sizeVelocity.x) + static_cast<double>(t.sizeVelocity.y)) * 0.5;
@@ -1457,14 +1653,15 @@ std::vector<TrackDebugInfo> MultiTargetTracker::getDebugTracks() const
         if (t.missed > allowedMissedFrames(t))
             continue;
 
+        const cv::Rect2f outputBox = outputBoxForTrack(t);
         TrackDebugInfo d;
         d.trackId = t.id;
         d.classId = t.classId;
         d.box = cv::Rect(
-            static_cast<int>(std::lround(t.box.x)),
-            static_cast<int>(std::lround(t.box.y)),
-            static_cast<int>(std::lround(t.box.width)),
-            static_cast<int>(std::lround(t.box.height))
+            static_cast<int>(std::lround(outputBox.x)),
+            static_cast<int>(std::lround(outputBox.y)),
+            static_cast<int>(std::lround(outputBox.width)),
+            static_cast<int>(std::lround(outputBox.height))
         );
         d.pivotX = t.pivotX;
         d.pivotY = t.pivotY;
@@ -1481,11 +1678,7 @@ std::vector<TrackDebugInfo> MultiTargetTracker::getDebugTracks() const
         d.lastAssociationDistancePx = t.lastAssociationDistancePx;
         d.lastAssociationIou = t.lastAssociationIou;
         d.lastHeadingAlignment = t.lastHeadingAlignment;
-        d.lastNeuralScore = t.lastNeuralScore;
-        d.lastNeuralBonus = t.lastNeuralBonus;
-        d.lastNeuralEvaluated = t.lastNeuralEvaluated;
-        d.temporalFuture = t.temporalPrediction;
-        d.temporalPredictionValid = t.temporalPredictionValid;
+        d.lifecycle = static_cast<int>(t.lifecycle);
         out.push_back(d);
     }
 

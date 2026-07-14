@@ -107,8 +107,6 @@ private:
 
     cv::cuda::GpuMat gpuFrameBuffer;
     cv::cuda::GpuMat gpuResizedBuffer;
-    cv::cuda::GpuMat gpuFloatBuffer;
-    std::vector<cv::cuda::GpuMat> gpuChannelBuffers;
 
     cv::cuda::Stream cvStream;
 
@@ -139,10 +137,6 @@ private:
 
     std::unordered_map<std::string, nvinfer1::DataType> outputTypes;
     std::unordered_map<std::string, std::vector<float>> fp16OutputScratch;
-
-    cv::cuda::GpuMat resizedBuffer;
-    cv::cuda::GpuMat floatBuffer;
-    std::vector<cv::cuda::GpuMat> channelBuffers;
 
     // CUDA Events
     cudaEvent_t preprocessStartEvent = nullptr;

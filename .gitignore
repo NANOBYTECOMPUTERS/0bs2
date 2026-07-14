@@ -73,11 +73,19 @@ modules/opencv/build/
 
 # Large third-party generated docs / binary drops
 modules/glfw-3.4/docs/html/
+modules/glfw-3.4/build*/
 modules/glfw-3.4.bin.WIN64/docs/
 modules/glfw-3.4.bin.WIN64/lib-*/
 modules/TensorRT-*/
 modules/cudnn-*/
 modules/libtorch/
+modules/.agents/
+modules/CV-CUDA/
+modules/DALI/
+modules/eigen-*/
+modules/opencv-*/
+modules/skills-lock.json
+extras/
 training/datasets/
 training/training/
 cuda/obj/

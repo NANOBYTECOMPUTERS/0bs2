@@ -1,8 +1,10 @@
 #include <algorithm>
 #include <numeric>
 #include <chrono>
+#include <cctype>
 #include <cmath>
 #include <limits>
+#include <string>
 
 #include "postProcess.h"
 #ifndef YOLO_ANNOTATION_WORKER
@@ -14,12 +16,38 @@
 
 namespace
 {
-    void limitDetectionsForNms(std::vector<Detection>& detections)
+    bool currentModelIsYolo26()
     {
 #ifdef YOLO_ANNOTATION_WORKER
-        (void)detections;
+        return false;
 #else
-        const int maxDetectionsConfig = config.max_detections;
+        std::string model = config.ai_model;
+        std::transform(
+            model.begin(),
+            model.end(),
+            model.begin(),
+            [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+        return model.find("yolo26") != std::string::npos;
+#endif
+    }
+
+    int detectionCandidateLimit()
+    {
+#ifdef YOLO_ANNOTATION_WORKER
+        return 256;
+#else
+        int limit = config.max_detections;
+        if (limit <= 0)
+            return limit;
+        if (config.tracker_v2_enabled)
+            limit = std::max(limit, config.tracker_v2_detector_max_candidates);
+        return limit;
+#endif
+    }
+
+    void limitDetectionsForNms(std::vector<Detection>& detections)
+    {
+        const int maxDetectionsConfig = detectionCandidateLimit();
         if (maxDetectionsConfig <= 0)
         {
             detections.clear();
@@ -39,7 +67,34 @@ namespace
             }
         );
         detections.resize(maxDetections);
+    }
+
+    bool shouldBypassLocalNms(bool decodedFinalDetections)
+    {
+        if (decodedFinalDetections)
+            return true;
+#ifdef YOLO_ANNOTATION_WORKER
+        return false;
+#else
+        return config.yolo26_disable_nms && currentModelIsYolo26();
 #endif
+    }
+
+    void finalizeDetections(
+        std::vector<Detection>& detections,
+        bool decodedFinalDetections,
+        float nmsThreshold,
+        std::chrono::duration<double, std::milli>* nmsTime)
+    {
+        if (shouldBypassLocalNms(decodedFinalDetections) || nmsThreshold <= 0.0f)
+        {
+            limitDetectionsForNms(detections);
+            if (nmsTime)
+                *nmsTime = std::chrono::duration<double, std::milli>(0);
+            return;
+        }
+
+        NMS(detections, nmsThreshold, nmsTime);
     }
 
 #ifdef USE_CUDA
@@ -434,7 +489,7 @@ std::vector<Detection> postProcessYoloScaled(
         }
     }
 
-    NMS(detections, nmsThreshold, nmsTime);
+    finalizeDetections(detections, layout.nmsOutput, nmsThreshold, nmsTime);
     return detections;
 }
 
@@ -504,7 +559,7 @@ std::vector<Detection> postProcessYoloDML(
                 detections.push_back(Detection{ box, confidence, classId });
             }
         }
-        NMS(detections, nmsThreshold, nmsTime);
+        finalizeDetections(detections, true, nmsThreshold, nmsTime);
         return detections;
     }
 
@@ -541,9 +596,6 @@ std::vector<Detection> postProcessYoloDML(
             detections.push_back(Detection{ box, score, classId });
         }
     }
-    if (!detections.empty())
-    {
-        NMS(detections, nmsThreshold, nmsTime);
-    }
+    finalizeDetections(detections, false, nmsThreshold, nmsTime);
     return detections;
 }

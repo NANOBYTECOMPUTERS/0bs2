@@ -159,7 +159,7 @@ class ImmEstimatorContractTest(unittest.TestCase):
         self.assertIn("t.innerAim.imm.predict", target_cpp)
         self.assertIn("aim::AimKalman2D", self.read("mouse/mouse.h"))
         self.assertIn("targetKalman", self.read("mouse/mouse.h"))
-        self.assertNotIn("command.pixelDx += imm", self.read("mouse/PidMouseController.cpp"))
+        self.assertNotIn("command.pixelDx += imm", self.read("mouse/mouse.cpp"))
 
     def test_imm_compiles_and_switches_mode_probability_on_reversal(self):
         source = textwrap.dedent(

@@ -1,6 +1,0 @@
-torch
-onnx
-numpy
-onnxruntime
-matplotlib
-tensorboard

@@ -17,9 +17,6 @@
     <ClCompile Include="..\capture\virtual_camera.cpp" />
     <ClCompile Include="..\capture\winrt_capture.cpp" />
     <ClCompile Include="..\config\config.cpp" />
-    <ClCompile Include="..\depth\depth_anything_trt.cpp" />
-    <ClCompile Include="..\depth\depth_mask.cpp" />
-    <ClCompile Include="..\depth\depth_utils.cpp" />
     <ClCompile Include="..\diagnostics\Logger.cpp" />
     <ClCompile Include="..\detector\detection_buffer.cpp" />
     <ClCompile Include="..\detector\dml_detector.cpp" />
@@ -50,27 +47,18 @@
     <ClCompile Include="..\mouse\kmboxNetConnection.cpp" />
     <ClCompile Include="..\mouse\kmbox_net\kmboxNet.cpp" />
     <ClCompile Include="..\mouse\Makcu.cpp" />
-    <ClCompile Include="..\mouse\OnnxPidGovernor.cpp" />
-    <ClCompile Include="..\mouse\PidGovernor.cpp" />
-    <ClCompile Include="..\mouse\PidMouseController.cpp" />
-    <ClCompile Include="..\mouse\SmartBlender.cpp" />
     <ClCompile Include="..\mouse\MouseInput.cpp" />
     <ClCompile Include="..\mouse\Teensy41RawHid.cpp" />
     <ClCompile Include="..\mouse\mouse.cpp" />
     <ClCompile Include="..\mouse\Arduino.cpp" />
     <ClCompile Include="..\mouse\BoxTarget.cpp" />
-    <ClCompile Include="..\neural\NeuralTracker.cpp" />
-    <ClCompile Include="..\neural\targeting\NeuralTargetingHead.cpp" />
-    <ClCompile Include="..\neural\TemporalPredictor.cpp" />
     <ClCompile Include="..\overlay\draw_ai.cpp" />
     <ClCompile Include="..\overlay\draw_buttons.cpp" />
     <ClCompile Include="..\overlay\draw_capture.cpp" />
     <ClCompile Include="..\overlay\config_dirty.cpp" />
     <ClCompile Include="..\overlay\draw_debug.cpp" />
-    <ClCompile Include="..\overlay\draw_depth.cpp" />
     <ClCompile Include="..\overlay\draw_game_overlay.cpp" />
     <ClCompile Include="..\overlay\draw_mouse.cpp" />
-    <ClCompile Include="..\overlay\draw_neural.cpp" />
     <ClCompile Include="..\overlay\draw_overlay.cpp" />
     <ClCompile Include="..\overlay\draw_stats.cpp" />
     <ClCompile Include="..\overlay\draw_target.cpp" />
@@ -95,8 +83,6 @@
     <ClInclude Include="..\capture\virtual_camera.h" />
     <ClInclude Include="..\capture\winrt_capture.h" />
     <ClInclude Include="..\config\config.h" />
-    <ClInclude Include="..\depth\depth_anything_trt.h" />
-    <ClInclude Include="..\depth\depth_mask.h" />
     <ClInclude Include="..\diagnostics\Logger.h" />
     <ClInclude Include="..\detector\cuda_preprocess.h" />
     <ClInclude Include="..\detector\detection_buffer.h" />
@@ -131,18 +117,11 @@
     <ClInclude Include="..\mouse\kmbox_net\kmboxNet.h" />
     <ClInclude Include="..\mouse\kmbox_net\picture.h" />
     <ClInclude Include="..\mouse\Makcu.h" />
-    <ClInclude Include="..\mouse\OnnxPidGovernor.h" />
-    <ClInclude Include="..\mouse\PidGovernor.h" />
-    <ClInclude Include="..\mouse\PidMouseController.h" />
-    <ClInclude Include="..\mouse\SmartBlender.h" />
     <ClInclude Include="..\mouse\MouseInput.h" />
     <ClInclude Include="..\mouse\Teensy41RawHid.h" />
     <ClInclude Include="..\mouse\mouse.h" />
     <ClInclude Include="..\mouse\Arduino.h" />
     <ClInclude Include="..\mouse\BoxTarget.h" />
-    <ClInclude Include="..\neural\NeuralTracker.h" />
-    <ClInclude Include="..\neural\targeting\NeuralTargetingHead.h" />
-    <ClInclude Include="..\neural\TemporalPredictor.h" />
     <ClInclude Include="..\overlay\config_dirty.h" />
     <ClInclude Include="..\overlay\draw_settings.h" />
     <ClInclude Include="..\overlay\Game_overlay.h" />
@@ -177,8 +156,11 @@
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='CUDA|x64'">
+    <CudaBuildCustomizationVersion Condition="'$(CudaBuildCustomizationVersion)'==''">13.3</CudaBuildCustomizationVersion>
+  </PropertyGroup>
   <ImportGroup Label="ExtensionSettings">
-    <Import Project="$(VCTargetsPath)\BuildCustomizations\CUDA 13.2.props" Condition="Exists('$(VCTargetsPath)\BuildCustomizations\CUDA 13.2.props')" />
+    <Import Project="$(VCTargetsPath)\BuildCustomizations\CUDA $(CudaBuildCustomizationVersion).props" Condition="Exists('$(VCTargetsPath)\BuildCustomizations\CUDA $(CudaBuildCustomizationVersion).props')" />
   </ImportGroup>
   <ImportGroup Label="Shared">
   </ImportGroup>
@@ -188,16 +170,24 @@
   <PropertyGroup Label="UserMacros" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='CUDA|x64'">
     <CppWinRTEnableLegacyCoroutines>false</CppWinRTEnableLegacyCoroutines>
-    <CudaToolkitCustomDir Condition="'$(CudaToolkitCustomDir)'==''">C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.2\</CudaToolkitCustomDir>
-    <TensorRTDir Condition="'$(TensorRTDir)'==''">$(MSBuildProjectDirectory)\..\modules\tensorrt</TensorRTDir>
-    <TensorRTLibraries Condition="'$(TensorRTLibraries)'==''">nvinfer_10.lib;nvonnxparser_10.lib</TensorRTLibraries>
+    <CudaToolkitDir Condition="'$(CudaToolkitDir)'==''">C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.3\</CudaToolkitDir>
+    <CudaToolkitCustomDir Condition="'$(CudaToolkitCustomDir)'==''">$(CudaToolkitDir)</CudaToolkitCustomDir>
+    <TensorRTDir Condition="'$(TensorRTDir)'=='' and Exists('$(MSBuildProjectDirectory)\..\modules\tensorrt\include\NvInfer.h')">$(MSBuildProjectDirectory)\..\modules\tensorrt</TensorRTDir>
+    <TensorRTDir Condition="'$(TensorRTDir)'==''">$(MSBuildProjectDirectory)\..\modules\TensorRT-11.1.0.106</TensorRTDir>
+    <TensorRTCoreLib Condition="'$(TensorRTCoreLib)'==''">nvinfer_11.lib</TensorRTCoreLib>
+    <TensorRTOnnxParserLib Condition="'$(TensorRTOnnxParserLib)'==''">nvonnxparser_11.lib</TensorRTOnnxParserLib>
+    <TensorRTPluginLib Condition="'$(TensorRTPluginLib)'==''">nvinfer_plugin_11.lib</TensorRTPluginLib>
+    <TensorRTLibraries Condition="'$(TensorRTLibraries)'==''">$(TensorRTCoreLib);$(TensorRTOnnxParserLib);$(TensorRTPluginLib)</TensorRTLibraries>
+    <OpenCVDir Condition="'$(OpenCVDir)'==''">$(MSBuildProjectDirectory)\..\modules\opencv-5.0.0\build\cuda\install</OpenCVDir>
+    <OpenCVWorldLib Condition="'$(OpenCVWorldLib)'==''">opencv_world500.lib</OpenCVWorldLib>
+    <OpenCVWorldDll Condition="'$(OpenCVWorldDll)'==''">opencv_world500.dll</OpenCVWorldDll>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='CUDA|x64'">
     <LinkIncremental>false</LinkIncremental>
     <OutDir>$(MSBuildProjectDirectory)\..\x64\CUDA\</OutDir>
     <IntDir>$(MSBuildProjectDirectory)\obj\CUDA\</IntDir>
-    <IncludePath>$(MSBuildProjectDirectory)\include;$(MSBuildProjectDirectory)\..;$(MSBuildProjectDirectory)\..\imgui;$(MSBuildProjectDirectory)\..\keyboard;$(MSBuildProjectDirectory)\..\config;$(MSBuildProjectDirectory)\..\detector;$(MSBuildProjectDirectory)\..\mouse;$(MSBuildProjectDirectory)\..\overlay;$(MSBuildProjectDirectory)\..\capture;$(MSBuildProjectDirectory)\..\modules\serial\include;$(MSBuildProjectDirectory)\..\modules\opencv\build\install\include;$(TensorRTDir)\include;$(TensorRTDir)\include\tensorrt;$(CudaToolkitCustomDir)\include;$(WindowsSDK_IncludePath);$(WindowsSDK_IncludePath)\cppwinrt;$(MSBuildProjectDirectory)\..\include;$(IncludePath)</IncludePath>
-    <LibraryPath>$(MSBuildProjectDirectory)\..\modules\serial\visual_studio\x64\Release;$(MSBuildProjectDirectory)\..\modules\glfw-3.4.bin.WIN64\lib-vc2019;$(MSBuildProjectDirectory)\..\modules\opencv\build\install\x64\vc18\lib;$(TensorRTDir)\lib;$(TensorRTDir)\lib\x64;$(CudaToolkitCustomDir)\lib\x64;$(LibraryPath)</LibraryPath>
+    <IncludePath>$(MSBuildProjectDirectory)\include;$(MSBuildProjectDirectory)\..;$(MSBuildProjectDirectory)\..\imgui;$(MSBuildProjectDirectory)\..\keyboard;$(MSBuildProjectDirectory)\..\config;$(MSBuildProjectDirectory)\..\detector;$(MSBuildProjectDirectory)\..\mouse;$(MSBuildProjectDirectory)\..\overlay;$(MSBuildProjectDirectory)\..\capture;$(MSBuildProjectDirectory)\..\modules\serial\include;$(OpenCVDir)\include;$(TensorRTDir)\include;$(TensorRTDir)\include\tensorrt;$(CudaToolkitCustomDir)\include;$(WindowsSDK_IncludePath);$(WindowsSDK_IncludePath)\cppwinrt;$(MSBuildProjectDirectory)\..\include;$(IncludePath)</IncludePath>
+    <LibraryPath>$(MSBuildProjectDirectory)\..\modules\serial\visual_studio\x64\Release;$(MSBuildProjectDirectory)\..\modules\glfw-3.4.bin.WIN64\lib-vc2019;$(OpenCVDir)\x64\vc18\lib;$(OpenCVDir)\lib;$(TensorRTDir)\lib;$(TensorRTDir)\lib\x64;$(CudaToolkitCustomDir)\lib\x64;$(LibraryPath)</LibraryPath>
     <TargetName>0BS</TargetName>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='CUDA|x64'">
@@ -216,14 +206,14 @@
     </ClCompile>
     <CudaCompile>
       <TargetMachinePlatform>64</TargetMachinePlatform>
-      <AdditionalIncludeDirectories>$(MSBuildProjectDirectory)\..;$(MSBuildProjectDirectory)\..\modules\opencv\build\install\include;$(CudaToolkitCustomDir)\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(MSBuildProjectDirectory)\..;$(OpenCVDir)\include;$(CudaToolkitCustomDir)\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </CudaCompile>
     <Link>
       <SubSystem>Console</SubSystem>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalDependencies>$(TensorRTLibraries);cudart.lib;cuda.lib;nvml.lib;opencv_world4140.lib;WindowsApp.lib;d3d11.lib;dxgi.lib;d2d1.lib;setupapi.lib;glfw3_mt.lib;glfw3dll.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>$(TensorRTLibraries);cudart.lib;cuda.lib;nvml.lib;$(OpenCVWorldLib);WindowsApp.lib;d3d11.lib;dxgi.lib;d2d1.lib;setupapi.lib;glfw3_mt.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
     <Manifest>
       <GenerateCatalogFiles>false</GenerateCatalogFiles>
@@ -234,21 +224,25 @@
     <Import Project="..\packages\Microsoft.Windows.CppWinRT.2.0.240405.15\build\native\Microsoft.Windows.CppWinRT.targets" Condition="Exists('..\packages\Microsoft.Windows.CppWinRT.2.0.240405.15\build\native\Microsoft.Windows.CppWinRT.targets')" />
     <Import Project="..\packages\Microsoft.AI.DirectML.1.15.4\build\Microsoft.AI.DirectML.targets" Condition="Exists('..\packages\Microsoft.AI.DirectML.1.15.4\build\Microsoft.AI.DirectML.targets')" />
     <Import Project="..\packages\Microsoft.ML.OnnxRuntime.DirectML.1.22.0\build\native\Microsoft.ML.OnnxRuntime.DirectML.targets" Condition="Exists('..\packages\Microsoft.ML.OnnxRuntime.DirectML.1.22.0\build\native\Microsoft.ML.OnnxRuntime.DirectML.targets')" />
-    <Import Project="$(VCTargetsPath)\BuildCustomizations\CUDA 13.2.targets" Condition="Exists('$(VCTargetsPath)\BuildCustomizations\CUDA 13.2.targets')" />
+    <Import Project="$(VCTargetsPath)\BuildCustomizations\CUDA $(CudaBuildCustomizationVersion).targets" Condition="Exists('$(VCTargetsPath)\BuildCustomizations\CUDA $(CudaBuildCustomizationVersion).targets')" />
   </ImportGroup>
   <!-- CopyRazerControlsDll target removed (Razer now inlined directly) -->
   <Target Name="CopyCudaRuntimeDlls" AfterTargets="Build">
     <ItemGroup>
       <TensorRTDlls Include="$(TensorRTDir)\bin\*.dll" />
-      <OpenCVDll Include="$(MSBuildProjectDirectory)\..\modules\opencv\build\install\x64\vc18\bin\opencv_world4140.dll" />
+      <OpenCVDll Include="$(OpenCVDir)\x64\vc18\bin\opencv_*.dll" />
+      <OpenCVDll Include="$(OpenCVDir)\bin\opencv_*.dll" />
     </ItemGroup>
     <Copy SourceFiles="@(TensorRTDlls)" DestinationFolder="$(OutDir)" SkipUnchangedFiles="true" Condition="'@(TensorRTDlls)' != ''" />
     <Copy SourceFiles="@(OpenCVDll)" DestinationFolder="$(OutDir)" SkipUnchangedFiles="true" Condition="'@(OpenCVDll)' != ''" />
   </Target>
   <Target Name="EnsureCudaBuildImports" BeforeTargets="PrepareForBuild">
-    <Error Condition="!Exists('$(VCTargetsPath)\BuildCustomizations\CUDA 13.2.props')" Text="CUDA 13.2 Visual Studio build customizations were not found." />
-    <Error Condition="!Exists('$(VCTargetsPath)\BuildCustomizations\CUDA 13.2.targets')" Text="CUDA 13.2 Visual Studio build customizations were not found." />
+    <Error Condition="!Exists('$(VCTargetsPath)\BuildCustomizations\CUDA $(CudaBuildCustomizationVersion).props')" Text="CUDA $(CudaBuildCustomizationVersion) Visual Studio build customizations were not found." />
+    <Error Condition="!Exists('$(VCTargetsPath)\BuildCustomizations\CUDA $(CudaBuildCustomizationVersion).targets')" Text="CUDA $(CudaBuildCustomizationVersion) Visual Studio build customizations were not found." />
     <Error Condition="!Exists('$(TensorRTDir)\include')" Text="TensorRT headers were not found. Set TensorRTDir to the TensorRT install folder." />
+    <Error Condition="!Exists('$(OpenCVDir)\include\opencv2\core\version.hpp')" Text="OpenCV headers were not found. Set OpenCVDir to the OpenCV 5 CUDA install folder." />
+    <Error Condition="!Exists('$(OpenCVDir)\include\opencv2\cvconfig.h')" Text="OpenCV CUDA config was not found. Set OpenCVDir to an OpenCV build with CUDA support." />
+    <Error Condition="!Exists('$(OpenCVDir)\x64\vc18\lib\$(OpenCVWorldLib)') and !Exists('$(OpenCVDir)\lib\$(OpenCVWorldLib)')" Text="OpenCV world library was not found. Set OpenCVWorldLib/OpenCVDir to the OpenCV 5 CUDA import library." />
   </Target>
   <Target Name="EnsureNuGetPackageBuildImports" BeforeTargets="PrepareForBuild">
     <PropertyGroup>

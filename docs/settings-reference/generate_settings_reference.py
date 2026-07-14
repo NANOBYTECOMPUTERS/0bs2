@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import csv
 import datetime as dt
@@ -109,47 +109,16 @@ GUI_CONTROLS: list[dict[str, str]] = [
     row("Mouse", "State Estimator", "Compensate detection delay", "kalman_compensate_detection_delay", "Activate/deactivate", "true/false", "Accounts for detector latency in prediction.", "overlay/draw_mouse.cpp"),
     row("Mouse", "State Estimator", "Additional prediction (ms)", "kalman_additional_prediction_ms", "Slider", "-80.0-120.0", "Manual extra prediction offset in milliseconds.", "overlay/draw_mouse.cpp"),
     row("Mouse", "State Estimator", "Reset timeout (s)", "kalman_reset_timeout_sec", "Slider", "0.05-3.0", "Time without stable observations before estimator state resets.", "overlay/draw_mouse.cpp"),
-    row("Mouse", "State Estimator", "Ego-motion compensation", "ego_motion_compensation_enabled", "Activate/deactivate", "true/false", "Opt-in tracker-prior compensation from emitted mouse/view motion. Raw detections, PID observation, and final actuator output are unchanged.", "overlay/draw_mouse.cpp"),
+    row("Mouse", "State Estimator", "Ego-motion compensation", "ego_motion_compensation_enabled", "Activate/deactivate", "true/false", "Opt-in tracker-prior compensation from emitted mouse/view motion. Raw detections and final mouse output are unchanged.", "overlay/draw_mouse.cpp"),
     row("Mouse", "State Estimator", "Ego compensation strength", "ego_motion_compensation_strength", "Slider", "0.0-1.0", "Fraction of recent emitted motion subtracted from tracker priors/history to reduce camera-motion jitter.", "overlay/draw_mouse.cpp"),
     row("Mouse", "State Estimator", "Ego max shift (px @640)", "ego_motion_compensation_max_shift_px", "Slider", "1-128", "Per-frame compensation clamp at 640 detection resolution; scales with detection_resolution.", "overlay/draw_mouse.cpp"),
     row("Mouse", "State Estimator", "Ego max age (ms)", "ego_motion_compensation_max_age_ms", "Slider", "16-500", "Drops stale emitted-motion samples so compensation fails closed.", "overlay/draw_mouse.cpp"),
-    row("Mouse", "Pure PID Movement", "Actuator Hz", "pid_actuator_hz", "Slider", "30-2000", "PID update rate used by the mouse actuator.", "overlay/draw_mouse.cpp"),
-    row("Mouse", "Pure PID Movement", "Kp", "pid_kp", "Slider", "0.0000-1.5000", "Proportional PID gain.", "overlay/draw_mouse.cpp"),
-    row("Mouse", "Pure PID Movement", "Ki", "pid_ki", "Slider", "0.0000-0.5000", "Integral PID gain.", "overlay/draw_mouse.cpp"),
-    row("Mouse", "Pure PID Movement", "Kd", "pid_kd", "Slider", "0.0000-0.2500", "Derivative PID gain.", "overlay/draw_mouse.cpp"),
-    row("Mouse", "Pure PID Movement", "Deadzone (px)", "pid_deadzone_px", "Slider", "0.000-10.000", "Minimum error radius before movement is applied.", "overlay/draw_mouse.cpp"),
-    row("Mouse", "Pure PID Movement", "Max step (px/tick)", "pid_max_pixel_step", "Slider", "0.010-20.000", "Maximum movement step per PID tick from the GUI. Runtime clamp allows up to 80.", "overlay/draw_mouse.cpp"),
-    row("Mouse", "Pure PID Movement", "Output scale", "pid_output_scale", "Slider", "0.010-3.000", "Base multiplier applied to PID output.", "overlay/draw_mouse.cpp"),
-    row("Mouse", "Pure PID Movement", "Min output scale", "pid_min_output_scale", "Slider", "0.000-3.000", "Lower bound for adaptive output scaling.", "overlay/draw_mouse.cpp"),
-    row("Mouse", "Pure PID Movement", "Max output scale", "pid_max_output_scale", "Slider", "0.010-3.000", "Upper bound for adaptive output scaling.", "overlay/draw_mouse.cpp"),
-    row("Mouse", "Pure PID Movement", "Size reference (px)", "pid_size_reference_px", "Slider", "1.0-240.0", "Target size used as the neutral reference for size scaling.", "overlay/draw_mouse.cpp"),
-    row("Mouse", "Pure PID Movement", "Small target scale", "pid_size_min_scale", "Slider", "0.010-1.000", "Minimum scale when targets are smaller than the reference.", "overlay/draw_mouse.cpp"),
-    row("Mouse", "Pure PID Movement", "Large target scale", "pid_size_max_scale", "Slider", "0.050-2.000", "Maximum scale when targets are larger than the reference.", "overlay/draw_mouse.cpp"),
-    row("Mouse", "Pure PID Movement", "Precision radius / size", "pid_precision_radius_scale", "Slider", "0.0000-0.1000", "Target-size-relative radius where movement is considered precise enough.", "overlay/draw_mouse.cpp"),
-    row("Mouse", "Pure PID Movement", "Slowdown radius / size", "pid_slowdown_radius_scale", "Slider", "0.010-1.000", "Target-size-relative radius where scaling slows approach.", "overlay/draw_mouse.cpp"),
-    row("Mouse", "Pure PID Movement", "Overshoot brake", "pid_overshoot_brake", "Slider", "0.010-1.000", "Reduces movement after crossing past the target.", "overlay/draw_mouse.cpp"),
-    row("Mouse", "Pure PID Movement", "Divergence boost", "pid_divergence_boost", "Slider", "0.000-2.000", "Boosts output when the target error is growing.", "overlay/draw_mouse.cpp"),
-    row("Mouse", "Pure PID Movement", "Scale response", "pid_scale_response", "Slider", "0.1-40.0", "Responsiveness of adaptive output scale changes.", "overlay/draw_mouse.cpp"),
-    row("Mouse", "Pure PID Movement", "Max integral", "pid_max_integral", "Slider", "0.0-10000.0", "Caps integral accumulation.", "overlay/draw_mouse.cpp"),
-    row("Mouse", "Pure PID Movement", "Max derivative term", "pid_max_derivative_term", "Slider", "0.000-5.000", "Caps derivative contribution from a single axis.", "overlay/draw_mouse.cpp"),
-    row("Mouse", "Pure PID Movement", "Derivative filter (ms)", "pid_derivative_filter_tau_ms", "Slider", "0.0-250.0", "Smoothing time constant for derivative filtering.", "overlay/draw_mouse.cpp"),
-    row("Mouse", "Pure PID Movement", "Target timeout (ms)", "pid_target_loss_timeout_ms", "Slider", "10.0-1000.0", "Time without target observation before PID state resets.", "overlay/draw_mouse.cpp"),
-    row("Mouse", "Pure PID Movement", "Feed-forward prediction", "pid_feed_forward_enabled", "Activate/deactivate", "true/false", "Adds velocity-based prediction ahead of pure PID output.", "overlay/draw_mouse.cpp"),
-    row("Mouse", "Pure PID Movement", "Feed-forward gain", "pid_feed_forward_gain", "Slider", "0.000-4.000", "Strength of feed-forward movement.", "overlay/draw_mouse.cpp"),
-    row("Mouse", "Pure PID Movement", "Feed-forward lookahead (ms)", "pid_feed_forward_lookahead_ms", "Slider", "0.0-120.0", "Prediction lookahead horizon.", "overlay/draw_mouse.cpp"),
-    row("Mouse", "Pure PID Movement", "Feed-forward frame lookahead", "pid_feed_forward_frame_lookahead", "Slider", "0-2", "Additional frame-based velocity lead used when latency sweep is enabled.", "overlay/draw_mouse.cpp"),
-    row("Mouse", "Pure PID Movement", "Feed-forward max step (px/tick)", "pid_feed_forward_max_step", "Slider", "0.000-5.000", "Caps feed-forward contribution per tick.", "overlay/draw_mouse.cpp"),
-    row("Mouse", "Pure PID Movement", "Feed-forward min speed (px/s)", "pid_feed_forward_min_speed", "Slider", "0.0-3000.0", "Minimum target speed required before feed-forward contributes.", "overlay/draw_mouse.cpp"),
-    row("Mouse", "Pure PID Movement", "Feed-forward confidence floor", "pid_feed_forward_confidence_floor", "Slider", "0.000-1.000", "Minimum observation confidence for feed-forward contribution.", "overlay/draw_mouse.cpp"),
-    row("Mouse", "Pure PID Movement", "Conditional integration", "pid_conditional_integration_enabled", "Activate/deactivate", "true/false", "Prevents integral windup when latency sweep is enabled and error/output conditions are unsafe.", "overlay/draw_mouse.cpp"),
-    row("Mouse", "Pure PID Movement", "Integration error limit (px)", "pid_conditional_integration_error_px", "Slider", "0.0-240.0", "Maximum per-axis error allowed for conditional integral accumulation.", "overlay/draw_mouse.cpp"),
-    row("Mouse", "Pure PID Movement", "Adaptive output scaling", "pid_adaptive_output_scaling_enabled", "Activate/deactivate", "true/false", "Enables error-magnitude output scaling when latency sweep is enabled.", "overlay/draw_mouse.cpp"),
-    row("Mouse", "Pure PID Movement", "Adaptive error scale (px)", "pid_adaptive_output_error_scale", "Slider", "1.0-640.0", "Error distance used as the adaptive output scaling reference.", "overlay/draw_mouse.cpp"),
-    row("Mouse", "Pure PID Movement", "Derivative smoothing multiplier", "pid_derivative_smoothing_multiplier", "Slider", "1.00-6.00", "Multiplies derivative filter tau when latency sweep is enabled.", "overlay/draw_mouse.cpp"),
-    row("Mouse", "Pure PID Movement", "Perspective FOV PID", "pid_perspective_fov_mapping_enabled", "Activate/deactivate", "true/false", "Uses perspective FOV geometry for PID angular commands when latency sweep is enabled.", "overlay/draw_mouse.cpp"),
-    row("Mouse", "Pure PID Movement", "Enable PID governor", "pid_governor_enabled", "Activate/deactivate", "true/false", "Enables the ONNX PID governor when a compatible model can be loaded.", "overlay/draw_mouse.cpp"),
-    row("Mouse", "Pure PID Movement", "Governor blend", "pid_governor_blend", "Slider", "0.00-1.00", "Blend strength for governor-generated PID scales.", "overlay/draw_mouse.cpp"),
-    row("Mouse", "Pure PID Movement", "Governor max speed multiple", "pid_governor_max_speed_multiple", "Slider", "1.00-5.00", "Maximum speed multiplier allowed when governor output is active.", "overlay/draw_mouse.cpp"),
+    row("Mouse", "Direct Targeting Movement", "Deadzone (px)", "target_deadzone_px", "Slider", "0.000-20.000", "Minimum target error radius before direct movement is emitted.", "overlay/draw_mouse.cpp"),
+    row("Mouse", "Direct Targeting Movement", "Max step (px/frame)", "target_max_pixel_step", "Slider", "0.25-120.00", "Maximum pixel-space movement emitted for one tracker observation.", "overlay/draw_mouse.cpp"),
+    row("Mouse", "Direct Targeting Movement", "Output scale", "target_output_scale", "Slider", "0.010-3.000", "Multiplier applied to tracker aim-point error before clamping.", "overlay/draw_mouse.cpp"),
+    row("Mouse", "Direct Targeting Movement", "Calibrated pixel counts", "target_calibrated_pixel_counts_enabled", "Activate/deactivate", "true/false", "Uses measured counts-per-pixel gains for direct targeting output instead of FOV/profile conversion when both gains are nonzero.", "overlay/draw_mouse.cpp"),
+    row("Mouse", "Direct Targeting Movement", "Counts / px X", "target_counts_per_pixel_x", "Slider", "-50.0000-50.0000", "Horizontal calibrated mouse counts per screen-space pixel.", "overlay/draw_mouse.cpp"),
+    row("Mouse", "Direct Targeting Movement", "Counts / px Y", "target_counts_per_pixel_y", "Slider", "-50.0000-50.0000", "Vertical calibrated mouse counts per screen-space pixel.", "overlay/draw_mouse.cpp"),
     row("Mouse", "Game Profile", "Sensitivity", "Games.<profile>.sens", "Slider", "0.0010-10.0000", "Editable for custom profiles. UNIFIED is shown read-only.", "overlay/draw_mouse.cpp"),
     row("Mouse", "Game Profile", "Yaw", "Games.<profile>.yaw", "Slider", "0.0010-0.1000", "Horizontal degree-to-count conversion for a custom profile.", "overlay/draw_mouse.cpp"),
     row("Mouse", "Game Profile", "Pitch", "Games.<profile>.pitch", "Slider", "0.0010-0.1000", "Vertical degree-to-count conversion for a custom profile.", "overlay/draw_mouse.cpp"),
@@ -159,23 +128,10 @@ GUI_CONTROLS: list[dict[str, str]] = [
     row("Mouse", "Auto Shoot", "bScope Multiplier", "bScope_multiplier", "Slider", "0.5-2.0", "Multiplier used by auto-shoot scope timing/behavior. Disabled in UI until Auto Shoot is on.", "overlay/draw_mouse.cpp"),
     row("Mouse", "Input Method", "Arduino 16-bit Mouse", "arduino_16_bit_mouse", "Activate/deactivate", "true/false", "Arduino input only. Sends wider mouse movement values.", "overlay/draw_mouse.cpp"),
     row("Mouse", "Input Method", "Arduino Enable Keys", "arduino_enable_keys", "Activate/deactivate", "true/false", "Arduino input only. Enables keyboard key output through Arduino.", "overlay/draw_mouse.cpp"),
-    # Neural
-    row("Neural", "Neural Tracker", "Enable neural association", "neural_tracker_enabled", "Activate/deactivate", "true/false", "Enables learned association/tracking helper logic.", "overlay/draw_neural.cpp"),
-    row("Neural", "Neural Tracker", "Association blend", "neural_tracker_blend", "Slider", "0.00-1.00", "Blend strength between regular and neural association output.", "overlay/draw_neural.cpp"),
     # AI
     row("AI", "Detection", "Confidence Threshold", "confidence_threshold", "Slider", "0.01-1.00", "Minimum detector confidence accepted as a detection.", "overlay/draw_ai.cpp"),
     row("AI", "Detection", "NMS Threshold", "nms_threshold", "Slider", "0.00-1.00", "Non-max suppression overlap threshold.", "overlay/draw_ai.cpp"),
     row("AI", "Detection", "Max Detections", "max_detections", "Slider", "1-100", "Maximum detections retained after model output processing.", "overlay/draw_ai.cpp"),
-    row("AI", "Depth Inference", "Enable Depth Inference", "depth_inference_enabled", "Activate/deactivate", "true/false", "CUDA builds only. DML build shows a requires-CUDA message.", "overlay/draw_depth.cpp", "CUDA GUI / DML config-only"),
-    row("AI", "Depth Runtime", "Depth FPS", "depth_fps", "Slider", "0-120", "CUDA builds only. 0 disables depth debug update throttling path.", "overlay/draw_depth.cpp", "CUDA GUI / DML config-only"),
-    row("AI", "Depth Runtime", "Depth Mask FPS", "depth_mask_fps", "Slider", "1-30", "CUDA builds only. Mask update frequency.", "overlay/draw_depth.cpp", "CUDA GUI / DML config-only"),
-    row("AI", "Depth Mask", "Enable Depth Mask", "depth_mask_enabled", "Activate/deactivate", "true/false", "CUDA builds only. Masks detections/capture based on estimated depth.", "overlay/draw_depth.cpp", "CUDA GUI / DML config-only"),
-    row("AI", "Depth Mask", "Depth Mask Near %", "depth_mask_near_percent", "Slider", "1-100", "CUDA builds only. Percentile cutoff for the near-depth mask.", "overlay/draw_depth.cpp", "CUDA GUI / DML config-only"),
-    row("AI", "Depth Mask", "Depth Mask Expand (px)", "depth_mask_expand", "Slider", "0-128", "CUDA builds only. Expands the generated mask in pixels.", "overlay/draw_depth.cpp", "CUDA GUI / DML config-only"),
-    row("AI", "Depth Mask", "Depth Mask Hold Frames", "depth_mask_hold_frames", "Slider", "0-120", "CUDA builds only. Reuses a recent mask for this many detector frames.", "overlay/draw_depth.cpp", "CUDA GUI / DML config-only"),
-    row("AI", "Depth Mask", "Depth Mask Alpha", "depth_mask_alpha", "Slider", "0-255", "CUDA builds only. Visual alpha for the depth mask overlay.", "overlay/draw_depth.cpp", "CUDA GUI / DML config-only"),
-    row("AI", "Depth Mask", "Depth Mask Invert", "depth_mask_invert", "Activate/deactivate", "true/false", "CUDA builds only. Flips near/far mask selection.", "overlay/draw_depth.cpp", "CUDA GUI / DML config-only"),
-    row("AI", "Depth Mask", "Depth Debug Overlay (Game)", "depth_debug_overlay_enabled", "Activate/deactivate", "true/false", "CUDA builds only. Shows depth debug output in the game overlay.", "overlay/draw_depth.cpp", "CUDA GUI / DML config-only"),
     # Buttons
     row("Buttons", "Arrow Key Options", "Enable arrows keys options", "enable_arrows_settings", "Activate/deactivate", "true/false", "Allows arrow-key adjustment of target offsets.", "overlay/draw_buttons.cpp"),
     # Overlay
@@ -229,8 +185,6 @@ GUI_CONTROLS: list[dict[str, str]] = [
     # Debug
     row("Debug", "Screenshot Buttons", "Verbose console output", "verbose", "Activate/deactivate", "true/false", "Enables extra console logging.", "overlay/draw_debug.cpp"),
     row("Debug", "Log File", "Enable log file", "debug_log_file_enabled", "Activate/deactivate", "true/false", "Writes logs to debug_log_file_path when enabled.", "overlay/draw_debug.cpp"),
-    row("Debug", "Neural Diagnostics", "Log neural tracker associations", "neural_tracker_log_enabled", "Activate/deactivate", "true/false", "Writes neural association diagnostics to neural_tracker_log_path.", "overlay/draw_debug.cpp"),
-    row("Debug", "Neural Diagnostics", "Show neural tracker debug", "neural_tracker_debug_enabled", "Activate/deactivate", "true/false", "Shows neural tracker debug output in the game overlay path.", "overlay/draw_debug.cpp"),
 ]
 
 
@@ -254,11 +208,8 @@ OTHER_GUI: list[dict[str, str]] = [
     row("Mouse", "Input Method", "Kmbox A PIDVID", "kmbox_a_pidvid", "Input text", "PPPPVVVV", "Saved with Save & Reconnect.", "overlay/draw_mouse.cpp"),
     row("Mouse", "Input Method", "Makcu Port", "makcu_port", "Combo", "AUTO, COM1-COM30", "Makcu input only.", "overlay/draw_mouse.cpp"),
     row("Mouse", "Input Method", "Makcu Baudrate", "makcu_baudrate", "Combo", "115200-4000000", "Makcu input only.", "overlay/draw_mouse.cpp"),
-    row("Neural", "Neural Tracker", "Association model", "neural_tracker_model_path", "Input text", "path", "Path to the neural tracker ONNX file.", "overlay/draw_neural.cpp"),
     row("AI", "Model", "Model", "ai_model", "Combo", "models folder", "Selects detector model from available files.", "overlay/draw_ai.cpp"),
     row("AI", "Backend", "Backend", "backend", "Combo", "TRT, DML", "CUDA builds only; DML build does not expose this combo.", "overlay/draw_ai.cpp", "CUDA GUI / DML config-only"),
-    row("AI", "Depth Inference", "Depth model", "depth_model_path", "Combo/buttons", "models/depth", "CUDA builds only.", "overlay/draw_depth.cpp", "CUDA GUI / DML config-only"),
-    row("AI", "Depth Mask", "Depth colormap", "depth_colormap", "Combo", "0-21 OpenCV colormap index", "CUDA builds only.", "overlay/draw_depth.cpp", "CUDA GUI / DML config-only"),
     row("Buttons", "Button Bindings", "Targeting Buttons", "button_targeting", "Combo rows", "key list", "Supports multiple bindings with + and -.", "overlay/draw_buttons.cpp"),
     row("Buttons", "Button Bindings", "Shoot Buttons", "button_shoot", "Combo rows", "key list", "Supports multiple bindings with + and -.", "overlay/draw_buttons.cpp"),
     row("Buttons", "Button Bindings", "Zoom Buttons", "button_zoom", "Combo rows", "key list", "Supports multiple bindings with + and -.", "overlay/draw_buttons.cpp"),
@@ -274,7 +225,6 @@ OTHER_GUI: list[dict[str, str]] = [
     row("Debug", "Screenshot Buttons", "Screenshot buttons", "screenshot_button", "Combo rows", "key list", "Supports multiple bindings with + and -.", "overlay/draw_debug.cpp"),
     row("Debug", "Screenshot Buttons", "Screenshot delay", "screenshot_delay", "Input int", "step 50/500", "Delay before screenshot capture.", "overlay/draw_debug.cpp"),
     row("Debug", "Log File", "Log file path", "debug_log_file_path", "Input text", "path", "Used when Enable log file is on.", "overlay/draw_debug.cpp"),
-    row("Debug", "Neural Diagnostics", "Neural tracker log", "neural_tracker_log_path", "Input text", "path", "CSV path for neural association diagnostics.", "overlay/draw_debug.cpp"),
 ]
 
 
@@ -304,7 +254,6 @@ def config_only(
 CONFIG_ONLY: list[dict[str, str]] = [
     config_only("Mouse prediction", "prediction_futurePositions", "20", "integer", "Number of future target positions to retain/use for prediction visualization.", "Saved in current config.ini, but no direct GUI control exists."),
     config_only("Mouse prediction", "draw_futurePositions", "true", "true/false", "Enables drawing future positions in preview/debug paths.", "Separate from game_overlay_draw_future."),
-    config_only("PID governor", "pid_governor_model_path", "training/models/pid_governor.onnx", "path", "Model path for the ONNX PID governor.", "Relative paths are resolved against current/exe parent locations."),
     config_only("AI backend", "backend", "DML", "DML or TRT", "Selects DirectML or TensorRT backend.", "GUI combo exists only in CUDA builds.", visibility="DML config-only / CUDA GUI"),
     config_only("AI backend", "dml_device_id", "0", "integer adapter id", "DirectML adapter index used by ONNX Runtime DML.", "Not exposed in the GUI."),
     config_only("System reserves", "cpuCoreReserveCount", "4", "integer", "CPU cores reserved away from worker assignment.", "Not exposed in the GUI."),
@@ -313,19 +262,6 @@ CONFIG_ONLY: list[dict[str, str]] = [
     config_only("Custom classes", "class_head", "1", "integer class id", "Detector class id treated as head.", "Not exposed in the GUI."),
     config_only("Debug", "show_fps", "false", "true/false", "Legacy/debug FPS display flag.", "Saved in config.ini but not exposed in the current GUI."),
     config_only("Game profiles", "Games.UNIFIED", "1.00,0.02,0.02", "sens,yaw,pitch[,true,baseFOV]", "Default profile row used for degree-to-count conversion.", "UNIFIED is shown read-only in the GUI."),
-    # DML-build depth keys. CUDA builds expose these under AI -> Depth.
-    config_only("Depth", "depth_inference_enabled", "true", "true/false", "Enables depth inference runtime.", "In the DML build this remains config-only; CUDA builds expose it in AI -> Depth.", visibility="DML config-only / CUDA GUI"),
-    config_only("Depth", "depth_model_path", "depth_anything_v2.engine", "path", "Depth model or engine path.", "In the DML build this remains config-only; CUDA builds expose it in AI -> Depth.", visibility="DML config-only / CUDA GUI"),
-    config_only("Depth", "depth_fps", "100", "0-120", "Depth debug inference rate.", "In the DML build this remains config-only; CUDA builds expose it in AI -> Depth.", visibility="DML config-only / CUDA GUI"),
-    config_only("Depth", "depth_colormap", "18", "0-21", "OpenCV colormap index for depth debug view.", "In the DML build this remains config-only; CUDA builds expose it in AI -> Depth.", visibility="DML config-only / CUDA GUI"),
-    config_only("Depth", "depth_mask_enabled", "false", "true/false", "Enables depth mask generation.", "In the DML build this remains config-only; CUDA builds expose it in AI -> Depth.", visibility="DML config-only / CUDA GUI"),
-    config_only("Depth", "depth_mask_fps", "5", "1-30 GUI, >=0 load clamp", "Depth mask update frequency.", "In the DML build this remains config-only; CUDA builds expose it in AI -> Depth.", visibility="DML config-only / CUDA GUI"),
-    config_only("Depth", "depth_mask_near_percent", "20", "1-100", "Near-depth percentile threshold for mask generation.", "In the DML build this remains config-only; CUDA builds expose it in AI -> Depth.", visibility="DML config-only / CUDA GUI"),
-    config_only("Depth", "depth_mask_expand", "0", "0-128 px", "Expands the mask after generation.", "In the DML build this remains config-only; CUDA builds expose it in AI -> Depth.", visibility="DML config-only / CUDA GUI"),
-    config_only("Depth", "depth_mask_hold_frames", "0", "0-120", "Frames to hold/reuse the last mask.", "In the DML build this remains config-only; CUDA builds expose it in AI -> Depth.", visibility="DML config-only / CUDA GUI"),
-    config_only("Depth", "depth_mask_alpha", "90", "0-255", "Depth mask overlay alpha.", "In the DML build this remains config-only; CUDA builds expose it in AI -> Depth.", visibility="DML config-only / CUDA GUI"),
-    config_only("Depth", "depth_mask_invert", "false", "true/false", "Inverts near/far mask selection.", "In the DML build this remains config-only; CUDA builds expose it in AI -> Depth.", visibility="DML config-only / CUDA GUI"),
-    config_only("Depth", "depth_debug_overlay_enabled", "false", "true/false", "Shows depth debug overlay in the game overlay.", "In the DML build this remains config-only; CUDA builds expose it in AI -> Depth.", visibility="DML config-only / CUDA GUI"),
     # Loadable but not emitted by saveConfig in this build.
     config_only("Advanced mouse", "minSpeedMultiplier", "0.1", "float", "Legacy minimum movement speed multiplier.", "Loadable from config.ini if added manually; saveConfig does not currently emit it.", visibility="Loadable hidden key"),
     config_only("Advanced mouse", "maxSpeedMultiplier", "0.1", "float", "Legacy maximum movement speed multiplier.", "Loadable from config.ini if added manually; saveConfig does not currently emit it.", visibility="Loadable hidden key"),
@@ -355,7 +291,6 @@ TAB_ORDER = [
     "Capture",
     "Target",
     "Mouse",
-    "Neural",
     "AI",
     "Buttons",
     "Overlay",
@@ -408,17 +343,27 @@ def generate_markdown() -> str:
     out.append("")
     out.append("Search by GUI label, config key, tab, section, or source file. Rows marked `CUDA GUI / DML config-only` appear as GUI controls only in CUDA builds; the current `x64/DML/config.ini` keeps those values as config-only settings.")
     out.append("")
-    out.append("## Perfect Aim v1.0")
+    out.append("## Repository Reference")
     out.append("")
-    out.append("Perfect Aim v1.0 keeps all neural systems advisory only and default OFF. The runtime path remains:")
+    out.append("Private backup/update repository: `NANOBYTECOMPUTERS/0bs2`.")
     out.append("")
-    out.append("`Video Frame -> Detector -> Tracker -> State Estimator (Kalman/IMM) -> Temporal Predictor -> Neural Targeting Head -> Adaptive Influence + SmartBlender -> PID/Governor -> Mouse Output`")
+    out.append("This reference covers the OpenCV 5 CUDA / TensorRT 11.1 project state after neural, depth, PID, feed-forward, and smart-blending code paths were removed. Local dependency drops under `modules/` and `extras/` are intentionally excluded from Git and should be restored through the documented build/dependency scripts.")
     out.append("")
-    out.append("PID/Kalman remains the convergence owner by default. Selecting IMM changes only the InnerAim tracker estimator in v1; temporal prediction and the neural targeting head can only add bounded feed-forward/refinement offsets, and they do not replace the tracked target, modify the PID observation point, or write directly to final actuator deltas.")
+    out.append("## Targeting Pipeline")
     out.append("")
-    out.append("Ego-motion compensation is an opt-in tracker stabilizer. It subtracts bounded, recent emitted mouse/view motion from tracker priors and temporal history only; raw detector boxes, PID observation points, and final actuator output remain unchanged.")
+    out.append("The runtime path is now fully deterministic:")
     out.append("")
-    out.append("The Neural tab exposes Balanced, Aggressive, Smooth, and Sniper presets. Presets tune prediction influence, neural refinement range, and SmartBlender damping/jerk limits while retaining opt-in master toggles. Optional telemetry can show current adaptive influence, confidence, predicted lead, neural refinement, and SmartBlender jitter/oscillation state on the game overlay, or write a throttled CSV log for tuning.")
+    out.append("`Video Frame -> Detector -> Tracker -> State Estimator (Kalman/IMM) -> Direct Targeting Movement -> Mouse Output`")
+    out.append("")
+    out.append("The tracker aim point and Kalman prediction own convergence. Selecting IMM changes only the InnerAim tracker estimator; detections and tracker observations feed the targeting pipeline directly.")
+    out.append("")
+    out.append("Ego-motion compensation is an opt-in tracker stabilizer. It subtracts bounded, recent emitted mouse/view motion from tracker priors only; raw detector boxes and final mouse output remain unchanged.")
+    out.append("")
+    out.append("## Legacy Prediction Compatibility")
+    out.append("")
+    out.append("Deprecated but retained: `minSpeedMultiplier`, `maxSpeedMultiplier`, `predictionInterval`, `snapRadius`, `nearRadius`, `speedCurveExponent`, `snapBoostFactor`, `kalman_warmup_frames`, and `kalman_acquisition_frames` remain loadable for old configs and aim-simulation parity.")
+    out.append("")
+    out.append("Removal gate: remove these only after a behavior baseline proves behavior stays identical across the live tracker, game overlay simulation, and config merge path.")
     out.append("")
     out.append("## GUI Tab Order")
     out.append("")
@@ -429,7 +374,7 @@ def generate_markdown() -> str:
         out.append(f"## {tab} Tab")
         if tab == "Stats":
             out.append("")
-            out.append("The Stats tab is read-only in the current GUI. It displays timing graphs, capture FPS, capture details, and CUDA/depth status where available.")
+            out.append("The Stats tab is read-only in the current GUI. It displays timing graphs, capture FPS, capture details, and CUDA status where available.")
             out.append("")
             continue
 
@@ -460,7 +405,7 @@ def generate_markdown() -> str:
 
     out.append("## Config.ini Settings Not In The GUI")
     out.append("")
-    out.append("These settings are editable by changing `config.ini` directly. Some are build-gated: CUDA rows are emitted only by CUDA builds, and depth rows are GUI-editable only when the app is compiled with `USE_CUDA`.")
+    out.append("These settings are editable by changing `config.ini` directly. Some are build-gated: CUDA rows are emitted only by CUDA builds.")
     out.append("")
     out.append(md_table(
         ["Section", "Setting", "Current/default", "Range/options", "Visibility", "Guidance", "Notes"],
@@ -476,8 +421,6 @@ def generate_markdown() -> str:
             ["Capture", "overlay/draw_capture.cpp and overlay/draw_debug.cpp"],
             ["Target", "overlay/draw_target.cpp"],
             ["Mouse", "overlay/draw_mouse.cpp"],
-            ["Neural", "overlay/draw_neural.cpp"],
-            ["AI and Depth", "overlay/draw_ai.cpp and overlay/draw_depth.cpp"],
             ["Buttons", "overlay/draw_buttons.cpp"],
             ["Overlay", "overlay/draw_overlay.cpp"],
             ["Game Overlay", "overlay/draw_game_overlay.cpp"],
@@ -605,9 +548,15 @@ def write_pdf(path: Path) -> None:
     story.append(Spacer(1, 0.1 * inch))
     story.append(paragraph("Searchable Directory", h1))
     story.append(paragraph("Use PDF search for any GUI label, config key, tab, section, or source file. The companion CSV at docs/settings-reference/settings-index.csv contains the same searchable directory in row form.", body))
-    story.append(paragraph("Perfect Aim v1.0", h1))
-    story.append(paragraph("Perfect Aim v1.0 keeps neural systems advisory only and default OFF. PID/Kalman remains the convergence owner; temporal prediction, neural targeting, SmartBlender, and ego-motion compensation are bounded helper paths.", body))
-    story.append(paragraph("Ego-motion compensation subtracts bounded recent emitted mouse/view motion from tracker priors and temporal history only. It does not modify raw detections, PID observation points, or final actuator output.", body))
+    story.append(paragraph("Repository Reference", h1))
+    story.append(paragraph("Private backup/update repository: NANOBYTECOMPUTERS/0bs2.", body))
+    story.append(paragraph("This reference covers the OpenCV 5 CUDA / TensorRT 11.1 project state after neural, depth, PID, feed-forward, and smart-blending code paths were removed. Local dependency drops under modules/ and extras/ are intentionally excluded from Git and should be restored through the documented build/dependency scripts.", body))
+    story.append(paragraph("Targeting Pipeline", h1))
+    story.append(paragraph("The runtime path is now detector, tracker, Kalman/IMM state estimation, direct targeting movement, and mouse output. Detections and tracker observations feed targeting directly.", body))
+    story.append(paragraph("Ego-motion compensation subtracts bounded recent emitted mouse/view motion from tracker priors only. It does not modify raw detections or final mouse output.", body))
+    story.append(paragraph("Legacy Prediction Compatibility", h1))
+    story.append(paragraph("Deprecated but retained: minSpeedMultiplier, maxSpeedMultiplier, predictionInterval, snapRadius, nearRadius, speedCurveExponent, snapBoostFactor, kalman_warmup_frames, and kalman_acquisition_frames remain loadable for old configs and aim-simulation parity.", body))
+    story.append(paragraph("Removal gate: remove these only after a behavior baseline proves behavior stays identical across the live tracker, game overlay simulation, and config merge path.", body))
     story.append(Spacer(1, 0.08 * inch))
     story.append(pdf_table(
         ["Order", "Tab", "Notes"],
@@ -619,7 +568,7 @@ def write_pdf(path: Path) -> None:
     for tab in TAB_ORDER:
         story.append(paragraph(f"{tab} Tab", h1))
         if tab == "Stats":
-            story.append(paragraph("The Stats tab is read-only in the current GUI. It displays timing graphs, capture FPS, capture details, and CUDA/depth status where available.", body))
+            story.append(paragraph("The Stats tab is read-only in the current GUI. It displays timing graphs, capture FPS, capture details, and CUDA status where available.", body))
             story.append(PageBreak())
             continue
 
@@ -657,7 +606,7 @@ def write_pdf(path: Path) -> None:
         story.append(PageBreak())
 
     story.append(paragraph("Config.ini Settings Not In The GUI", h1))
-    story.append(paragraph("These settings are editable by changing config.ini directly. Some are build-gated: CUDA rows are emitted only by CUDA builds, and depth rows are GUI-editable only when the app is compiled with USE_CUDA.", body))
+    story.append(paragraph("These settings are editable by changing config.ini directly. Some are build-gated: CUDA rows are emitted only by CUDA builds.", body))
     story.append(Spacer(1, 0.08 * inch))
     story.append(pdf_table(
         ["Section", "Setting", "Current/default", "Range/options", "Visibility", "Guidance", "Notes"],
@@ -673,8 +622,6 @@ def write_pdf(path: Path) -> None:
             ["Capture", "overlay/draw_capture.cpp and overlay/draw_debug.cpp"],
             ["Target", "overlay/draw_target.cpp"],
             ["Mouse", "overlay/draw_mouse.cpp"],
-            ["Neural", "overlay/draw_neural.cpp"],
-            ["AI and Depth", "overlay/draw_ai.cpp and overlay/draw_depth.cpp"],
             ["Buttons", "overlay/draw_buttons.cpp"],
             ["Overlay", "overlay/draw_overlay.cpp"],
             ["Game Overlay", "overlay/draw_game_overlay.cpp"],

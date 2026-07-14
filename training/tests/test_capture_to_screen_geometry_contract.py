@@ -146,12 +146,20 @@ class CaptureToScreenGeometryContractTest(unittest.TestCase):
     def test_mouse_control_remains_in_detection_space(self):
         loop = self.read("runtime/mouse_thread_loop.cpp")
 
+        self.assertIn("CaptureFrameGeometry bufferGeometry", loop)
+        self.assertIn("bufferGeometry = detectionBuffer.geometry", loop)
+        self.assertIn("bufferGeometry.hasValidModel()", loop)
+        self.assertIn("bufferGeometry.modelWidth", loop)
+        self.assertIn("bufferGeometry.modelHeight", loop)
+        self.assertIn("mouseThread.updateDetectionGeometry(trackerFrameWidth, trackerFrameHeight)", loop)
         self.assertIn("targetTracker.update(", loop)
         self.assertIn("config.detection_resolution,", loop)
         self.assertIn("activeTarget->smoothX", loop)
         self.assertIn("activeTarget->smoothY", loop)
         self.assertIn("mouseThread.moveMousePivot(", loop)
+        self.assertIn("chooseDirectDetectionTarget(", loop)
         self.assertNotIn("modelToScreenPoint(activeTarget->smoothX", loop)
+        self.assertNotIn("CaptureToScreenConverter", loop)
 
 
 if __name__ == "__main__":

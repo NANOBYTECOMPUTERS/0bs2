@@ -16,6 +16,8 @@
 #include <utility>
 #include <vector>
 
+#include <opencv2/geometry/2d.hpp>
+
 #include "capture.h"
 #include "capture/capture_geometry.h"
 #include "Game_overlay.h"
@@ -26,8 +28,6 @@
 #include "aim_kalman.h"
 
 #ifdef USE_CUDA
-#include "depth/depth_anything_trt.h"
-#include "depth/depth_mask.h"
 #include "tensorrt/nvinf.h"
 #endif
 
@@ -94,7 +94,7 @@ static void draw_target_correction_demo_game_overlay(Game_overlay* overlay, floa
         return;
 
     // Legacy prediction compatibility: retained for aim-sim and overlay demo parity.
-    // These config knobs no longer own runtime convergence; PID/Kalman does.
+    // These config knobs no longer own runtime convergence; tracker/Kalman does.
     const float scale = 4.0f;
     float near_px = config.nearRadius * scale;
     float snap_px = config.snapRadius * scale;
@@ -480,7 +480,7 @@ static AimSimHistorySample aim_sim_sample_history(const std::deque<AimSimHistory
 static double aim_sim_calculate_speed_multiplier(double distance, double maxDistance)
 {
     // Legacy prediction compatibility: retained for aim-sim and overlay demo parity.
-    // Removal requires a disabled-neural behavior baseline that proves parity.
+    // Removal requires a behavior baseline that proves parity.
     const double snapRadius = std::max(0.0, static_cast<double>(config.snapRadius));
     const double nearRadius = std::max(1e-3, static_cast<double>(config.nearRadius));
     const double curveExp = std::max(0.1, static_cast<double>(config.speedCurveExponent));
@@ -798,7 +798,7 @@ static void aim_sim_step(AimSimulationState& s, double dtSec, int panelW, int pa
     s.ctrlPrevTimeSec = s.simTimeSec;
 
     // Legacy prediction compatibility: predictionInterval is retained for aim-sim
-    // latency visualization, not as the primary live neural/PID prediction owner.
+    // latency visualization, not as the primary live targeting prediction owner.
     double lookaheadSec = std::max(0.0, static_cast<double>(config.predictionInterval));
     if (config.kalman_compensate_detection_delay)
         lookaheadSec += inferenceMs * 0.001;
@@ -1087,16 +1087,6 @@ void gameOverlayRenderLoop()
     const int offX = pr.left - vx;
     const int offY = pr.top - vy;
 
-#ifdef USE_CUDA
-    static depth_anything::DepthAnythingTrt depthDebugModel;
-    static std::string depthDebugModelPath;
-    static int depthDebugColormap = -1;
-    static int depthDebugImageId = 0;
-    static int depthMaskImageId = 0;
-    static cv::Mat depthDebugFrame;
-    static auto lastDepthUpdate = std::chrono::steady_clock::time_point::min();
-    static bool lastDepthInferenceEnabled = true;
-#endif
     int lastDetectionVersion = -1;
     static AimSimulationState aimSimState;
 
@@ -1115,15 +1105,6 @@ void gameOverlayRenderLoop()
                 g_iconImageId = 0;
                 g_iconLastError.clear();
             }
-#ifdef USE_CUDA
-            depthDebugModel.reset();
-            depthDebugModelPath.clear();
-            depthDebugColormap = -1;
-            depthDebugImageId = 0;
-            depthMaskImageId = 0;
-            depthDebugFrame.release();
-            lastDepthUpdate = std::chrono::steady_clock::time_point::min();
-#endif
             std::this_thread::sleep_for(std::chrono::milliseconds(150));
             continue;
         }
@@ -1193,18 +1174,6 @@ void gameOverlayRenderLoop()
         decltype(globalMouseThread->getFuturePositions()) futurePts;
         if (config.game_overlay_draw_future && globalMouseThread)
             futurePts = globalMouseThread->getFuturePositions();
-
-        std::pair<double, double> neuralTargetingRefinedAimPoint{ 0.0, 0.0 };
-        bool neuralTargetingRefinedAimPointValid = false;
-        if (config.game_overlay_draw_future && globalMouseThread)
-            neuralTargetingRefinedAimPointValid =
-                globalMouseThread->getNeuralTargetingRefinedAimPoint(neuralTargetingRefinedAimPoint);
-
-        NeuralControlTelemetry neuralControlTelemetry;
-        bool neuralControlTelemetryValid = false;
-        if (config.neural_control_telemetry_overlay_enabled && globalMouseThread)
-            neuralControlTelemetryValid =
-                globalMouseThread->getNeuralControlTelemetry(neuralControlTelemetry);
 
         std::vector<std::pair<double, double>> windTailPts;
         if (config.game_overlay_draw_wind_tail && globalMouseThread)
@@ -1301,291 +1270,6 @@ void gameOverlayRenderLoop()
 
         gameOverlayPtr->BeginFrame();
 
-#ifdef USE_CUDA
-        if (!config.depth_inference_enabled)
-        {
-            if (lastDepthInferenceEnabled)
-            {
-                if (gameOverlayPtr)
-                {
-                    if (depthDebugImageId != 0)
-                    {
-                        gameOverlayPtr->UnloadImage(depthDebugImageId);
-                        depthDebugImageId = 0;
-                    }
-                    if (depthMaskImageId != 0)
-                    {
-                        gameOverlayPtr->UnloadImage(depthMaskImageId);
-                        depthMaskImageId = 0;
-                    }
-                }
-
-                depthDebugModel.reset();
-                depthDebugModelPath.clear();
-                depthDebugColormap = -1;
-                depthDebugFrame.release();
-                lastDepthUpdate = std::chrono::steady_clock::time_point::min();
-
-                auto& depthMask = depth_anything::GetDepthMaskGenerator();
-                depthMask.reset();
-            }
-            lastDepthInferenceEnabled = false;
-        }
-        else
-        {
-            lastDepthInferenceEnabled = true;
-
-            float depthW = 0.0f;
-            float depthH = 0.0f;
-            float maskW = 0.0f;
-            float maskH = 0.0f;
-            float maskOpacity = std::clamp(static_cast<float>(config.depth_mask_alpha) / 255.0f, 0.0f, 1.0f);
-            bool maskHasBounds = false;
-            cv::Rect maskBounds{};
-
-            if (config.depth_debug_overlay_enabled)
-            {
-                cv::Mat frameCopy;
-                {
-                    std::lock_guard<std::mutex> lk(frameMutex);
-                    if (!latestFrame.empty())
-                        latestFrame.copyTo(frameCopy);
-                }
-
-                if (config.depth_model_path.empty())
-                {
-                    if (depthDebugModel.ready())
-                        depthDebugModel.reset();
-                    depthDebugModelPath.clear();
-                }
-                else if (depthDebugModelPath != config.depth_model_path || !depthDebugModel.ready())
-                {
-                    if (depthDebugModel.initialize(config.depth_model_path, gLogger))
-                    {
-                        depthDebugModelPath = config.depth_model_path;
-                    }
-                }
-
-                if (config.depth_colormap != depthDebugColormap)
-                {
-                    depthDebugModel.setColormap(config.depth_colormap);
-                    depthDebugColormap = config.depth_colormap;
-                }
-
-                if (depthDebugModel.ready() && !frameCopy.empty())
-                {
-                    auto now = std::chrono::steady_clock::now();
-                    bool shouldUpdate = depthDebugFrame.empty();
-                    if (config.depth_fps <= 0)
-                    {
-                        shouldUpdate = true;
-                    }
-                    else if (!shouldUpdate)
-                    {
-                        auto interval = std::chrono::milliseconds(1000 / config.depth_fps);
-                        shouldUpdate = (now - lastDepthUpdate) >= interval;
-                    }
-                    if (shouldUpdate)
-                    {
-                        cv::Mat depthFrame = depthDebugModel.predict(frameCopy);
-                        if (!depthFrame.empty())
-                        {
-                            depthDebugFrame = depthFrame;
-                            lastDepthUpdate = now;
-                        }
-                    }
-                }
-                if (!depthDebugFrame.empty())
-                {
-                    cv::Mat depthBGRA;
-                    cv::cvtColor(depthDebugFrame, depthBGRA, cv::COLOR_BGR2BGRA);
-                    int newId = gameOverlayPtr->UpdateImageFromBGRA(
-                        depthBGRA.data,
-                        depthBGRA.cols,
-                        depthBGRA.rows,
-                        static_cast<int>(depthBGRA.step),
-                        depthDebugImageId);
-                    if (newId != 0)
-                        depthDebugImageId = newId;
-                    depthW = static_cast<float>(regionW);
-                    depthH = static_cast<float>(regionH);
-                }
-            }
-            else if (depthDebugImageId != 0)
-            {
-                gameOverlayPtr->UnloadImage(depthDebugImageId);
-                depthDebugImageId = 0;
-            }
-
-            if (config.depth_mask_enabled)
-            {
-                auto& depthMask = depth_anything::GetDepthMaskGenerator();
-                cv::Mat mask = depthMask.getMask();
-
-                if (mask.empty())
-                {
-                    cv::Mat frameCopy;
-                    {
-                        std::lock_guard<std::mutex> lk(frameMutex);
-                        if (!latestFrame.empty())
-                            latestFrame.copyTo(frameCopy);
-                    }
-
-                    if (!frameCopy.empty())
-                    {
-                        depth_anything::DepthMaskOptions maskOptions;
-                        maskOptions.enabled = true;
-                        maskOptions.fps = config.depth_mask_fps;
-                        maskOptions.near_percent = config.depth_mask_near_percent;
-                        maskOptions.expand = config.depth_mask_expand;
-                        maskOptions.invert = config.depth_mask_invert;
-
-                        depthMask.update(frameCopy, maskOptions, config.depth_model_path, gLogger);
-                        mask = depthMask.getMask();
-
-                        if (mask.empty())
-                        {
-                            if (!config.depth_model_path.empty() &&
-                                (depthDebugModelPath != config.depth_model_path || !depthDebugModel.ready()))
-                            {
-                                if (depthDebugModel.initialize(config.depth_model_path, gLogger))
-                                {
-                                    depthDebugModelPath = config.depth_model_path;
-                                    depthDebugColormap = config.depth_colormap;
-                                    depthDebugModel.setColormap(config.depth_colormap);
-                                }
-                            }
-
-                            if (depthDebugModel.ready())
-                            {
-                                cv::Mat depthLocal = depthDebugModel.predictDepth(frameCopy);
-                                if (!depthLocal.empty())
-                                {
-                                    const int nearPercent = std::clamp(config.depth_mask_near_percent, 1, 100);
-                                    const bool invertMask = config.depth_mask_invert;
-                                    const int total = depthLocal.rows * depthLocal.cols;
-                                    if (total > 0)
-                                    {
-                                        int hist[256] = {};
-                                        for (int y = 0; y < depthLocal.rows; ++y)
-                                        {
-                                            const uint8_t* row = depthLocal.ptr<uint8_t>(y);
-                                            for (int x = 0; x < depthLocal.cols; ++x)
-                                                hist[row[x]]++;
-                                        }
-
-                                        const int target = std::max(1, (total * nearPercent) / 100);
-                                        int threshold = 0;
-                                        if (!invertMask)
-                                        {
-                                            int count = 0;
-                                            for (int i = 0; i < 256; ++i)
-                                            {
-                                                count += hist[i];
-                                                if (count >= target)
-                                                {
-                                                    threshold = i;
-                                                    break;
-                                                }
-                                            }
-                                            cv::compare(depthLocal, threshold, mask, cv::CMP_LE);
-                                        }
-                                        else
-                                        {
-                                            int count = 0;
-                                            for (int i = 255; i >= 0; --i)
-                                            {
-                                                count += hist[i];
-                                                if (count >= target)
-                                                {
-                                                    threshold = i;
-                                                    break;
-                                                }
-                                            }
-                                            cv::compare(depthLocal, threshold, mask, cv::CMP_GE);
-                                        }
-
-                                        const int expand = std::clamp(config.depth_mask_expand, 0, 128);
-                                        if (expand > 0)
-                                        {
-                                            const int kernelSize = 2 * expand + 1;
-                                            cv::Mat kernel = cv::getStructuringElement(
-                                                cv::MORPH_ELLIPSE, cv::Size(kernelSize, kernelSize));
-                                            cv::dilate(mask, mask, kernel);
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-
-                if (!mask.empty())
-                {
-                    cv::Mat maskBGRA(mask.size(), CV_8UC4, cv::Scalar(0, 0, 0, 0));
-                    maskBGRA.setTo(cv::Scalar(20, 90, 255, 255), mask);
-
-                    cv::Mat nonZeroPoints;
-                    cv::findNonZero(mask, nonZeroPoints);
-                    if (!nonZeroPoints.empty())
-                    {
-                        maskBounds = cv::boundingRect(nonZeroPoints);
-                        maskHasBounds = true;
-
-                    }
-
-                    int newId = gameOverlayPtr->UpdateImageFromBGRA(
-                        maskBGRA.data,
-                        maskBGRA.cols,
-                        maskBGRA.rows,
-                        static_cast<int>(maskBGRA.step),
-                        depthMaskImageId);
-                    if (newId != 0)
-                        depthMaskImageId = newId;
-
-                    maskW = static_cast<float>(regionW);
-                    maskH = static_cast<float>(regionH);
-                }
-            }
-            else if (depthMaskImageId != 0)
-            {
-                gameOverlayPtr->UnloadImage(depthMaskImageId);
-                depthMaskImageId = 0;
-            }
-
-            if (depthDebugImageId != 0 || depthMaskImageId != 0 || (config.depth_debug_overlay_enabled && config.depth_mask_enabled))
-            {
-                float depthX = static_cast<float>(baseX);
-                float depthY = static_cast<float>(baseY);
-                float maskX = depthX;
-                float maskY = depthY;
-
-                if (depthDebugImageId != 0 && depthW > 0.0f && depthH > 0.0f)
-                {
-                    const float depthDebugOpacity = config.depth_mask_enabled ? 0.30f : 1.0f;
-                    gameOverlayPtr->DrawImage(depthDebugImageId, depthX, depthY, depthW, depthH, depthDebugOpacity);
-                    gameOverlayPtr->AddRect({ depthX, depthY, depthW, depthH }, ARGB(120, 255, 255, 255), 1.0f);
-                }
-
-                if (depthMaskImageId != 0 && maskW > 0.0f && maskH > 0.0f)
-                {
-                    gameOverlayPtr->DrawImage(depthMaskImageId, maskX, maskY, maskW, maskH, maskOpacity);
-
-                    if (maskHasBounds)
-                    {
-                        const cv::Rect2d screenRect = overlayConverter.modelToScreenRect(maskBounds);
-                        const float bx = static_cast<float>(screenRect.x);
-                        const float by = static_cast<float>(screenRect.y);
-                        const float bw = static_cast<float>(screenRect.width);
-                        const float bh = static_cast<float>(screenRect.height);
-
-                        gameOverlayPtr->AddRect({ bx, by, bw, bh }, ARGB(230, 255, 240, 120), 1.8f);
-                    }
-                }
-            }
-        }
-#endif
-
         // CAPTURE FRAME
         if (config.game_overlay_draw_frame)
         {
@@ -1678,8 +1362,6 @@ void gameOverlayRenderLoop()
                     label += L" *";
                 if (!t.observedThisFrame)
                     label += L" m" + std::to_wstring(t.missedFrames);
-                if (config.neural_tracker_debug_enabled && t.lastNeuralEvaluated)
-                    label += L" n" + std::to_wstring(static_cast<int>(std::round(t.lastNeuralScore * 100.0)));
 
                 const uint32_t textCol =
                     (t.trackId == lockedTrackId || t.isLocked)
@@ -1714,34 +1396,6 @@ void gameOverlayRenderLoop()
                     gameOverlayPtr->AddLine({ innerAimX - cross, innerAimY, innerAimX + cross, innerAimY }, innerCol, 1.4f);
                     gameOverlayPtr->AddLine({ innerAimX, innerAimY - cross, innerAimX, innerAimY + cross }, innerCol, 1.4f);
                     gameOverlayPtr->AddCircle({ innerAimX, innerAimY, innerAimRadius }, innerCol, 1.0f);
-                }
-
-                const auto& temporalFuture = t.temporalFuture;
-                if (config.game_overlay_draw_future && t.temporalPredictionValid && !temporalFuture.empty())
-                {
-                    const uint32_t temporalCol = ARGB(220, 120, 255, 210);
-                    cv::Point2d previous = overlayConverter.modelToScreenPoint(t.innerAimX, t.innerAimY);
-
-                    for (const auto& futurePoint : temporalFuture)
-                    {
-                        const cv::Point2d screenFuture =
-                            overlayConverter.modelToScreenPoint(futurePoint.first, futurePoint.second);
-                        const float fx = static_cast<float>(screenFuture.x);
-                        const float fy = static_cast<float>(screenFuture.y);
-
-                        if (fx < baseX - 40.0f || fy < baseY - 40.0f ||
-                            fx > baseX + regionW + 40.0f || fy > baseY + regionH + 40.0f)
-                            continue;
-
-                        gameOverlayPtr->AddLine(
-                            { static_cast<float>(previous.x), static_cast<float>(previous.y), fx, fy },
-                            temporalCol,
-                            1.1f);
-                        gameOverlayPtr->FillCircle(
-                            { fx, fy, std::max(1.8f, config.game_overlay_future_point_radius * 0.75f) },
-                            temporalCol);
-                        previous = screenFuture;
-                    }
                 }
             }
         }
@@ -1778,52 +1432,6 @@ void gameOverlayRenderLoop()
 
                 gameOverlayPtr->FillCircle({ px, py, config.game_overlay_future_point_radius }, col);
             }
-        }
-
-        if (config.game_overlay_draw_future && neuralTargetingRefinedAimPointValid)
-        {
-            const cv::Point2d refined =
-                overlayConverter.modelToScreenPoint(neuralTargetingRefinedAimPoint.first, neuralTargetingRefinedAimPoint.second);
-            const float rx = static_cast<float>(refined.x);
-            const float ry = static_cast<float>(refined.y);
-            if (rx >= baseX - 40.0f && ry >= baseY - 40.0f &&
-                rx <= baseX + regionW + 40.0f && ry <= baseY + regionH + 40.0f)
-            {
-                gameOverlayPtr->AddCircle({ rx, ry, 7.0f }, ARGB(235, 255, 90, 220), 1.5f);
-                gameOverlayPtr->FillCircle({ rx, ry, 2.6f }, ARGB(235, 255, 90, 220));
-            }
-        }
-
-        if (config.neural_control_telemetry_overlay_enabled && neuralControlTelemetryValid)
-        {
-            wchar_t line[192] = {};
-            const float tx = static_cast<float>(baseX + 8.0f);
-            float ty = static_cast<float>(baseY + 10.0f);
-
-            swprintf_s(
-                line,
-                L"Adaptive influence %.1f%%  Confidence %.2f",
-                neuralControlTelemetry.adaptiveInfluence * 100.0,
-                neuralControlTelemetry.confidence);
-            gameOverlayPtr->AddText(tx, ty, line, 13.0f, ARGB(225, 210, 245, 255));
-            ty += 17.0f;
-
-            swprintf_s(
-                line,
-                L"Predicted lead %.1f, %.1f  Neural %.1f, %.1f",
-                neuralControlTelemetry.predictionLeadX,
-                neuralControlTelemetry.predictionLeadY,
-                neuralControlTelemetry.neuralRefinementX,
-                neuralControlTelemetry.neuralRefinementY);
-            gameOverlayPtr->AddText(tx, ty, line, 13.0f, ARGB(210, 180, 230, 255));
-            ty += 17.0f;
-
-            swprintf_s(
-                line,
-                L"Smart jitter %.2f  Oscillation %.2f",
-                neuralControlTelemetry.jitterScore,
-                neuralControlTelemetry.oscillationPenalty);
-            gameOverlayPtr->AddText(tx, ty, line, 13.0f, ARGB(210, 180, 230, 255));
         }
 
         // WIND DEBUG TAIL

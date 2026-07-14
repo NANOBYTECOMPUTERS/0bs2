@@ -19,6 +19,8 @@
 #include <cwchar>
 #include <memory>
 
+#include <opencv2/core/utils/logger.hpp>
+
 #include "capture.h"
 #include "mouse.h"
 #include "0BS_box_2.h"
@@ -34,8 +36,6 @@
 #include "diagnostics/Logger.h"
 
 #ifdef USE_CUDA
-#include "depth/depth_anything_trt.h"
-#include "depth/depth_mask.h"
 #include "tensorrt/nvinf.h"
 #endif
 
@@ -357,13 +357,6 @@ int main()
             std::cin.get();
             return -1;
         }
-        if (!CreateDirectory(L"models\\depth", NULL) && GetLastError() != ERROR_ALREADY_EXISTS)
-        {
-            std::cout << "[MAIN] Error with models\\depth folder" << std::endl;
-            std::cin.get();
-            return -1;
-        }
-
         if (config.capture_method == "virtual_camera")
         {
             auto cams = VirtualCameraCapture::GetAvailableVirtualCameras(true);

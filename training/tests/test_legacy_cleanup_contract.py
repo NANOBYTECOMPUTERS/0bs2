@@ -56,7 +56,7 @@ class LegacyCleanupContractTest(unittest.TestCase):
         self.assertIn("Legacy Prediction Compatibility", readme)
         self.assertIn("Deprecated but retained", readme)
         self.assertIn("Removal gate", readme)
-        self.assertIn("disabled-neural behavior stays identical", readme)
+        self.assertIn("behavior stays identical", readme)
         for key in LEGACY_KEYS + ("kalman_warmup_frames", "kalman_acquisition_frames"):
             self.assertIn(key, readme)
 

@@ -32,8 +32,10 @@ echo.
 echo Common options:
 echo   -Configuration CUDA
 echo   -Platform x64
-echo   -CudaVersion 13.2
+echo   -CudaVersion 13.3
+echo   -CudaToolkitDir C:\path\CUDA\v13.3
 echo   -TensorRTDir C:\path\TensorRT
+echo   -OpenCVDir C:\path\opencv\install
 echo   -NonInteractive
 echo   -DryRun
 echo.

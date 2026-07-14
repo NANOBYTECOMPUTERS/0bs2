@@ -41,49 +41,12 @@ bool prev_ego_motion_compensation_enabled = config.ego_motion_compensation_enabl
 float prev_ego_motion_compensation_strength = config.ego_motion_compensation_strength;
 float prev_ego_motion_compensation_max_shift_px = config.ego_motion_compensation_max_shift_px;
 int prev_ego_motion_compensation_max_age_ms = config.ego_motion_compensation_max_age_ms;
-int prev_pid_actuator_hz = config.pid_actuator_hz;
-float prev_pid_kp = config.pid_kp;
-float prev_pid_ki = config.pid_ki;
-float prev_pid_kd = config.pid_kd;
-float prev_pid_deadzone_px = config.pid_deadzone_px;
-float prev_pid_max_pixel_step = config.pid_max_pixel_step;
-float prev_pid_output_scale = config.pid_output_scale;
-float prev_pid_min_output_scale = config.pid_min_output_scale;
-float prev_pid_max_output_scale = config.pid_max_output_scale;
-float prev_pid_size_reference_px = config.pid_size_reference_px;
-float prev_pid_size_min_scale = config.pid_size_min_scale;
-float prev_pid_size_max_scale = config.pid_size_max_scale;
-float prev_pid_precision_radius_scale = config.pid_precision_radius_scale;
-float prev_pid_slowdown_radius_scale = config.pid_slowdown_radius_scale;
-float prev_pid_overshoot_brake = config.pid_overshoot_brake;
-float prev_pid_divergence_boost = config.pid_divergence_boost;
-float prev_pid_scale_response = config.pid_scale_response;
-float prev_pid_max_integral = config.pid_max_integral;
-float prev_pid_max_derivative_term = config.pid_max_derivative_term;
-float prev_pid_derivative_filter_tau_ms = config.pid_derivative_filter_tau_ms;
-float prev_pid_target_loss_timeout_ms = config.pid_target_loss_timeout_ms;
-bool prev_pid_feed_forward_enabled = config.pid_feed_forward_enabled;
-float prev_pid_feed_forward_gain = config.pid_feed_forward_gain;
-float prev_pid_feed_forward_lookahead_ms = config.pid_feed_forward_lookahead_ms;
-int prev_pid_feed_forward_frame_lookahead = config.pid_feed_forward_frame_lookahead;
-float prev_pid_feed_forward_max_step = config.pid_feed_forward_max_step;
-float prev_pid_feed_forward_min_speed = config.pid_feed_forward_min_speed;
-float prev_pid_feed_forward_confidence_floor = config.pid_feed_forward_confidence_floor;
-bool prev_pid_conditional_integration_enabled = config.pid_conditional_integration_enabled;
-float prev_pid_conditional_integration_error_px = config.pid_conditional_integration_error_px;
-bool prev_pid_adaptive_output_scaling_enabled = config.pid_adaptive_output_scaling_enabled;
-float prev_pid_adaptive_output_error_scale = config.pid_adaptive_output_error_scale;
-float prev_pid_derivative_smoothing_multiplier = config.pid_derivative_smoothing_multiplier;
-bool prev_pid_perspective_fov_mapping_enabled = config.pid_perspective_fov_mapping_enabled;
-bool prev_pid_governor_enabled = config.pid_governor_enabled;
-float prev_pid_governor_blend = config.pid_governor_blend;
-float prev_pid_governor_max_speed_multiple = config.pid_governor_max_speed_multiple;
-bool prev_pid_smart_blending_enabled = config.pid_smart_blending_enabled;
-float prev_pid_smart_blending_aggression = config.pid_smart_blending_aggression;
-float prev_pid_smart_blending_near_damping = config.pid_smart_blending_near_damping;
-float prev_pid_smart_blending_deadzone_px = config.pid_smart_blending_deadzone_px;
-float prev_pid_smart_blending_jerk_limit_px = config.pid_smart_blending_jerk_limit_px;
-float prev_pid_smart_blending_confidence_floor = config.pid_smart_blending_confidence_floor;
+float prev_target_deadzone_px = config.target_deadzone_px;
+float prev_target_max_pixel_step = config.target_max_pixel_step;
+float prev_target_output_scale = config.target_output_scale;
+bool prev_target_calibrated_pixel_counts_enabled = config.target_calibrated_pixel_counts_enabled;
+float prev_target_counts_per_pixel_x = config.target_counts_per_pixel_x;
+float prev_target_counts_per_pixel_y = config.target_counts_per_pixel_y;
 bool prev_auto_shoot = config.auto_shoot;
 float prev_bScope_multiplier = config.bScope_multiplier;
 
@@ -626,112 +589,29 @@ void draw_mouse()
         OverlayUI::EndSection();
     }
 
-    if (OverlayUI::BeginSection("Pure PID Movement", "mouse_section_pid"))
+    if (OverlayUI::BeginSection("Direct Targeting Movement", "mouse_section_direct_targeting"))
     {
-        ImGui::SliderInt("Actuator Hz", &config.pid_actuator_hz, 30, 2000);
-        ImGui::SliderFloat("Kp", &config.pid_kp, 0.0f, 1.5f, "%.4f");
-        ImGui::SliderFloat("Ki", &config.pid_ki, 0.0f, 0.5f, "%.4f");
-        ImGui::SliderFloat("Kd", &config.pid_kd, 0.0f, 0.25f, "%.4f");
-        ImGui::SliderFloat("Deadzone (px)", &config.pid_deadzone_px, 0.0f, 10.0f, "%.3f");
-        ImGui::SliderFloat("Max step (px/tick)", &config.pid_max_pixel_step, 0.01f, 20.0f, "%.3f");
-        ImGui::SliderFloat("Output scale", &config.pid_output_scale, 0.01f, 3.0f, "%.3f");
-        ImGui::SliderFloat("Min output scale", &config.pid_min_output_scale, 0.0f, 3.0f, "%.3f");
-        ImGui::SliderFloat("Max output scale", &config.pid_max_output_scale, 0.01f, 3.0f, "%.3f");
-        ImGui::SliderFloat("Size reference (px)", &config.pid_size_reference_px, 1.0f, 240.0f, "%.1f");
-        ImGui::SliderFloat("Small target scale", &config.pid_size_min_scale, 0.01f, 1.0f, "%.3f");
-        ImGui::SliderFloat("Large target scale", &config.pid_size_max_scale, 0.05f, 2.0f, "%.3f");
-        ImGui::SliderFloat("Precision radius / size", &config.pid_precision_radius_scale, 0.0f, 0.10f, "%.4f");
-        ImGui::SliderFloat("Slowdown radius / size", &config.pid_slowdown_radius_scale, 0.01f, 1.0f, "%.3f");
-        ImGui::SliderFloat("Overshoot brake", &config.pid_overshoot_brake, 0.01f, 1.0f, "%.3f");
-        ImGui::SliderFloat("Divergence boost", &config.pid_divergence_boost, 0.0f, 2.0f, "%.3f");
-        ImGui::SliderFloat("Scale response", &config.pid_scale_response, 0.1f, 40.0f, "%.1f");
-        ImGui::SliderFloat("Max integral", &config.pid_max_integral, 0.0f, 10000.0f, "%.1f");
-        ImGui::SliderFloat("Max derivative term", &config.pid_max_derivative_term, 0.0f, 5.0f, "%.3f");
-        ImGui::SliderFloat("Derivative filter (ms)", &config.pid_derivative_filter_tau_ms, 0.0f, 250.0f, "%.1f");
-        ImGui::SliderFloat("Target timeout (ms)", &config.pid_target_loss_timeout_ms, 10.0f, 1000.0f, "%.1f");
-        ImGui::Checkbox("Feed-forward prediction", &config.pid_feed_forward_enabled);
-        ImGui::SliderFloat("Feed-forward gain", &config.pid_feed_forward_gain, 0.0f, 4.0f, "%.3f");
-        ImGui::SliderFloat("Feed-forward lookahead (ms)", &config.pid_feed_forward_lookahead_ms, 0.0f, 120.0f, "%.1f");
-        ImGui::SliderInt("Feed-forward frame lookahead", &config.pid_feed_forward_frame_lookahead, 0, 2);
-        ImGui::SliderFloat("Feed-forward max step (px/tick)", &config.pid_feed_forward_max_step, 0.0f, 5.0f, "%.3f");
-        ImGui::SliderFloat("Feed-forward min speed (px/s)", &config.pid_feed_forward_min_speed, 0.0f, 3000.0f, "%.1f");
-        ImGui::SliderFloat("Feed-forward confidence floor", &config.pid_feed_forward_confidence_floor, 0.0f, 1.0f, "%.3f");
-        ImGui::Checkbox("Conditional integration", &config.pid_conditional_integration_enabled);
-        ImGui::SliderFloat("Integration error limit (px)", &config.pid_conditional_integration_error_px, 0.0f, 240.0f, "%.1f");
-        ImGui::Checkbox("Adaptive output scaling", &config.pid_adaptive_output_scaling_enabled);
-        ImGui::SliderFloat("Adaptive error scale (px)", &config.pid_adaptive_output_error_scale, 1.0f, 640.0f, "%.1f");
-        ImGui::SliderFloat("Derivative smoothing multiplier", &config.pid_derivative_smoothing_multiplier, 1.0f, 6.0f, "%.2f");
-        ImGui::Checkbox("Perspective FOV PID", &config.pid_perspective_fov_mapping_enabled);
-
-        ImGui::Separator();
-        ImGui::TextUnformatted("Smart Blending");
-        ImGui::Checkbox("Enable smart blending", &config.pid_smart_blending_enabled);
-        if (!config.pid_smart_blending_enabled)
+        ImGui::SliderFloat("Deadzone (px)", &config.target_deadzone_px, 0.0f, 20.0f, "%.3f");
+        ImGui::SliderFloat("Max step (px/frame)", &config.target_max_pixel_step, 0.25f, 120.0f, "%.2f");
+        ImGui::SliderFloat("Output scale", &config.target_output_scale, 0.01f, 3.0f, "%.3f");
+        ImGui::Checkbox("Calibrated pixel counts", &config.target_calibrated_pixel_counts_enabled);
+        if (!config.target_calibrated_pixel_counts_enabled)
             ImGui::BeginDisabled();
 
-        ImGui::SliderFloat("Smoothing aggression", &config.pid_smart_blending_aggression, 0.30f, 1.0f, "%.2f");
-        ImGui::SliderFloat("Near-target damping", &config.pid_smart_blending_near_damping, 0.0f, 1.0f, "%.2f");
-        ImGui::SliderFloat("Blend deadzone (px)", &config.pid_smart_blending_deadzone_px, 0.0f, 12.0f, "%.2f");
-        ImGui::SliderFloat("Blend jerk limit (px/tick)", &config.pid_smart_blending_jerk_limit_px, 0.02f, 8.0f, "%.2f");
-        ImGui::SliderFloat("Blend confidence floor", &config.pid_smart_blending_confidence_floor, 0.0f, 1.0f, "%.2f");
+        ImGui::SliderFloat("Counts / px X", &config.target_counts_per_pixel_x, -50.0f, 50.0f, "%.4f");
+        ImGui::SliderFloat("Counts / px Y", &config.target_counts_per_pixel_y, -50.0f, 50.0f, "%.4f");
 
-        if (!config.pid_smart_blending_enabled)
+        if (!config.target_calibrated_pixel_counts_enabled)
             ImGui::EndDisabled();
 
-        ImGui::Separator();
-        ImGui::TextUnformatted("PID Governor");
-        ImGui::Checkbox("Enable PID governor", &config.pid_governor_enabled);
-        if (!config.pid_governor_enabled)
-            ImGui::BeginDisabled();
-
-        ImGui::SliderFloat("Governor blend", &config.pid_governor_blend, 0.0f, 1.0f, "%.2f");
-        ImGui::SliderFloat("Governor max speed multiple", &config.pid_governor_max_speed_multiple, 1.0f, 5.0f, "%.2f");
-
-        if (!config.pid_governor_enabled)
-            ImGui::EndDisabled();
-
-        if (ImGui::Button("Reset PID defaults"))
+        if (ImGui::Button("Reset direct defaults"))
         {
-            config.pid_actuator_hz = 1000;
-            config.pid_kp = 0.0085f;
-            config.pid_ki = 0.0003f;
-            config.pid_kd = 0.0001f;
-            config.pid_deadzone_px = 0.0f;
-            config.pid_max_pixel_step = 0.80f;
-            config.pid_output_scale = 0.10f;
-            config.pid_min_output_scale = 0.02f;
-            config.pid_max_output_scale = 0.35f;
-            config.pid_size_reference_px = 48.0f;
-            config.pid_size_min_scale = 0.20f;
-            config.pid_size_max_scale = 1.00f;
-            config.pid_precision_radius_scale = 0.012f;
-            config.pid_slowdown_radius_scale = 0.30f;
-            config.pid_overshoot_brake = 0.35f;
-            config.pid_divergence_boost = 0.35f;
-            config.pid_scale_response = 8.0f;
-            config.pid_max_integral = 120.0f;
-            config.pid_max_derivative_term = 0.02f;
-            config.pid_derivative_filter_tau_ms = 18.0f;
-            config.pid_target_loss_timeout_ms = 90.0f;
-            config.pid_feed_forward_enabled = true;
-            config.pid_feed_forward_gain = 0.35f;
-            config.pid_feed_forward_lookahead_ms = 24.0f;
-            config.pid_feed_forward_frame_lookahead = 1;
-            config.pid_feed_forward_max_step = 0.35f;
-            config.pid_feed_forward_min_speed = 20.0f;
-            config.pid_feed_forward_confidence_floor = 0.55f;
-            config.pid_conditional_integration_enabled = true;
-            config.pid_conditional_integration_error_px = 12.0f;
-            config.pid_adaptive_output_scaling_enabled = true;
-            config.pid_adaptive_output_error_scale = 96.0f;
-            config.pid_derivative_smoothing_multiplier = 1.5f;
-            config.pid_perspective_fov_mapping_enabled = false;
-            config.pid_smart_blending_enabled = false;
-            config.pid_smart_blending_aggression = 0.65f;
-            config.pid_smart_blending_near_damping = 0.75f;
-            config.pid_smart_blending_deadzone_px = 0.0f;
-            config.pid_smart_blending_jerk_limit_px = 0.65f;
-            config.pid_smart_blending_confidence_floor = 0.45f;
+            config.target_deadzone_px = 0.0f;
+            config.target_max_pixel_step = 28.0f;
+            config.target_output_scale = 0.28f;
+            config.target_calibrated_pixel_counts_enabled = false;
+            config.target_counts_per_pixel_x = 0.0f;
+            config.target_counts_per_pixel_y = 0.0f;
             OverlayConfig_MarkDirty();
             refreshMouseThread();
         }
@@ -797,49 +677,12 @@ void draw_mouse()
         prev_ego_motion_compensation_strength != config.ego_motion_compensation_strength ||
         prev_ego_motion_compensation_max_shift_px != config.ego_motion_compensation_max_shift_px ||
         prev_ego_motion_compensation_max_age_ms != config.ego_motion_compensation_max_age_ms ||
-        prev_pid_actuator_hz != config.pid_actuator_hz ||
-        prev_pid_kp != config.pid_kp ||
-        prev_pid_ki != config.pid_ki ||
-        prev_pid_kd != config.pid_kd ||
-        prev_pid_deadzone_px != config.pid_deadzone_px ||
-        prev_pid_max_pixel_step != config.pid_max_pixel_step ||
-        prev_pid_output_scale != config.pid_output_scale ||
-        prev_pid_min_output_scale != config.pid_min_output_scale ||
-        prev_pid_max_output_scale != config.pid_max_output_scale ||
-        prev_pid_size_reference_px != config.pid_size_reference_px ||
-        prev_pid_size_min_scale != config.pid_size_min_scale ||
-        prev_pid_size_max_scale != config.pid_size_max_scale ||
-        prev_pid_precision_radius_scale != config.pid_precision_radius_scale ||
-        prev_pid_slowdown_radius_scale != config.pid_slowdown_radius_scale ||
-        prev_pid_overshoot_brake != config.pid_overshoot_brake ||
-        prev_pid_divergence_boost != config.pid_divergence_boost ||
-        prev_pid_scale_response != config.pid_scale_response ||
-        prev_pid_max_integral != config.pid_max_integral ||
-        prev_pid_max_derivative_term != config.pid_max_derivative_term ||
-        prev_pid_derivative_filter_tau_ms != config.pid_derivative_filter_tau_ms ||
-        prev_pid_target_loss_timeout_ms != config.pid_target_loss_timeout_ms ||
-        prev_pid_feed_forward_enabled != config.pid_feed_forward_enabled ||
-        prev_pid_feed_forward_gain != config.pid_feed_forward_gain ||
-        prev_pid_feed_forward_lookahead_ms != config.pid_feed_forward_lookahead_ms ||
-        prev_pid_feed_forward_frame_lookahead != config.pid_feed_forward_frame_lookahead ||
-        prev_pid_feed_forward_max_step != config.pid_feed_forward_max_step ||
-        prev_pid_feed_forward_min_speed != config.pid_feed_forward_min_speed ||
-        prev_pid_feed_forward_confidence_floor != config.pid_feed_forward_confidence_floor ||
-        prev_pid_conditional_integration_enabled != config.pid_conditional_integration_enabled ||
-        prev_pid_conditional_integration_error_px != config.pid_conditional_integration_error_px ||
-        prev_pid_adaptive_output_scaling_enabled != config.pid_adaptive_output_scaling_enabled ||
-        prev_pid_adaptive_output_error_scale != config.pid_adaptive_output_error_scale ||
-        prev_pid_derivative_smoothing_multiplier != config.pid_derivative_smoothing_multiplier ||
-        prev_pid_perspective_fov_mapping_enabled != config.pid_perspective_fov_mapping_enabled ||
-        prev_pid_governor_enabled != config.pid_governor_enabled ||
-        prev_pid_governor_blend != config.pid_governor_blend ||
-        prev_pid_governor_max_speed_multiple != config.pid_governor_max_speed_multiple ||
-        prev_pid_smart_blending_enabled != config.pid_smart_blending_enabled ||
-        prev_pid_smart_blending_aggression != config.pid_smart_blending_aggression ||
-        prev_pid_smart_blending_near_damping != config.pid_smart_blending_near_damping ||
-        prev_pid_smart_blending_deadzone_px != config.pid_smart_blending_deadzone_px ||
-        prev_pid_smart_blending_jerk_limit_px != config.pid_smart_blending_jerk_limit_px ||
-        prev_pid_smart_blending_confidence_floor != config.pid_smart_blending_confidence_floor ||
+        prev_target_deadzone_px != config.target_deadzone_px ||
+        prev_target_max_pixel_step != config.target_max_pixel_step ||
+        prev_target_output_scale != config.target_output_scale ||
+        prev_target_calibrated_pixel_counts_enabled != config.target_calibrated_pixel_counts_enabled ||
+        prev_target_counts_per_pixel_x != config.target_counts_per_pixel_x ||
+        prev_target_counts_per_pixel_y != config.target_counts_per_pixel_y ||
         prev_auto_shoot != config.auto_shoot ||
         prev_bScope_multiplier != config.bScope_multiplier)
     {
@@ -863,49 +706,12 @@ void draw_mouse()
         prev_ego_motion_compensation_strength = config.ego_motion_compensation_strength;
         prev_ego_motion_compensation_max_shift_px = config.ego_motion_compensation_max_shift_px;
         prev_ego_motion_compensation_max_age_ms = config.ego_motion_compensation_max_age_ms;
-        prev_pid_actuator_hz = config.pid_actuator_hz;
-        prev_pid_kp = config.pid_kp;
-        prev_pid_ki = config.pid_ki;
-        prev_pid_kd = config.pid_kd;
-        prev_pid_deadzone_px = config.pid_deadzone_px;
-        prev_pid_max_pixel_step = config.pid_max_pixel_step;
-        prev_pid_output_scale = config.pid_output_scale;
-        prev_pid_min_output_scale = config.pid_min_output_scale;
-        prev_pid_max_output_scale = config.pid_max_output_scale;
-        prev_pid_size_reference_px = config.pid_size_reference_px;
-        prev_pid_size_min_scale = config.pid_size_min_scale;
-        prev_pid_size_max_scale = config.pid_size_max_scale;
-        prev_pid_precision_radius_scale = config.pid_precision_radius_scale;
-        prev_pid_slowdown_radius_scale = config.pid_slowdown_radius_scale;
-        prev_pid_overshoot_brake = config.pid_overshoot_brake;
-        prev_pid_divergence_boost = config.pid_divergence_boost;
-        prev_pid_scale_response = config.pid_scale_response;
-        prev_pid_max_integral = config.pid_max_integral;
-        prev_pid_max_derivative_term = config.pid_max_derivative_term;
-        prev_pid_derivative_filter_tau_ms = config.pid_derivative_filter_tau_ms;
-        prev_pid_target_loss_timeout_ms = config.pid_target_loss_timeout_ms;
-        prev_pid_feed_forward_enabled = config.pid_feed_forward_enabled;
-        prev_pid_feed_forward_gain = config.pid_feed_forward_gain;
-        prev_pid_feed_forward_lookahead_ms = config.pid_feed_forward_lookahead_ms;
-        prev_pid_feed_forward_frame_lookahead = config.pid_feed_forward_frame_lookahead;
-        prev_pid_feed_forward_max_step = config.pid_feed_forward_max_step;
-        prev_pid_feed_forward_min_speed = config.pid_feed_forward_min_speed;
-        prev_pid_feed_forward_confidence_floor = config.pid_feed_forward_confidence_floor;
-        prev_pid_conditional_integration_enabled = config.pid_conditional_integration_enabled;
-        prev_pid_conditional_integration_error_px = config.pid_conditional_integration_error_px;
-        prev_pid_adaptive_output_scaling_enabled = config.pid_adaptive_output_scaling_enabled;
-        prev_pid_adaptive_output_error_scale = config.pid_adaptive_output_error_scale;
-        prev_pid_derivative_smoothing_multiplier = config.pid_derivative_smoothing_multiplier;
-        prev_pid_perspective_fov_mapping_enabled = config.pid_perspective_fov_mapping_enabled;
-        prev_pid_governor_enabled = config.pid_governor_enabled;
-        prev_pid_governor_blend = config.pid_governor_blend;
-        prev_pid_governor_max_speed_multiple = config.pid_governor_max_speed_multiple;
-        prev_pid_smart_blending_enabled = config.pid_smart_blending_enabled;
-        prev_pid_smart_blending_aggression = config.pid_smart_blending_aggression;
-        prev_pid_smart_blending_near_damping = config.pid_smart_blending_near_damping;
-        prev_pid_smart_blending_deadzone_px = config.pid_smart_blending_deadzone_px;
-        prev_pid_smart_blending_jerk_limit_px = config.pid_smart_blending_jerk_limit_px;
-        prev_pid_smart_blending_confidence_floor = config.pid_smart_blending_confidence_floor;
+        prev_target_deadzone_px = config.target_deadzone_px;
+        prev_target_max_pixel_step = config.target_max_pixel_step;
+        prev_target_output_scale = config.target_output_scale;
+        prev_target_calibrated_pixel_counts_enabled = config.target_calibrated_pixel_counts_enabled;
+        prev_target_counts_per_pixel_x = config.target_counts_per_pixel_x;
+        prev_target_counts_per_pixel_y = config.target_counts_per_pixel_y;
         prev_auto_shoot = config.auto_shoot;
         prev_bScope_multiplier = config.bScope_multiplier;
 

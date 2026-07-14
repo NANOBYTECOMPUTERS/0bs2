@@ -1,10 +1,8 @@
 # 0BS GUI and Config Setting Reference
 
-Generated on 2026-05-16 (with manual extensions) from `x64\DML\config.ini` and the ImGui source files under `overlay/`.
+Generated on 2026-07-14 from `dist\0BS\config.ini` and the ImGui source files under `overlay/`.
 
 This reference is ordered by the GUI sidebar tabs in `overlay/overlay.cpp`. It lists every GUI slider and every activate/deactivate checkbox, then documents config.ini settings that are not editable in the current DML GUI or are hidden/loadable config keys.
-
-**Note on stability:** The runtime uses a HotConfigSnapshot pattern for consistent, lock-free reads of configuration from all real-time paths (PID actuator, Kalman/IMM, temporal prediction, neural refinement, wind simulation, aim curves, and overlay drawing). This makes live config reloads (F4) and GUI edits safe even under high-rate mouse control (240–2000 Hz actuator). Input method switches are hardened with explicit worker clear/reset paths and actuator health telemetry.
 
 ## Searchable Directory
 
@@ -14,49 +12,27 @@ This reference is ordered by the GUI sidebar tabs in `overlay/overlay.cpp`. It l
 
 Search by GUI label, config key, tab, section, or source file. Rows marked `CUDA GUI / DML config-only` appear as GUI controls only in CUDA builds; the current `x64/DML/config.ini` keeps those values as config-only settings.
 
-## Perfect Aim v1.0
+## Repository Reference
 
-Perfect Aim v1.0 keeps all neural systems advisory only and default OFF. The runtime path remains:
+Private backup/update repository: `NANOBYTECOMPUTERS/0bs2`.
 
-`Video Frame -> Detector -> Tracker -> State Estimator (Kalman/IMM) -> Temporal Predictor -> Neural Targeting Head -> Adaptive Influence + SmartBlender -> PID/Governor -> Mouse Output`
+This reference covers the OpenCV 5 CUDA / TensorRT 11.1 project state after neural, depth, PID, feed-forward, and smart-blending code paths were removed. Local dependency drops under `modules/` and `extras/` are intentionally excluded from Git and should be restored through the documented build/dependency scripts.
 
-PID/Kalman remains the convergence owner by default. Selecting IMM changes only the InnerAim tracker estimator in v1; temporal prediction and the neural targeting head can only add bounded feed-forward/refinement offsets, and they do not replace the tracked target, modify the PID observation point, or write directly to final actuator deltas.
+## Targeting Pipeline
 
-Ego-motion compensation is an opt-in tracker stabilizer. It subtracts bounded, recent emitted mouse/view motion from tracker priors and temporal history only; raw detector boxes, PID observation points, and final actuator output remain unchanged.
+The runtime path is now fully deterministic:
 
-The Neural tab exposes Balanced, Aggressive, Smooth, and Sniper presets. Presets tune prediction influence, neural refinement range, and SmartBlender damping/jerk limits while retaining opt-in master toggles. Optional telemetry can show current adaptive influence, confidence, predicted lead, neural refinement, and SmartBlender jitter/oscillation state on the game overlay, or write a throttled CSV log for tuning.
+`Video Frame -> Detector -> Tracker -> State Estimator (Kalman/IMM) -> Direct Targeting Movement -> Mouse Output`
+
+The tracker aim point and Kalman prediction own convergence. Selecting IMM changes only the InnerAim tracker estimator; detections and tracker observations feed the targeting pipeline directly.
+
+Ego-motion compensation is an opt-in tracker stabilizer. It subtracts bounded, recent emitted mouse/view motion from tracker priors only; raw detector boxes and final mouse output remain unchanged.
 
 ## Legacy Prediction Compatibility
 
-This pass is conservative. Legacy prediction and snap-curve settings are **Deprecated but retained** so older configs still load and the game overlay / aim simulation remains comparable to earlier builds. PID/Kalman remains the convergence owner, and the temporal predictor, Neural Targeting Head, adaptive influence, SmartBlender, and PID governor remain advisory layers only.
+Deprecated but retained: `minSpeedMultiplier`, `maxSpeedMultiplier`, `predictionInterval`, `snapRadius`, `nearRadius`, `speedCurveExponent`, `snapBoostFactor`, `kalman_warmup_frames`, and `kalman_acquisition_frames` remain loadable for old configs and aim-simulation parity.
 
-| Key | Status | Current owner / use | Removal gate |
-| --- | --- | --- | --- |
-| `minSpeedMultiplier` | Deprecated but retained | Game overlay target-correction demo and aim simulation speed curve | Remove only after disabled-neural behavior stays identical against a captured regression baseline. |
-| `maxSpeedMultiplier` | Deprecated but retained | Game overlay target-correction demo and aim simulation speed curve | Remove only after disabled-neural behavior stays identical against a captured regression baseline. |
-| `predictionInterval` | Deprecated but retained | Aim simulation latency visualization / auxiliary prediction timing | Remove only after disabled-neural behavior stays identical against a captured regression baseline. |
-| `snapRadius` | Deprecated but retained | Game overlay target-correction demo and aim simulation snap curve | Remove only after disabled-neural behavior stays identical against a captured regression baseline. |
-| `nearRadius` | Deprecated but retained | Game overlay target-correction demo and aim simulation speed curve | Remove only after disabled-neural behavior stays identical against a captured regression baseline. |
-| `speedCurveExponent` | Deprecated but retained | Game overlay target-correction demo and aim simulation speed curve | Remove only after disabled-neural behavior stays identical against a captured regression baseline. |
-| `snapBoostFactor` | Deprecated but retained | Game overlay target-correction demo and aim simulation snap multiplier | Remove only after disabled-neural behavior stays identical against a captured regression baseline. |
-| `kalman_warmup_frames` | Retained active compatibility | State-estimator warmup, including non-neural mode and aim simulation | Do not remove while latency-sweep and non-neural estimator tests depend on it. |
-| `kalman_acquisition_frames` | Retained active control | State-estimator acquisition ramp | Do not remove; this is still an active estimator control. |
-
-## Build Launchers
-
-0BS includes double-click and noninteractive build launchers modeled after `sunone_aimbot_2` while retaining the existing Visual Studio/MSBuild project flow:
-
-| Script | Purpose |
-| --- | --- |
-| `BUILDER.bat` / `RUN_BUILDER.bat` | Interactive launcher for DML, CUDA, worker, or all targets. |
-| `BUILDER.ps1 -Backend DML -NonInteractive` | Builds the DirectML app through `tools/build_dml.ps1`. |
-| `BUILDER.ps1 -Backend CUDA -NonInteractive` | Builds the CUDA app through `tools/build_cuda.ps1`, which delegates to `cuda/build-cuda.ps1`. |
-| `BUILDER.ps1 -Backend WORKER -NonInteractive` | Builds the CUDA YOLO worker through `cuda/build-yolo-worker.ps1`. |
-| `build_dml.bat`, `build_cuda.bat`, `build_no-options.bat` | Direct wrappers for scriptable or double-click use. |
-
-**Recommended policy:** Use the DML backend for normal development and iteration. Only build the CUDA/TensorRT variant when you are actively modifying CUDA-specific code paths (detector, capture interop, depth, TensorRT workers, etc.). This keeps iteration fast and avoids unnecessary long CUDA rebuilds. See `cuda/README.md` for the isolated CUDA build surface details.
-
-These launchers do not rebuild OpenCV. They reuse the current repository build paths and accept `-DryRun` for command inspection.
+Removal gate: remove these only after a behavior baseline proves behavior stays identical across the live tracker, game overlay simulation, and config merge path.
 
 ## GUI Tab Order
 
@@ -65,13 +41,12 @@ These launchers do not rebuild OpenCV. They reuse the current repository build p
 | 1 | Capture | Adjustable controls documented below |
 | 2 | Target | Adjustable controls documented below |
 | 3 | Mouse | Adjustable controls documented below |
-| 4 | Neural | Adjustable controls documented below |
-| 5 | AI | Adjustable controls documented below |
-| 6 | Buttons | Adjustable controls documented below |
-| 7 | Overlay | Adjustable controls documented below |
-| 8 | Game Overlay | Adjustable controls documented below |
-| 9 | Stats | Read-only monitor tab |
-| 10 | Debug | Adjustable controls documented below |
+| 4 | AI | Adjustable controls documented below |
+| 5 | Buttons | Adjustable controls documented below |
+| 6 | Overlay | Adjustable controls documented below |
+| 7 | Game Overlay | Adjustable controls documented below |
+| 8 | Stats | Read-only monitor tab |
+| 9 | Debug | Adjustable controls documented below |
 
 ## Capture Tab
 
@@ -79,33 +54,33 @@ These launchers do not rebuild OpenCV. They reuse the current repository build p
 
 | Section | Slider | Config key | Range | Current | Notes |
 | --- | --- | --- | --- | --- | --- |
-| General Capture | Capture FPS | capture_fps | 0-240 | 70 | Limits capture loop FPS. 0 disables the cap path and the GUI warns at 0 or 61+. |
+| General Capture | Capture FPS | capture_fps | 0-240 | n/a | Limits capture loop FPS. 0 disables the cap path and the GUI warns at 0 or 61+. |
 | Capture Preview | Debug scale | preview_debug_scale | 0.1x-2.0x | n/a | Preview-only scale slider. It is not saved to config.ini. |
-| Virtual Camera | Virtual camera width | virtual_camera_width | 128-3840 | 1920 | Applies when capture_method is virtual_camera. |
-| Virtual Camera | Virtual camera heigth | virtual_camera_heigth | 128-2160 | 1080 | Spelling follows the existing config key. Applies when capture_method is virtual_camera. |
+| Virtual Camera | Virtual camera width | virtual_camera_width | 128-3840 | n/a | Applies when capture_method is virtual_camera. |
+| Virtual Camera | Virtual camera heigth | virtual_camera_heigth | 128-2160 | n/a | Spelling follows the existing config key. Applies when capture_method is virtual_camera. |
 
 ### Activate/Deactivate
 
 | Section | Control | Config key | Values | Current | Notes |
 | --- | --- | --- | --- | --- | --- |
-| General Capture | Circle mask | circle_mask | true/false | true | Applies the circular capture mask. |
+| General Capture | Circle mask | circle_mask | true/false | n/a | Applies the circular capture mask. |
 | General Capture | Use CUDA Direct Capture | capture_use_cuda | true/false | n/a | CUDA/TensorRT builds only. Available with duplication_api capture. |
-| Capture Preview | Show Preview Window | show_window | true/false | true | Shows the capture preview/debug frame inside the Capture tab. |
-| WinRT | Capture Borders | capture_borders | true/false | true | WinRT capture only. Disabled automatically on unsupported Windows builds. |
-| WinRT | Capture Cursor | capture_cursor | true/false | true | WinRT capture only. Includes the cursor in captured frames. |
+| Capture Preview | Show Preview Window | show_window | true/false | n/a | Shows the capture preview/debug frame inside the Capture tab. |
+| WinRT | Capture Borders | capture_borders | true/false | n/a | WinRT capture only. Disabled automatically on unsupported Windows builds. |
+| WinRT | Capture Cursor | capture_cursor | true/false | n/a | WinRT capture only. Includes the cursor in captured frames. |
 
 ### Other GUI-Exposed Config Controls
 
 | Section | Control | Config key | Type/options | Current | Notes |
 | --- | --- | --- | --- | --- | --- |
-| General Capture | Detection Resolution | detection_resolution | 160, 320, 640 | 640 | Changes detector input resolution and restarts/reloads dependent paths. |
-| General Capture | Capture method | capture_method | duplication_api, winrt, virtual_camera, udp_capture | duplication_api | Selects frame source. |
-| WinRT | Capture target (WinRT) | capture_target | monitor, window | monitor | WinRT only. |
-| WinRT | Window title contains | capture_window_title | text |  | Used when WinRT target is window. |
-| Monitor Capture | Capture monitor | monitor_idx | monitor index | 0 | Monitor list is built from active displays. |
-| Virtual Camera | Virtual camera | virtual_camera_name | available cameras | None | Filtered list of DirectShow video input devices. |
-| UDP Capture | UDP IP | udp_ip | IPv4/string | 0.0.0.0 | Applied with the Apply UDP Settings button. |
-| UDP Capture | UDP Port | udp_port | 1-65535 | 1234 | Applied with the Apply UDP Settings button. |
+| General Capture | Detection Resolution | detection_resolution | 160, 320, 640 | n/a | Changes detector input resolution and restarts/reloads dependent paths. |
+| General Capture | Capture method | capture_method | duplication_api, winrt, virtual_camera, udp_capture | n/a | Selects frame source. |
+| WinRT | Capture target (WinRT) | capture_target | monitor, window | n/a | WinRT only. |
+| WinRT | Window title contains | capture_window_title | text | n/a | Used when WinRT target is window. |
+| Monitor Capture | Capture monitor | monitor_idx | monitor index | n/a | Monitor list is built from active displays. |
+| Virtual Camera | Virtual camera | virtual_camera_name | available cameras | n/a | Filtered list of DirectShow video input devices. |
+| UDP Capture | UDP IP | udp_ip | IPv4/string | n/a | Applied with the Apply UDP Settings button. |
+| UDP Capture | UDP Port | udp_port | 1-65535 | n/a | Applied with the Apply UDP Settings button. |
 
 ## Target Tab
 
@@ -113,15 +88,15 @@ These launchers do not rebuild OpenCV. They reuse the current repository build p
 
 | Section | Slider | Config key | Range | Current | Notes |
 | --- | --- | --- | --- | --- | --- |
-| Offsets | Approximate Body Y Offset | body_y_offset | 0.00-1.00 | 0.06 | Vertical aim point used for body-class detections. |
-| Offsets | Approximate Head Y Offset | head_y_offset | 0.00-1.00 | 0.38 | Vertical aim point used for head-class detections. |
+| Offsets | Approximate Body Y Offset | body_y_offset | 0.05-0.90 | n/a | Vertical aim point used for body-class detections. |
+| Offsets | Approximate Head Y Offset | head_y_offset | 0.05-0.55 | n/a | Vertical aim point used for head-class detections. |
 
 ### Activate/Deactivate
 
 | Section | Control | Config key | Values | Current | Notes |
 | --- | --- | --- | --- | --- | --- |
-| Targeting | Disable Headshot | disable_headshot | true/false | false | Prevents the head class from being selected as the aim target. |
-| Targeting | Auto Aim | auto_aim | true/false | false | Allows target selection/movement logic to act automatically while held conditions are met. |
+| Targeting | Disable Headshot | disable_headshot | true/false | n/a | Prevents the head class from being selected as the aim target. |
+| Targeting | Auto Aim | auto_aim | true/false | n/a | Allows target selection/movement logic to act automatically while held conditions are met. |
 
 ## Mouse Tab
 
@@ -129,9 +104,8 @@ These launchers do not rebuild OpenCV. They reuse the current repository build p
 
 | Section | Slider | Config key | Range | Current | Notes |
 | --- | --- | --- | --- | --- | --- |
-| FOV | FOV X | fovX | 10-120 | 70 | Horizontal field of view for the mouse controller. |
-| FOV | FOV Y | fovY | 10-120 | 70 | Vertical field of view for the mouse controller. |
-| State Estimator | Estimator mode | estimator_mode | kalman, imm | kalman | Selects the InnerAim tracker estimator. IMM is opt-in and does not replace the mouse-level PID/Kalman path in v1. |
+| FOV | FOV X | fovX | 10-120 | n/a | Horizontal field of view for the mouse controller. |
+| FOV | FOV Y | fovY | 10-120 | n/a | Vertical field of view for the mouse controller. |
 | State Estimator | Acquisition frames | kalman_acquisition_frames | 3-5 | n/a | Frames used to ramp prediction weight after target acquisition. |
 | State Estimator | Process noise position | kalman_process_noise_position | 0.0001-5000 | n/a | Position process noise. Higher values adapt faster to position changes. |
 | State Estimator | Process noise velocity | kalman_process_noise_velocity | 0.0001-50000 | n/a | Velocity process noise. Higher values adapt faster to speed changes. |
@@ -144,43 +118,16 @@ These launchers do not rebuild OpenCV. They reuse the current repository build p
 | State Estimator | Ego compensation strength | ego_motion_compensation_strength | 0.0-1.0 | n/a | Fraction of recent emitted motion subtracted from tracker priors/history to reduce camera-motion jitter. |
 | State Estimator | Ego max shift (px @640) | ego_motion_compensation_max_shift_px | 1-128 | n/a | Per-frame compensation clamp at 640 detection resolution; scales with detection_resolution. |
 | State Estimator | Ego max age (ms) | ego_motion_compensation_max_age_ms | 16-500 | n/a | Drops stale emitted-motion samples so compensation fails closed. |
-| Pure PID Movement | Actuator Hz | pid_actuator_hz | 30-2000 | 2000 | PID update rate used by the mouse actuator. |
-| Pure PID Movement | Kp | pid_kp | 0.0000-1.5000 | 0.0115 | Proportional PID gain. |
-| Pure PID Movement | Ki | pid_ki | 0.0000-0.5000 | 0.0003 | Integral PID gain. |
-| Pure PID Movement | Kd | pid_kd | 0.0000-0.2500 | 0.0001 | Derivative PID gain. |
-| Pure PID Movement | Deadzone (px) | pid_deadzone_px | 0.000-10.000 | 1.500 | Minimum error radius before movement is applied. |
-| Pure PID Movement | Max step (px/tick) | pid_max_pixel_step | 0.010-20.000 | 20.000 | Maximum movement step per PID tick from the GUI. Runtime clamp allows up to 80. |
-| Pure PID Movement | Output scale | pid_output_scale | 0.010-3.000 | 0.209 | Base multiplier applied to PID output. |
-| Pure PID Movement | Min output scale | pid_min_output_scale | 0.000-3.000 | 0.100 | Lower bound for adaptive output scaling. |
-| Pure PID Movement | Max output scale | pid_max_output_scale | 0.010-3.000 | 0.509 | Upper bound for adaptive output scaling. |
-| Pure PID Movement | Size reference (px) | pid_size_reference_px | 1.0-240.0 | 48.000 | Target size used as the neutral reference for size scaling. |
-| Pure PID Movement | Small target scale | pid_size_min_scale | 0.010-1.000 | 0.200 | Minimum scale when targets are smaller than the reference. |
-| Pure PID Movement | Large target scale | pid_size_max_scale | 0.050-2.000 | 1.000 | Maximum scale when targets are larger than the reference. |
-| Pure PID Movement | Precision radius / size | pid_precision_radius_scale | 0.0000-0.1000 | 0.020 | Target-size-relative radius where movement is considered precise enough. |
-| Pure PID Movement | Slowdown radius / size | pid_slowdown_radius_scale | 0.010-1.000 | 0.300 | Target-size-relative radius where scaling slows approach. |
-| Pure PID Movement | Overshoot brake | pid_overshoot_brake | 0.010-1.000 | 0.350 | Reduces movement after crossing past the target. |
-| Pure PID Movement | Divergence boost | pid_divergence_boost | 0.000-2.000 | 0.350 | Boosts output when the target error is growing. |
-| Pure PID Movement | Scale response | pid_scale_response | 0.1-40.0 | 8.000 | Responsiveness of adaptive output scale changes. |
-| Pure PID Movement | Max integral | pid_max_integral | 0.0-10000.0 | 120.000 | Caps integral accumulation. |
-| Pure PID Movement | Max derivative term | pid_max_derivative_term | 0.000-5.000 | 0.020 | Caps derivative contribution from a single axis. |
-| Pure PID Movement | Derivative filter (ms) | pid_derivative_filter_tau_ms | 0.0-250.0 | 18.000 | Smoothing time constant for derivative filtering. |
-| Pure PID Movement | Target timeout (ms) | pid_target_loss_timeout_ms | 10.0-1000.0 | 90.000 | Time without target observation before PID state resets. |
-| Pure PID Movement | Feed-forward gain | pid_feed_forward_gain | 0.000-4.000 | 0.201 | Strength of feed-forward movement. |
-| Pure PID Movement | Feed-forward lookahead (ms) | pid_feed_forward_lookahead_ms | 0.0-120.0 | 16.800 | Prediction lookahead horizon. |
-| Pure PID Movement | Feed-forward frame lookahead | pid_feed_forward_frame_lookahead | 0-2 | n/a | Additional frame-based velocity lead used when latency sweep is enabled. |
-| Pure PID Movement | Feed-forward max step (px/tick) | pid_feed_forward_max_step | 0.000-5.000 | 5.000 | Caps feed-forward contribution per tick. |
-| Pure PID Movement | Feed-forward min speed (px/s) | pid_feed_forward_min_speed | 0.0-3000.0 | 3000.000 | Minimum target speed required before feed-forward contributes. |
-| Pure PID Movement | Feed-forward confidence floor | pid_feed_forward_confidence_floor | 0.000-1.000 | 0.527 | Minimum observation confidence for feed-forward contribution. |
-| Pure PID Movement | Integration error limit (px) | pid_conditional_integration_error_px | 0.0-240.0 | n/a | Maximum per-axis error allowed for conditional integral accumulation. |
-| Pure PID Movement | Adaptive error scale (px) | pid_adaptive_output_error_scale | 1.0-640.0 | n/a | Error distance used as the adaptive output scaling reference. |
-| Pure PID Movement | Derivative smoothing multiplier | pid_derivative_smoothing_multiplier | 1.00-6.00 | n/a | Multiplies derivative filter tau when latency sweep is enabled. |
-| Pure PID Movement | Governor blend | pid_governor_blend | 0.00-1.00 | 0.200 | Blend strength for governor-generated PID scales. |
-| Pure PID Movement | Governor max speed multiple | pid_governor_max_speed_multiple | 1.00-5.00 | 1.000 | Maximum speed multiplier allowed when governor output is active. |
+| Direct Targeting Movement | Deadzone (px) | target_deadzone_px | 0.000-20.000 | n/a | Minimum target error radius before direct movement is emitted. |
+| Direct Targeting Movement | Max step (px/frame) | target_max_pixel_step | 0.25-120.00 | n/a | Maximum pixel-space movement emitted for one tracker observation. |
+| Direct Targeting Movement | Output scale | target_output_scale | 0.010-3.000 | n/a | Multiplier applied to tracker aim-point error before clamping. |
+| Direct Targeting Movement | Counts / px X | target_counts_per_pixel_x | -50.0000-50.0000 | n/a | Horizontal calibrated mouse counts per screen-space pixel. |
+| Direct Targeting Movement | Counts / px Y | target_counts_per_pixel_y | -50.0000-50.0000 | n/a | Vertical calibrated mouse counts per screen-space pixel. |
 | Game Profile | Sensitivity | Games.<profile>.sens | 0.0010-10.0000 | profile/local | Editable for custom profiles. UNIFIED is shown read-only. |
 | Game Profile | Yaw | Games.<profile>.yaw | 0.0010-0.1000 | profile/local | Horizontal degree-to-count conversion for a custom profile. |
 | Game Profile | Pitch | Games.<profile>.pitch | 0.0010-0.1000 | profile/local | Vertical degree-to-count conversion for a custom profile. |
 | Game Profile | Base FOV | Games.<profile>.baseFOV | 10.0-180.0 | profile/local | Shown only when FOV Scaled is enabled on a custom profile. |
-| Auto Shoot | bScope Multiplier | bScope_multiplier | 0.5-2.0 | 1.0 | Multiplier used by auto-shoot scope timing/behavior. Disabled in UI until Auto Shoot is on. |
+| Auto Shoot | bScope Multiplier | bScope_multiplier | 0.5-2.0 | n/a | Multiplier used by auto-shoot scope timing/behavior. Disabled in UI until Auto Shoot is on. |
 
 ### Activate/Deactivate
 
@@ -190,87 +137,28 @@ These launchers do not rebuild OpenCV. They reuse the current repository build p
 | State Estimator | Enable Kalman estimator | kalman_enabled | true/false | n/a | Enables Kalman filtering for target motion estimation. |
 | State Estimator | Seed velocity on acquire | kalman_velocity_seed_enabled | true/false | n/a | Seeds velocity from early measurement deltas during acquisition. |
 | State Estimator | Compensate detection delay | kalman_compensate_detection_delay | true/false | n/a | Accounts for detector latency in prediction. |
-| State Estimator | Ego-motion compensation | ego_motion_compensation_enabled | true/false | n/a | Opt-in tracker-prior compensation from emitted mouse/view motion. Raw detections, PID observation, and final actuator output are unchanged. |
-| Pure PID Movement | Feed-forward prediction | pid_feed_forward_enabled | true/false | true | Adds velocity-based prediction ahead of pure PID output. |
-| Pure PID Movement | Conditional integration | pid_conditional_integration_enabled | true/false | n/a | Prevents integral windup when latency sweep is enabled and error/output conditions are unsafe. |
-| Pure PID Movement | Adaptive output scaling | pid_adaptive_output_scaling_enabled | true/false | n/a | Enables error-magnitude output scaling when latency sweep is enabled. |
-| Pure PID Movement | Enable PID governor | pid_governor_enabled | true/false | true | Enables the ONNX PID governor when a compatible model can be loaded. |
+| State Estimator | Ego-motion compensation | ego_motion_compensation_enabled | true/false | n/a | Opt-in tracker-prior compensation from emitted mouse/view motion. Raw detections and final mouse output are unchanged. |
+| Direct Targeting Movement | Calibrated pixel counts | target_calibrated_pixel_counts_enabled | true/false | n/a | Uses measured counts-per-pixel gains for direct targeting output instead of FOV/profile conversion when both gains are nonzero. |
 | Game Profile | FOV Scaled | Games.<profile>.fovScaled | true/false | profile/local | When enabled, the profile also uses a Base FOV value. |
-| Auto Shoot | Auto Shoot | auto_shoot | true/false | false | Enables automatic shooting behavior. |
-| Input Method | Arduino 16-bit Mouse | arduino_16_bit_mouse | true/false | false | Arduino input only. Sends wider mouse movement values. |
-| Input Method | Arduino Enable Keys | arduino_enable_keys | true/false | false | Arduino input only. Enables keyboard key output through Arduino. |
+| Auto Shoot | Auto Shoot | auto_shoot | true/false | n/a | Enables automatic shooting behavior. |
+| Input Method | Arduino 16-bit Mouse | arduino_16_bit_mouse | true/false | n/a | Arduino input only. Sends wider mouse movement values. |
+| Input Method | Arduino Enable Keys | arduino_enable_keys | true/false | n/a | Arduino input only. Enables keyboard key output through Arduino. |
 
 ### Other GUI-Exposed Config Controls
 
 | Section | Control | Config key | Type/options | Current | Notes |
 | --- | --- | --- | --- | --- | --- |
-| Game Profile | Active Game Profile | active_game | profile names | UNIFIED | Selects the active game profile. |
+| Game Profile | Active Game Profile | active_game | profile names | n/a | Selects the active game profile. |
 | Manage Profiles | Game profile rows | Games.<profile> | name = sens,yaw,pitch[,true,baseFOV] | profile/local | Custom profiles can be added/deleted; UNIFIED is read-only. |
-| Input Method | Mouse Input Method | input_method | WIN32, GHUB, RAZER (direct), DIRECT (research slot), ARDUINO, TEENSY41, TEENSY41_HID, KMBOX_NET, KMBOX_A, MAKCU | RAZER | Changes active mouse backend. All methods support the hardened switch path with actuator telemetry reset. |
-| Input Method | Arduino/Teensy Port | arduino_port | COM1-COM30 | COM0 | Arduino and Teensy 4.1 *serial* input. |
-| Input Method | Arduino/Teensy Baudrate | arduino_baudrate | 9600-115200 | 115200 | Arduino and Teensy 4.1 *serial* input. |
-
-**Teensy 4.1 note:** `TEENSY41` supports both the classic serial passthrough sketch and a high-performance RawHID mode (no COM port, lower latency, preferred for gaming). See `firmware/teensy41_mouse_bridge/` (RawHID) and `TeensyMouseRawHidBridge/` for the two firmware options, plus `mouse/Teensy41RawHid.*` in the source. RawHID appears under the same `TEENSY41` input method selection when the appropriate firmware is flashed.
-| Input Method | Kmbox Net IP | kmbox_net_ip | text | 10.42.42.42 | Saved with Save & Reconnect. |
-| Input Method | Kmbox Net Port | kmbox_net_port | text | 1984 | Saved with Save & Reconnect. |
-| Input Method | Kmbox Net UUID | kmbox_net_uuid | text | DEADC0DE | Saved with Save & Reconnect. |
-| Input Method | Kmbox A PIDVID | kmbox_a_pidvid | PPPPVVVV |  | Saved with Save & Reconnect. |
-| Input Method | Makcu Port | makcu_port | AUTO, COM1-COM30 | AUTO | Makcu input only. |
-| Input Method | Makcu Baudrate | makcu_baudrate | 115200-4000000 | 4000000 | Makcu input only. |
-
-## Neural Tab
-
-The Neural tab (and related controls scattered across Mouse / Game Overlay) governs the advisory neural pipeline components. All neural systems in Perfect Aim v1 are **advisory / optional** and default to OFF or low influence. The core PID + State Estimator (Kalman/IMM) remains the primary convergence mechanism.
-
-### Neural Pipeline Overview
-Runtime data flow (advisory layers highlighted):
-`Detector → NeuralTracker (association) → Temporal Predictor (learned future positions) → Neural Targeting Head (bounded refinement offset + confidence) → Adaptive Influence + SmartBlender → PID/Governor → Output`
-
-- **Neural Tracker**: Learned association helper that can improve target correspondence across frames.
-- **Temporal Predictor**: GRU (or experimental Transformer) model that predicts future target positions from recent track history. Provides feed-forward to PID and visualization.
-- **Neural Targeting Head**: Small MLP that suggests a bounded aim-point refinement given current state + temporal predictions. Outputs both offset and a confidence value.
-- **PID Governor**: Learned model that dynamically scales PID terms and output speed based on rich controller state features.
-- **SmartBlender + Adaptive Influence**: Smoothly combines the various advisory signals while penalizing jitter and oscillation.
-
-Detailed training workflows for all components live in [training/README.md](training/README.md).
-
-### Sliders & Controls
-
-| Section | Slider | Config key | Range | Current | Notes |
-| --- | --- | --- | --- | --- | --- |
-| Neural Tracker | Association blend | neural_tracker_blend | 0.00-1.00 | 1.000 | Blend strength between regular and neural association output. |
-| Temporal Prediction | Influence | temporal_prediction_influence | 0.0-1.0 | 0.35 | Base strength of temporal feed-forward added to PID. |
-| Temporal Prediction | Max lead | temporal_prediction_max_lead_px | 0-200 | 45 | Hard clamp on predicted lead distance (pixels at detection resolution). |
-| Neural Targeting | Influence | neural_targeting_influence | 0.0-1.0 | 0.25 | Strength of the Neural Targeting Head refinement offset. |
-| Neural Targeting | Max refinement | neural_targeting_max_refinement_px | 5-80 | 35 | Maximum allowed refinement offset (pixels). The model is trained to respect this bound. |
-| PID Governor | Blend | pid_governor_blend | 0.0-1.0 | 0.2 | How strongly the learned governor scales the final PID output. |
-| PID Governor | Max speed multiple | pid_governor_max_speed_multiple | 1.0-10.0 | 5.0 | Safety cap on speed scaling produced by the governor. |
-
-### Activate/Deactivate
-
-| Section | Control | Config key | Values | Current | Notes |
-| --- | --- | --- | --- | --- | --- |
-| Neural Tracker | Enable neural association | neural_tracker_enabled | true/false | true | Enables learned association/tracking helper logic. |
-| Temporal Prediction | Enable temporal prediction | temporal_prediction_enabled | true/false | false | Master switch for the Temporal Predictor path. |
-| Temporal Prediction | Feed-forward | temporal_prediction_feed_forward_enabled | true/false | true | Whether temporal predictions contribute feed-forward to the PID loop. |
-| Temporal Prediction | Adaptive influence | temporal_prediction_adaptive_influence_enabled | true/false | true | Allows confidence-based dynamic scaling of temporal influence. |
-| Neural Targeting | Enable neural targeting | neural_targeting_enabled | true/false | false | Master advisory neural refinement (Neural Targeting Head). |
-| PID Governor | Enable PID governor | pid_governor_enabled | true/false | true | Enables the learned ONNX PID governor when a model is present. |
-
-### Other GUI-Exposed Config Controls
-
-| Section | Control | Config key | Type/options | Current | Notes |
-| --- | --- | --- | --- | --- | --- |
-| Neural Tracker | Association model | neural_tracker_model_path | path | neural_models/neural_tracker.onnx | Path to the neural tracker ONNX file (searched in `neural_models/`, `models/`, `training/models/`). |
-| Temporal Prediction | Model path | temporal_prediction_model_path | path | models/temporal_predictor.onnx | Exported temporal predictor. |
-| Temporal Prediction | History length | temporal_prediction_history_length | 4-32 | 12 | Number of past frames fed to the temporal model. Must match export. |
-| Temporal Prediction | Horizon | temporal_prediction_horizon | 4-32 | 16 | How many future frames the model predicts. Must match export. |
-| Neural Targeting | Model path | neural_targeting_model_path | path | models/neural_targeting_head.onnx | Exported Neural Targeting Head model. |
-| PID Governor | Model path | pid_governor_model_path | path | neural_models/pid_governor.onnx | Learned PID scaling model (see training/README.md). |
-
-**Presets** (Balanced / Aggressive / Smooth / Sniper) in the Neural section of the main overlay automatically adjust several of the influence, refinement, and SmartBlender damping values above while keeping the master toggles under your control.
-
-See also the Game Overlay tab for extensive visualization of temporal history, neural refinement, aim simulation, and SmartBlender debug state.
+| Input Method | Mouse Input Method | input_method | WIN32, GHUB, RAZER, DIRECT, ARDUINO, TEENSY41, TEENSY41_HID, KMBOX_NET, KMBOX_A, MAKCU | n/a | Changes active mouse backend. |
+| Input Method | Arduino/Teensy Port | arduino_port | COM1-COM30 | n/a | Arduino and Teensy 4.1 serial input. |
+| Input Method | Arduino/Teensy Baudrate | arduino_baudrate | 9600-115200 | n/a | Arduino and Teensy 4.1 serial input. |
+| Input Method | Kmbox Net IP | kmbox_net_ip | text | n/a | Saved with Save & Reconnect. |
+| Input Method | Kmbox Net Port | kmbox_net_port | text | n/a | Saved with Save & Reconnect. |
+| Input Method | Kmbox Net UUID | kmbox_net_uuid | text | n/a | Saved with Save & Reconnect. |
+| Input Method | Kmbox A PIDVID | kmbox_a_pidvid | PPPPVVVV | n/a | Saved with Save & Reconnect. |
+| Input Method | Makcu Port | makcu_port | AUTO, COM1-COM30 | n/a | Makcu input only. |
+| Input Method | Makcu Baudrate | makcu_baudrate | 115200-4000000 | n/a | Makcu input only. |
 
 ## AI Tab
 
@@ -278,33 +166,20 @@ See also the Game Overlay tab for extensive visualization of temporal history, n
 
 | Section | Slider | Config key | Range | Current | Notes |
 | --- | --- | --- | --- | --- | --- |
-| Detection | Confidence Threshold | confidence_threshold | 0.01-1.00 | 0.10 | Minimum detector confidence accepted as a detection. |
-| Detection | NMS Threshold | nms_threshold | 0.00-1.00 | 0.50 | Non-max suppression overlap threshold. |
-| Detection | Max Detections | max_detections | 1-100 | 100 | Maximum detections retained after model output processing. |
-| Depth Runtime | Depth FPS | depth_fps | 0-120 | 100 | CUDA builds only. 0 disables depth debug update throttling path. |
-| Depth Runtime | Depth Mask FPS | depth_mask_fps | 1-30 | 5 | CUDA builds only. Mask update frequency. |
-| Depth Mask | Depth Mask Near % | depth_mask_near_percent | 1-100 | 20 | CUDA builds only. Percentile cutoff for the near-depth mask. |
-| Depth Mask | Depth Mask Expand (px) | depth_mask_expand | 0-128 | 0 | CUDA builds only. Expands the generated mask in pixels. |
-| Depth Mask | Depth Mask Hold Frames | depth_mask_hold_frames | 0-120 | 0 | CUDA builds only. Reuses a recent mask for this many detector frames. |
-| Depth Mask | Depth Mask Alpha | depth_mask_alpha | 0-255 | 90 | CUDA builds only. Visual alpha for the depth mask overlay. |
+| Detection | Confidence Threshold | confidence_threshold | 0.01-1.00 | n/a | Minimum detector confidence accepted as a detection. |
+| Detection | NMS Threshold | nms_threshold | 0.00-1.00 | n/a | Non-max suppression overlap threshold. |
+| Detection | Max Detections | max_detections | 1-100 | n/a | Maximum detections retained after model output processing. |
 
 ### Activate/Deactivate
 
-| Section | Control | Config key | Values | Current | Notes |
-| --- | --- | --- | --- | --- | --- |
-| Depth Inference | Enable Depth Inference | depth_inference_enabled | true/false | true | CUDA builds only. DML build shows a requires-CUDA message. |
-| Depth Mask | Enable Depth Mask | depth_mask_enabled | true/false | false | CUDA builds only. Masks detections/capture based on estimated depth. |
-| Depth Mask | Depth Mask Invert | depth_mask_invert | true/false | false | CUDA builds only. Flips near/far mask selection. |
-| Depth Mask | Depth Debug Overlay (Game) | depth_debug_overlay_enabled | true/false | false | CUDA builds only. Shows depth debug output in the game overlay. |
+No activate/deactivate checkboxes in this tab.
 
 ### Other GUI-Exposed Config Controls
 
 | Section | Control | Config key | Type/options | Current | Notes |
 | --- | --- | --- | --- | --- | --- |
-| Model | Model | ai_model | models folder | sunxds_0.8.2_DML.onnx | Selects detector model from available files. |
-| Backend | Backend | backend | TRT, DML | DML | CUDA builds only; DML build does not expose this combo. |
-| Depth Inference | Depth model | depth_model_path | models/depth | depth_anything_v2.engine | CUDA builds only. |
-| Depth Mask | Depth colormap | depth_colormap | 0-21 OpenCV colormap index | 18 | CUDA builds only. |
+| Model | Model | ai_model | models folder | n/a | Selects detector model from available files. |
+| Backend | Backend | backend | TRT, DML | n/a | CUDA builds only; DML build does not expose this combo. |
 
 ## Buttons Tab
 
@@ -316,19 +191,19 @@ No saved GUI sliders in this tab.
 
 | Section | Control | Config key | Values | Current | Notes |
 | --- | --- | --- | --- | --- | --- |
-| Arrow Key Options | Enable arrows keys options | enable_arrows_settings | true/false | false | Allows arrow-key adjustment of target offsets. |
+| Arrow Key Options | Enable arrows keys options | enable_arrows_settings | true/false | n/a | Allows arrow-key adjustment of target offsets. |
 
 ### Other GUI-Exposed Config Controls
 
 | Section | Control | Config key | Type/options | Current | Notes |
 | --- | --- | --- | --- | --- | --- |
-| Button Bindings | Targeting Buttons | button_targeting | key list | RightMouseButton | Supports multiple bindings with + and -. |
-| Button Bindings | Shoot Buttons | button_shoot | key list | LeftMouseButton | Supports multiple bindings with + and -. |
-| Button Bindings | Zoom Buttons | button_zoom | key list | RightMouseButton | Supports multiple bindings with + and -. |
-| Button Bindings | Exit Buttons | button_exit | key list | F2 | Supports multiple bindings with + and -. |
-| Button Bindings | Pause Buttons | button_pause | key list | F3 | Supports multiple bindings with + and -. |
-| Button Bindings | Reload Config Buttons | button_reload_config | key list | F4 | Supports multiple bindings with + and -. |
-| Button Bindings | Overlay Buttons | button_open_overlay | key list | Home | Supports multiple bindings with + and -. |
+| Button Bindings | Targeting Buttons | button_targeting | key list | n/a | Supports multiple bindings with + and -. |
+| Button Bindings | Shoot Buttons | button_shoot | key list | n/a | Supports multiple bindings with + and -. |
+| Button Bindings | Zoom Buttons | button_zoom | key list | n/a | Supports multiple bindings with + and -. |
+| Button Bindings | Exit Buttons | button_exit | key list | n/a | Supports multiple bindings with + and -. |
+| Button Bindings | Pause Buttons | button_pause | key list | n/a | Supports multiple bindings with + and -. |
+| Button Bindings | Reload Config Buttons | button_reload_config | key list | n/a | Supports multiple bindings with + and -. |
+| Button Bindings | Overlay Buttons | button_open_overlay | key list | n/a | Supports multiple bindings with + and -. |
 
 ## Overlay Tab
 
@@ -336,14 +211,14 @@ No saved GUI sliders in this tab.
 
 | Section | Slider | Config key | Range | Current | Notes |
 | --- | --- | --- | --- | --- | --- |
-| Visual | Overlay Opacity | overlay_opacity | 220-255 | 225 | Window opacity. The UI clamps to a readable minimum of 220. |
-| Visual | UI Fine Scale | overlay_ui_scale | 0.85-1.35 | 1.00 | Fine-grained scaling for the overlay UI. |
+| Visual | Overlay Opacity | overlay_opacity | 220-255 | n/a | Window opacity. The UI clamps to a readable minimum of 220. |
+| Visual | UI Fine Scale | overlay_ui_scale | 0.85-1.35 | n/a | Fine-grained scaling for the overlay UI. |
 
 ### Activate/Deactivate
 
 | Section | Control | Config key | Values | Current | Notes |
 | --- | --- | --- | --- | --- | --- |
-| Capture Privacy | Hide Overlays From Recording | overlay_exclude_from_capture | true/false | true | Applies capture exclusion so overlay windows are hidden from supported recording/capture paths. |
+| Capture Privacy | Hide Overlays From Recording | overlay_exclude_from_capture | true/false | n/a | Applies capture exclusion so overlay windows are hidden from supported recording/capture paths. |
 
 ### Other GUI-Exposed Config Controls
 
@@ -358,75 +233,66 @@ No saved GUI sliders in this tab.
 
 | Section | Slider | Config key | Range | Current | Notes |
 | --- | --- | --- | --- | --- | --- |
-| General | Overlay Max FPS (0 = uncapped) | game_overlay_max_fps | 0-256 | 0 | Caps game overlay render rate. 0 is uncapped. |
-| Box Color | A | game_overlay_box_a | 0-255 | 255 | Detection box alpha. |
-| Box Color | R | game_overlay_box_r | 0-255 | 0 | Detection box red channel. |
-| Box Color | G | game_overlay_box_g | 0-255 | 255 | Detection box green channel. |
-| Box Color | B | game_overlay_box_b | 0-255 | 0 | Detection box blue channel. |
-| Box Color | Box Thickness | game_overlay_box_thickness | 0.5-10.0 | 2.00 | Detection box line thickness. |
-| Capture Frame | A | game_overlay_frame_a | 0-255 | 180 | Capture frame alpha. |
-| Capture Frame | R | game_overlay_frame_r | 0-255 | 255 | Capture frame red channel. |
-| Capture Frame | G | game_overlay_frame_g | 0-255 | 255 | Capture frame green channel. |
-| Capture Frame | B | game_overlay_frame_b | 0-255 | 255 | Capture frame blue channel. |
-| Capture Frame | Frame Thickness | game_overlay_frame_thickness | 0.5-10.0 | 1.50 | Capture frame line thickness. |
-| Future Point Style | Point Radius | game_overlay_future_point_radius | 1.0-20.0 | 5.00 | Radius of future-position points. |
-| Future Point Style | Point Step Alpha Falloff | game_overlay_future_alpha_falloff | 0.10-5.00 | 1.00 | Controls how quickly future-point alpha fades along the path. |
-| Icon Overlay | Icon Width | game_overlay_icon_width | 4-512 | 64 | Icon width in pixels. |
-| Icon Overlay | Icon Height | game_overlay_icon_height | 4-512 | 64 | Icon height in pixels. |
-| Icon Overlay | Icon Offset X | game_overlay_icon_offset_x | -500.0-500.0 | 0.00 | Horizontal icon offset from the selected anchor. |
-| Icon Overlay | Icon Offset Y | game_overlay_icon_offset_y | -500.0-500.0 | 0.00 | Vertical icon offset from the selected anchor. |
-| Aim Simulation | Sim X | aim_sim_x | -3000-3000 | 24 | Aim simulation window X position. |
-| Aim Simulation | Sim Y | aim_sim_y | -3000-3000 | 24 | Aim simulation window Y position. |
-| Aim Simulation | Sim Width | aim_sim_width | 220-1600 | 560 | Aim simulation window width. |
-| Aim Simulation | Sim Height | aim_sim_height | 180-1000 | 360 | Aim simulation window height. |
-| Aim Simulation | Sim FPS Min | aim_sim_fps_min | 15-360 | 90 | Minimum simulated frame rate. |
-| Aim Simulation | Sim FPS Max | aim_sim_fps_max | 15-360 | 120 | Maximum simulated frame rate. The GUI keeps min and max ordered. |
-| Aim Simulation | FPS Jitter | aim_sim_fps_jitter | 0.000-0.800 | 0.150 | Randomized FPS variance for the simulation. |
-| Aim Simulation | Capture Delay (ms) | aim_sim_capture_delay_ms | 0.0-80.0 | 6.00 | Simulated capture delay. |
-| Aim Simulation | Inference Delay (ms) | aim_sim_inference_delay_ms | 0.0-120.0 | 12.00 | Manual simulated inference delay when not using live timing. |
-| Aim Simulation | Input Delay (ms) | aim_sim_input_delay_ms | 0.0-60.0 | 2.00 | Simulated input delay. |
-| Aim Simulation | Extra Delay (ms) | aim_sim_extra_delay_ms | 0.0-60.0 | 2.00 | Additional simulated processing delay. |
-| Aim Simulation | Target Max Speed | aim_sim_target_max_speed | 20-2500 | 560.00 | Maximum simulated target speed. |
-| Aim Simulation | Target Accel | aim_sim_target_accel | 20-10000 | 1850.00 | Simulated target acceleration. |
-| Aim Simulation | Target Stop Chance | aim_sim_target_stop_chance | 0.00-0.95 | 0.25 | Probability that the simulated target pauses during a retarget. |
+| General | Overlay Max FPS (0 = uncapped) | game_overlay_max_fps | 0-256 | n/a | Caps game overlay render rate. 0 is uncapped. |
+| Box Color | A | game_overlay_box_a | 0-255 | n/a | Detection box alpha. |
+| Box Color | R | game_overlay_box_r | 0-255 | n/a | Detection box red channel. |
+| Box Color | G | game_overlay_box_g | 0-255 | n/a | Detection box green channel. |
+| Box Color | B | game_overlay_box_b | 0-255 | n/a | Detection box blue channel. |
+| Box Color | Box Thickness | game_overlay_box_thickness | 0.5-10.0 | n/a | Detection box line thickness. |
+| Capture Frame | A | game_overlay_frame_a | 0-255 | n/a | Capture frame alpha. |
+| Capture Frame | R | game_overlay_frame_r | 0-255 | n/a | Capture frame red channel. |
+| Capture Frame | G | game_overlay_frame_g | 0-255 | n/a | Capture frame green channel. |
+| Capture Frame | B | game_overlay_frame_b | 0-255 | n/a | Capture frame blue channel. |
+| Capture Frame | Frame Thickness | game_overlay_frame_thickness | 0.5-10.0 | n/a | Capture frame line thickness. |
+| Future Point Style | Point Radius | game_overlay_future_point_radius | 1.0-20.0 | n/a | Radius of future-position points. |
+| Future Point Style | Point Step Alpha Falloff | game_overlay_future_alpha_falloff | 0.10-5.00 | n/a | Controls how quickly future-point alpha fades along the path. |
+| Icon Overlay | Icon Width | game_overlay_icon_width | 4-512 | n/a | Icon width in pixels. |
+| Icon Overlay | Icon Height | game_overlay_icon_height | 4-512 | n/a | Icon height in pixels. |
+| Icon Overlay | Icon Offset X | game_overlay_icon_offset_x | -500.0-500.0 | n/a | Horizontal icon offset from the selected anchor. |
+| Icon Overlay | Icon Offset Y | game_overlay_icon_offset_y | -500.0-500.0 | n/a | Vertical icon offset from the selected anchor. |
+| Aim Simulation | Sim X | aim_sim_x | -3000-3000 | n/a | Aim simulation window X position. |
+| Aim Simulation | Sim Y | aim_sim_y | -3000-3000 | n/a | Aim simulation window Y position. |
+| Aim Simulation | Sim Width | aim_sim_width | 220-1600 | n/a | Aim simulation window width. |
+| Aim Simulation | Sim Height | aim_sim_height | 180-1000 | n/a | Aim simulation window height. |
+| Aim Simulation | Sim FPS Min | aim_sim_fps_min | 15-360 | n/a | Minimum simulated frame rate. |
+| Aim Simulation | Sim FPS Max | aim_sim_fps_max | 15-360 | n/a | Maximum simulated frame rate. The GUI keeps min and max ordered. |
+| Aim Simulation | FPS Jitter | aim_sim_fps_jitter | 0.000-0.800 | n/a | Randomized FPS variance for the simulation. |
+| Aim Simulation | Capture Delay (ms) | aim_sim_capture_delay_ms | 0.0-80.0 | n/a | Simulated capture delay. |
+| Aim Simulation | Inference Delay (ms) | aim_sim_inference_delay_ms | 0.0-120.0 | n/a | Manual simulated inference delay when not using live timing. |
+| Aim Simulation | Input Delay (ms) | aim_sim_input_delay_ms | 0.0-60.0 | n/a | Simulated input delay. |
+| Aim Simulation | Extra Delay (ms) | aim_sim_extra_delay_ms | 0.0-60.0 | n/a | Additional simulated processing delay. |
+| Aim Simulation | Target Max Speed | aim_sim_target_max_speed | 20-2500 | n/a | Maximum simulated target speed. |
+| Aim Simulation | Target Accel | aim_sim_target_accel | 20-10000 | n/a | Simulated target acceleration. |
+| Aim Simulation | Target Stop Chance | aim_sim_target_stop_chance | 0.00-0.95 | n/a | Probability that the simulated target pauses during a retarget. |
 
 ### Activate/Deactivate
 
 | Section | Control | Config key | Values | Current | Notes |
 | --- | --- | --- | --- | --- | --- |
-| General | Enable | game_overlay_enabled | true/false | false | Enables the separate game overlay renderer. |
-| General | Draw Detection Boxes | game_overlay_draw_boxes | true/false | true | Shows detection boxes in the game overlay. |
-| General | Draw Future Positions | game_overlay_draw_future | true/false | true | Shows predicted future target points. |
-| General | Draw Wind Debug Tail | game_overlay_draw_wind_tail | true/false | true | Shows the wind-mouse debug trail when wind motion is active. |
-| General | Show Target Correction | game_overlay_show_target_correction | true/false | true | Shows correction indicators for target prediction/aim adjustment. |
-| Capture Frame | Draw Capture Frame | game_overlay_draw_frame | true/false | true | Draws the capture frame rectangle. |
-| Icon Overlay | Enable Icon Overlay | game_overlay_icon_enabled | true/false | false | Enables drawing an icon relative to detections. |
-| Aim Simulation | Enable Aim Simulation Window | aim_sim_enabled | true/false | false | Shows the aim simulation overlay window. |
-| Aim Simulation | Use Live Inference Delay | aim_sim_use_live_inference | true/false | true | Uses live backend timing for inference delay instead of the manual value. |
-| Aim Simulation | Show Delayed Observation | aim_sim_show_observed | true/false | true | Shows delayed target observation in the simulation. |
-| Aim Simulation | Show Trajectory History | aim_sim_show_history | true/false | true | Shows historical target/aim trails. |
-| Aim Simulation | Show Kalman Debug | aim_sim_show_kalman_debug | true/false | true | Shows Kalman-related debug visuals in the simulation. |
+| General | Enable | game_overlay_enabled | true/false | n/a | Enables the separate game overlay renderer. |
+| General | Draw Detection Boxes | game_overlay_draw_boxes | true/false | n/a | Shows detection boxes in the game overlay. |
+| General | Draw Future Positions | game_overlay_draw_future | true/false | n/a | Shows predicted future target points. |
+| General | Draw Wind Debug Tail | game_overlay_draw_wind_tail | true/false | n/a | Shows the wind-mouse debug trail when wind motion is active. |
+| General | Show Target Correction | game_overlay_show_target_correction | true/false | n/a | Shows correction indicators for target prediction/aim adjustment. |
+| Capture Frame | Draw Capture Frame | game_overlay_draw_frame | true/false | n/a | Draws the capture frame rectangle. |
+| Icon Overlay | Enable Icon Overlay | game_overlay_icon_enabled | true/false | n/a | Enables drawing an icon relative to detections. |
+| Aim Simulation | Enable Aim Simulation Window | aim_sim_enabled | true/false | n/a | Shows the aim simulation overlay window. |
+| Aim Simulation | Use Live Inference Delay | aim_sim_use_live_inference | true/false | n/a | Uses live backend timing for inference delay instead of the manual value. |
+| Aim Simulation | Show Delayed Observation | aim_sim_show_observed | true/false | n/a | Shows delayed target observation in the simulation. |
+| Aim Simulation | Show Trajectory History | aim_sim_show_history | true/false | n/a | Shows historical target/aim trails. |
+| Aim Simulation | Show Kalman Debug | aim_sim_show_kalman_debug | true/false | n/a | Shows Kalman-related debug visuals in the simulation. |
 
 ### Other GUI-Exposed Config Controls
 
 | Section | Control | Config key | Type/options | Current | Notes |
 | --- | --- | --- | --- | --- | --- |
-| Icon Overlay | Icon Path | game_overlay_icon_path | path | icon.png | Image path for icon overlay. |
-| Icon Overlay | Icon Class (-1 = all) | game_overlay_icon_class | -1 or class id | -1 | Restricts icon to one class when >= 0. |
-| Icon Overlay | Icon Anchor | game_overlay_icon_anchor | center, top, bottom, head | center | Anchor point used for icon placement. |
+| Icon Overlay | Icon Path | game_overlay_icon_path | path | n/a | Image path for icon overlay. |
+| Icon Overlay | Icon Class (-1 = all) | game_overlay_icon_class | -1 or class id | n/a | Restricts icon to one class when >= 0. |
+| Icon Overlay | Icon Anchor | game_overlay_icon_anchor | center, top, bottom, head | n/a | Anchor point used for icon placement. |
 
 ## Stats Tab
 
-The Stats tab is read-only in the current GUI. It displays timing graphs, capture FPS, capture details, and CUDA/depth status where available.
-
-### Actuator Health Telemetry (new)
-The Stats tab now includes real-time PID actuator health monitoring:
-- Missed frame count (how many times the high-rate actuator missed its deadline).
-- "Last miss X seconds ago" (or "never") using monotonic timestamps.
-
-This telemetry is critical for validating 240–2000 Hz mouse output stability, especially when switching input methods or running under heavy overlay + neural load. The counters reset automatically on input method changes (covering Arduino, Makcu, GHUB, Razer, Teensy, Kmbox variants, and WIN32) and on resolution changes.
-
-Use this data together with the Neural tab telemetry (adaptive influence, confidence, SmartBlender jitter/oscillation) and the Game Overlay aim-simulation / wind-debug visuals when tuning or validating a new game profile or model.
+The Stats tab is read-only in the current GUI. It displays timing graphs, capture FPS, capture details, and CUDA status where available.
 
 ## Debug Tab
 
@@ -438,29 +304,25 @@ No saved GUI sliders in this tab.
 
 | Section | Control | Config key | Values | Current | Notes |
 | --- | --- | --- | --- | --- | --- |
-| Screenshot Buttons | Verbose console output | verbose | true/false | false | Enables extra console logging. |
-| Log File | Enable log file | debug_log_file_enabled | true/false | false | Writes logs to debug_log_file_path when enabled. |
-| Neural Diagnostics | Log neural tracker associations | neural_tracker_log_enabled | true/false | false | Writes neural association diagnostics to neural_tracker_log_path. |
-| Neural Diagnostics | Show neural tracker debug | neural_tracker_debug_enabled | true/false | false | Shows neural tracker debug output in the game overlay path. |
+| Screenshot Buttons | Verbose console output | verbose | true/false | n/a | Enables extra console logging. |
+| Log File | Enable log file | debug_log_file_enabled | true/false | n/a | Writes logs to debug_log_file_path when enabled. |
 
 ### Other GUI-Exposed Config Controls
 
 | Section | Control | Config key | Type/options | Current | Notes |
 | --- | --- | --- | --- | --- | --- |
-| Screenshot Buttons | Screenshot buttons | screenshot_button | key list | None | Supports multiple bindings with + and -. |
-| Screenshot Buttons | Screenshot delay | screenshot_delay | step 50/500 | 500 | Delay before screenshot capture. |
-| Log File | Log file path | debug_log_file_path | path | logs/0BS.log | Used when Enable log file is on. |
-| Neural Diagnostics | Neural tracker log | neural_tracker_log_path | path | training/logs/neural_tracker_association.csv | CSV path for neural association diagnostics. |
+| Screenshot Buttons | Screenshot buttons | screenshot_button | key list | n/a | Supports multiple bindings with + and -. |
+| Screenshot Buttons | Screenshot delay | screenshot_delay | step 50/500 | n/a | Delay before screenshot capture. |
+| Log File | Log file path | debug_log_file_path | path | n/a | Used when Enable log file is on. |
 
 ## Config.ini Settings Not In The GUI
 
-These settings are editable by changing `config.ini` directly. Some are build-gated: CUDA rows are emitted only by CUDA builds, and depth rows are GUI-editable only when the app is compiled with `USE_CUDA`.
+These settings are editable by changing `config.ini` directly. Some are build-gated: CUDA rows are emitted only by CUDA builds.
 
 | Section | Setting | Current/default | Range/options | Visibility | Guidance | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
 | Mouse prediction | prediction_futurePositions | 20 | integer | Config only | Number of future target positions to retain/use for prediction visualization. | Saved in current config.ini, but no direct GUI control exists. |
 | Mouse prediction | draw_futurePositions | true | true/false | Config only | Enables drawing future positions in preview/debug paths. | Separate from game_overlay_draw_future. |
-| PID governor | pid_governor_model_path | neural_models/pid_governor.onnx | path | Config only | Model path for the ONNX PID governor. All neural models are searched in `neural_models/`, `models/`, and `training/models/`. | Relative paths are resolved against current/exe parent locations. |
 | AI backend | backend | DML | DML or TRT | DML config-only / CUDA GUI | Selects DirectML or TensorRT backend. | GUI combo exists only in CUDA builds. |
 | AI backend | dml_device_id | 0 | integer adapter id | Config only | DirectML adapter index used by ONNX Runtime DML. | Not exposed in the GUI. |
 | System reserves | cpuCoreReserveCount | 4 | integer | Config only | CPU cores reserved away from worker assignment. | Not exposed in the GUI. |
@@ -469,18 +331,6 @@ These settings are editable by changing `config.ini` directly. Some are build-ga
 | Custom classes | class_head | 1 | integer class id | Config only | Detector class id treated as head. | Not exposed in the GUI. |
 | Debug | show_fps | false | true/false | Config only | Legacy/debug FPS display flag. | Saved in config.ini but not exposed in the current GUI. |
 | Game profiles | Games.UNIFIED | 1.00,0.02,0.02 | sens,yaw,pitch[,true,baseFOV] | Config only | Default profile row used for degree-to-count conversion. | UNIFIED is shown read-only in the GUI. |
-| Depth | depth_inference_enabled | true | true/false | DML config-only / CUDA GUI | Enables depth inference runtime. | In the DML build this remains config-only; CUDA builds expose it in AI -> Depth. |
-| Depth | depth_model_path | depth_anything_v2.engine | path | DML config-only / CUDA GUI | Depth model or engine path. | In the DML build this remains config-only; CUDA builds expose it in AI -> Depth. |
-| Depth | depth_fps | 100 | 0-120 | DML config-only / CUDA GUI | Depth debug inference rate. | In the DML build this remains config-only; CUDA builds expose it in AI -> Depth. |
-| Depth | depth_colormap | 18 | 0-21 | DML config-only / CUDA GUI | OpenCV colormap index for depth debug view. | In the DML build this remains config-only; CUDA builds expose it in AI -> Depth. |
-| Depth | depth_mask_enabled | false | true/false | DML config-only / CUDA GUI | Enables depth mask generation. | In the DML build this remains config-only; CUDA builds expose it in AI -> Depth. |
-| Depth | depth_mask_fps | 5 | 1-30 GUI, >=0 load clamp | DML config-only / CUDA GUI | Depth mask update frequency. | In the DML build this remains config-only; CUDA builds expose it in AI -> Depth. |
-| Depth | depth_mask_near_percent | 20 | 1-100 | DML config-only / CUDA GUI | Near-depth percentile threshold for mask generation. | In the DML build this remains config-only; CUDA builds expose it in AI -> Depth. |
-| Depth | depth_mask_expand | 0 | 0-128 px | DML config-only / CUDA GUI | Expands the mask after generation. | In the DML build this remains config-only; CUDA builds expose it in AI -> Depth. |
-| Depth | depth_mask_hold_frames | 0 | 0-120 | DML config-only / CUDA GUI | Frames to hold/reuse the last mask. | In the DML build this remains config-only; CUDA builds expose it in AI -> Depth. |
-| Depth | depth_mask_alpha | 90 | 0-255 | DML config-only / CUDA GUI | Depth mask overlay alpha. | In the DML build this remains config-only; CUDA builds expose it in AI -> Depth. |
-| Depth | depth_mask_invert | false | true/false | DML config-only / CUDA GUI | Inverts near/far mask selection. | In the DML build this remains config-only; CUDA builds expose it in AI -> Depth. |
-| Depth | depth_debug_overlay_enabled | false | true/false | DML config-only / CUDA GUI | Shows depth debug overlay in the game overlay. | In the DML build this remains config-only; CUDA builds expose it in AI -> Depth. |
 | Advanced mouse | minSpeedMultiplier | 0.1 | float | Loadable hidden key | Legacy minimum movement speed multiplier. | Loadable from config.ini if added manually; saveConfig does not currently emit it. |
 | Advanced mouse | maxSpeedMultiplier | 0.1 | float | Loadable hidden key | Legacy maximum movement speed multiplier. | Loadable from config.ini if added manually; saveConfig does not currently emit it. |
 | Advanced mouse | predictionInterval | 0.01 | seconds | Loadable hidden key | Prediction sample interval used by legacy/auxiliary prediction logic. | Loadable from config.ini if added manually; saveConfig does not currently emit it. |
@@ -510,8 +360,6 @@ These settings are editable by changing `config.ini` directly. Some are build-ga
 | Capture | overlay/draw_capture.cpp and overlay/draw_debug.cpp |
 | Target | overlay/draw_target.cpp |
 | Mouse | overlay/draw_mouse.cpp |
-| Neural | overlay/draw_neural.cpp |
-| AI and Depth | overlay/draw_ai.cpp and overlay/draw_depth.cpp |
 | Buttons | overlay/draw_buttons.cpp |
 | Overlay | overlay/draw_overlay.cpp |
 | Game Overlay | overlay/draw_game_overlay.cpp |

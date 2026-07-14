@@ -44,8 +44,7 @@ public:
     int fovY;
 
     // Legacy prediction compatibility: deprecated but retained/loadable for old configs
-    // and for aim-sim/overlay demo parity. Runtime convergence should use PID/Kalman
-    // plus the advisory temporal/neural feed-forward controls instead.
+    // and for aim-sim/overlay demo parity. Runtime convergence should use tracker/Kalman.
     float minSpeedMultiplier;
     float maxSpeedMultiplier;
 
@@ -72,8 +71,7 @@ public:
     int ego_motion_compensation_max_age_ms;
 
     // Legacy prediction compatibility: deprecated snap-curve knobs kept for config
-    // compatibility and the game-overlay aim simulation. Do not remove until a
-    // disabled-neural regression baseline proves identical behavior.
+    // compatibility and the game-overlay aim simulation.
     float snapRadius;
     float nearRadius;
     float speedCurveExponent;
@@ -90,92 +88,22 @@ public:
     float wind_M;
     float wind_D;
 
-    // Pure PID mouse control
-    int pid_actuator_hz;
-    float pid_kp;
-    float pid_ki;
-    float pid_kd;
-    float pid_deadzone_px;
-    float pid_max_pixel_step;
-    float pid_output_scale;
-    float pid_min_output_scale;
-    float pid_max_output_scale;
-    float pid_size_reference_px;
-    float pid_size_min_scale;
-    float pid_size_max_scale;
-    float pid_precision_radius_scale;
-    float pid_slowdown_radius_scale;
-    float pid_overshoot_brake;
-    float pid_divergence_boost;
-    float pid_scale_response;
-    float pid_max_integral;
-    float pid_max_derivative_term;
-    float pid_derivative_filter_tau_ms;
-    float pid_target_loss_timeout_ms;
-    bool pid_feed_forward_enabled;
-    float pid_feed_forward_gain;
-    float pid_feed_forward_lookahead_ms;
-    int pid_feed_forward_frame_lookahead;
-    float pid_feed_forward_max_step;
-    float pid_feed_forward_min_speed;
-    float pid_feed_forward_confidence_floor;
-    bool pid_conditional_integration_enabled;
-    float pid_conditional_integration_error_px;
-    bool pid_adaptive_output_scaling_enabled;
-    float pid_adaptive_output_error_scale;
-    float pid_derivative_smoothing_multiplier;
-    bool pid_perspective_fov_mapping_enabled;
-    bool pid_governor_enabled;
-    std::string pid_governor_model_path;
-    float pid_governor_blend;
-    float pid_governor_max_speed_multiple;
-    bool pid_smart_blending_enabled;
-    float pid_smart_blending_aggression;
-    float pid_smart_blending_near_damping;
-    float pid_smart_blending_deadzone_px;
-    float pid_smart_blending_jerk_limit_px;
-    float pid_smart_blending_confidence_floor;
+    // Direct targeting movement
+    float target_deadzone_px;
+    float target_max_pixel_step;
+    float target_output_scale;
+    bool target_calibrated_pixel_counts_enabled;
+    float target_counts_per_pixel_x;
+    float target_counts_per_pixel_y;
 
-    // Neural tracker association
-    bool neural_tracker_enabled;
-    std::string neural_tracker_runtime; // "CPU" or "CUDA"
-    std::string neural_tracker_model_path;
-    float neural_tracker_blend;
-    bool neural_tracker_log_enabled;
-    bool neural_tracker_debug_enabled;
-    std::string neural_tracker_log_path;
-
-    // Learned temporal predictor
-    bool temporal_prediction_enabled;
-    std::string temporal_prediction_model_path;
-    int temporal_prediction_history_length;
-    int temporal_prediction_horizon;
-    int temporal_prediction_interval_frames;
-    bool temporal_prediction_feed_forward_enabled;
-    bool adaptive_prediction_enabled;
-    float base_prediction_influence;
-    float temporal_prediction_influence;
-    bool temporal_prediction_adaptive_influence_enabled;
-    float temporal_prediction_adaptive_ema_alpha;
-    float temporal_prediction_max_lead_px;
-
-    // Neural targeting head
-    bool neural_targeting_enabled;
-    std::string neural_targeting_model_path;
-    float neural_targeting_influence;
-    float neural_targeting_max_refinement_px;
-    int neural_targeting_max_iterations;
-    std::string neural_control_preset;
-    bool neural_control_telemetry_overlay_enabled;
-    bool neural_control_telemetry_logging_enabled;
-    std::string neural_control_telemetry_log_path;
-    int neural_control_telemetry_log_interval_ms;
-    bool log_real_world_data;
-    std::string real_world_data_log_dir;
-
-    // Real-world fine-tuned model variants (populated by training after convert_real_world_logs.py + fine-tune)
-    std::string temporal_realworld_model_path;
-    std::string neural_targeting_realworld_model_path;
+    // Tracker identity pipeline
+    bool tracker_v2_enabled;
+    float tracker_v2_high_confidence;
+    float tracker_v2_new_track_confidence;
+    int tracker_v2_detector_max_candidates;
+    float tracker_v2_box_smoothing_alpha;
+    float tracker_v2_box_prediction_alpha;
+    bool yolo26_disable_nms;
 
     // Arduino
     int arduino_baudrate;
@@ -251,20 +179,6 @@ public:
     int overlay_opacity;
     float overlay_ui_scale;
     bool overlay_exclude_from_capture;
-
-    // Depth
-    bool depth_inference_enabled;
-    std::string depth_model_path;
-    int depth_fps;
-    int depth_colormap;
-    bool depth_mask_enabled;
-    int depth_mask_fps;
-    int depth_mask_near_percent;
-    int depth_mask_expand;
-    int depth_mask_hold_frames;
-    int depth_mask_alpha;
-    bool depth_mask_invert;
-    bool depth_debug_overlay_enabled;
 
     // Game Overlay
     bool game_overlay_enabled;

@@ -54,59 +54,32 @@ class ConfigGuiControlContractTests(unittest.TestCase):
         self.assertIn("settings.velocitySeedEnabled = config.kalman_velocity_seed_enabled", mouse_cpp)
         self.assertIn("settings.acquisitionFrames = config.kalman_acquisition_frames", mouse_cpp)
 
-    def test_pid_enhancement_controls_are_gated_and_documented(self):
+    def test_direct_targeting_controls_are_gated_and_documented(self):
         config_h = self.read("config/config.h")
         config_cpp = self.read("config/config.cpp")
-        pid_h = self.read("mouse/PidMouseController.h")
-        pid_cpp = self.read("mouse/PidMouseController.cpp")
         draw_mouse = self.read("overlay/draw_mouse.cpp")
         generator = self.read("docs/settings-reference/generate_settings_reference.py")
+        mouse_cpp = self.read("mouse/mouse.cpp")
 
         for key in (
-            "pid_feed_forward_frame_lookahead",
-            "pid_conditional_integration_enabled",
-            "pid_conditional_integration_error_px",
-            "pid_adaptive_output_scaling_enabled",
-            "pid_adaptive_output_error_scale",
-            "pid_derivative_smoothing_multiplier",
-            "pid_perspective_fov_mapping_enabled",
+            "target_deadzone_px",
+            "target_max_pixel_step",
+            "target_output_scale",
+            "target_calibrated_pixel_counts_enabled",
+            "target_counts_per_pixel_x",
+            "target_counts_per_pixel_y",
         ):
             self.assertIn(key, config_h)
             self.assertIn(key, config_cpp)
             self.assertIn(key, draw_mouse)
             self.assertIn(key, generator)
 
-        for field in (
-            "runtimeLatencySweepEnabled",
-            "feedForwardFrameLookahead",
-            "conditionalIntegrationEnabled",
-            "conditionalIntegrationErrorPx",
-            "adaptiveOutputScalingEnabled",
-            "adaptiveOutputErrorScale",
-            "derivativeSmoothingMultiplier",
-            "perspectiveFovMappingEnabled",
-            "projectionWidthPx",
-            "fovXDeg",
-            "angularDxDeg",
-            "angularOutputActive",
-        ):
-            self.assertIn(field, pid_h)
-            self.assertIn(field, pid_cpp)
-
-        self.assertIn("settings.runtimeLatencySweepEnabled && settings.conditionalIntegrationEnabled", pid_cpp)
-        self.assertIn("settings.runtimeLatencySweepEnabled && settings.adaptiveOutputScalingEnabled", pid_cpp)
-        self.assertIn("settings.runtimeLatencySweepEnabled && settings.perspectiveFovMappingEnabled", pid_cpp)
-        self.assertIn("settings.runtimeLatencySweepEnabled ? settings.feedForwardGain", pid_cpp)
-        self.assertIn("settings.runtimeLatencySweepEnabled ? settings.derivativeSmoothingMultiplier", pid_cpp)
-        self.assertIn("settings.perspectiveFovMappingEnabled = config.pid_perspective_fov_mapping_enabled", mouse_cpp := self.read("mouse/mouse.cpp"))
-        self.assertIn("settings.projectionWidthPx = screen_width", mouse_cpp)
-        self.assertIn("command.angularOutputActive", mouse_cpp)
-        self.assertIn('ImGui::SliderFloat("Feed-forward gain", &config.pid_feed_forward_gain, 0.0f, 4.0f', draw_mouse)
-        self.assertIn('ImGui::Checkbox("Perspective FOV PID"', draw_mouse)
-        self.assertIn('ImGui::SliderInt("Feed-forward frame lookahead"', draw_mouse)
-        self.assertIn('ImGui::Checkbox("Conditional integration"', draw_mouse)
-        self.assertIn('ImGui::Checkbox("Adaptive output scaling"', draw_mouse)
-        self.assertIn('ImGui::SliderFloat("Derivative smoothing multiplier"', draw_mouse)
+        self.assertIn('OverlayUI::BeginSection("Direct Targeting Movement"', draw_mouse)
+        self.assertIn('ImGui::SliderFloat("Max step (px/frame)"', draw_mouse)
+        self.assertIn('ImGui::Checkbox("Calibrated pixel counts"', draw_mouse)
+        self.assertIn("dispatchTargetMovement(", mouse_cpp)
+        self.assertIn("pixelDeltaToCounts(pixelDx, pixelDy)", mouse_cpp)
+        self.assertIn("config.target_calibrated_pixel_counts_enabled", mouse_cpp)
 
     def test_target_offset_controls_share_tracker_clamp_ranges(self):
         config_h = self.read("config/config.h")

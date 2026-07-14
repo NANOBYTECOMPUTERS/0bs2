@@ -1,20 +1,22 @@
 param(
     [string]$Configuration = "CUDA",
     [string]$Platform = "x64",
-    [string]$Project = "$PSScriptRoot\yolo_annotation_worker.vcxproj"
+    [string]$Project = "$PSScriptRoot\yolo_annotation_worker.vcxproj",
+    [string]$CudaVersion = "13.3",
+    [string]$CudaToolkitDir = $env:CudaToolkitDir,
+    [string]$TensorRTDir = $env:TensorRTDir,
+    [string]$OpenCVDir = $env:OpenCVDir
 )
 
 $ErrorActionPreference = "Stop"
 
-$msbuild = "C:\Program Files\Microsoft Visual Studio\18\Community\MSBuild\Current\Bin\MSBuild.exe"
-if (!(Test-Path $msbuild)) {
-    throw "MSBuild was not found at $msbuild"
-}
+& "$PSScriptRoot\build-cuda.ps1" `
+    -Configuration $Configuration `
+    -Platform $Platform `
+    -Project $Project `
+    -CudaVersion $CudaVersion `
+    -CudaToolkitDir $CudaToolkitDir `
+    -TensorRTDir $TensorRTDir `
+    -OpenCVDir $OpenCVDir
 
-$properties = @(
-    "/p:Configuration=$Configuration",
-    "/p:Platform=$Platform"
-)
-
-& $msbuild $Project @properties /m /v:minimal
 exit $LASTEXITCODE

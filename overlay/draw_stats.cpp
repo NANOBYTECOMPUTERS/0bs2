@@ -208,13 +208,11 @@ void draw_stats()
 #ifdef USE_CUDA
         if (config.backend == "TRT")
         {
-            const bool depthMaskEnabled = config.depth_inference_enabled && config.depth_mask_enabled;
             const bool canUseCudaCapture = (config.capture_method == "duplication_api");
             const bool directCaptureActive =
                 canUseCudaCapture &&
                 config.capture_use_cuda &&
-                !config.circle_mask &&
-                !depthMaskEnabled;
+                !config.circle_mask;
 
             std::string directCaptureStatus;
             if (!canUseCudaCapture)
@@ -223,14 +221,11 @@ void draw_stats()
                 directCaptureStatus = "Disabled by user";
             else if (config.circle_mask)
                 directCaptureStatus = "CPU fallback (circle mask is enabled)";
-            else if (depthMaskEnabled)
-                directCaptureStatus = "CPU fallback (depth mask is enabled)";
             else
                 directCaptureStatus = "Active";
 
             ImGui::Separator();
             ImGui::Text("CUDA Direct Capture: %s", config.capture_use_cuda ? "enabled" : "disabled");
-            ImGui::Text("Depth mask: %s", depthMaskEnabled ? "on" : "off");
             ImGui::Text("Capture pipeline: %s", directCaptureActive ? "GPU direct path" : "CPU readback");
 
             if (directCaptureActive)

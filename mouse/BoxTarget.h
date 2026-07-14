@@ -11,7 +11,6 @@
 
 #include "aim_kalman.h"
 #include "aim_imm.h"
-#include "neural/TemporalPredictor.h"
 
 class BoxTarget
 {
@@ -103,11 +102,7 @@ struct TrackDebugInfo
     double lastAssociationDistancePx = 0.0;
     double lastAssociationIou = 0.0;
     double lastHeadingAlignment = 0.0;
-    double lastNeuralScore = 0.5;
-    double lastNeuralBonus = 0.0;
-    bool lastNeuralEvaluated = false;
-    std::vector<std::pair<double, double>> temporalFuture;
-    bool temporalPredictionValid = false;
+    int lifecycle = 0;
 };
 
 class MultiTargetTracker
@@ -138,6 +133,32 @@ public:
     std::vector<TrackDebugInfo> getDebugTracks() const;
 
 private:
+    enum class TrackLifecycle
+    {
+        Tentative = 0,
+        Confirmed = 1,
+        Lost = 2
+    };
+
+    struct BoxAxisKalman
+    {
+        double pos = 0.0;
+        double vel = 0.0;
+        double p00 = 1.0;
+        double p01 = 0.0;
+        double p10 = 0.0;
+        double p11 = 25.0;
+    };
+
+    struct BoxKalmanState
+    {
+        bool initialized = false;
+        BoxAxisKalman cx;
+        BoxAxisKalman cy;
+        BoxAxisKalman logW;
+        BoxAxisKalman logH;
+    };
+
     struct TrackState
     {
         struct TrackHistorySample
@@ -156,12 +177,15 @@ private:
 
         int id = -1;
         cv::Rect2f box;
+        cv::Rect2f stableBox;
+        bool stableBoxInitialized = false;
         cv::Point2f velocity = { 0.0f, 0.0f };
         cv::Point2f sizeVelocity = { 0.0f, 0.0f };
         int classId = -1;
         int hits = 0;
         int missed = 0;
         int age = 0;
+        TrackLifecycle lifecycle = TrackLifecycle::Tentative;
         float confidence = 1.0f;
         bool observedThisFrame = false;
         double pivotX = 0.0;
@@ -170,16 +194,9 @@ private:
         double lastAssociationDistancePx = 0.0;
         double lastAssociationIou = 0.0;
         double lastHeadingAlignment = 0.0;
-        double lastNeuralScore = 0.5;
-        double lastNeuralBonus = 0.0;
-        bool lastNeuralEvaluated = false;
+        BoxKalmanState boxKalman;
         InnerAimTrack innerAim;
         std::deque<TrackHistorySample> history;
-        std::vector<std::pair<double, double>> temporalPrediction;
-        int lastTemporalPredictionFrame = -1;
-        int lastTemporalPredictionRequestFrame = -1;
-        bool temporalPredictionValid = false;
-        bool temporalPredictionPending = false;
         std::chrono::steady_clock::time_point lastUpdate;
     };
 
@@ -196,6 +213,15 @@ private:
     };
 
     static float iou(const cv::Rect2f& a, const cv::Rect2f& b);
+    static void initializeBoxKalman(BoxKalmanState& state, const cv::Rect2f& box, const cv::Point2f& velocity = cv::Point2f());
+    static cv::Rect2f boxKalmanToRect(const BoxKalmanState& state);
+    static cv::Rect2f predictBoxKalman(const BoxKalmanState& state, double dt, const cv::Point2d& egoMotionShift);
+    static void predictBoxKalmanInPlace(BoxKalmanState& state, double dt, const cv::Point2d& egoMotionShift);
+    static void correctBoxKalman(BoxKalmanState& state, const cv::Rect2f& measurement, float confidence);
+    static cv::Point2f boxKalmanVelocity(const BoxKalmanState& state);
+    static cv::Point2f boxKalmanSizeVelocity(const BoxKalmanState& state);
+    static void updateStableBox(TrackState& t, float alpha);
+    static cv::Rect2f outputBoxForTrack(const TrackState& t);
     float scaleFactor() const;
     cv::Point2d computeInnerAimPoint(const cv::Rect2f& box, int classId) const;
     double computeAssociationCost(const cv::Rect& newBox, const InnerAimTrack& track, float newConf) const;
@@ -204,12 +230,7 @@ private:
     void updateInnerAim(InnerAimTrack& track, const cv::Rect& det, float conf, double dt);
     void updateInnerAim(InnerAimTrack& track, const cv::Rect& det, float conf, double dt, double rawInnerX, double rawInnerY);
     void decayInnerAim(InnerAimTrack& track);
-    aim::neural::TemporalPredictor::Input buildTemporalPredictorInput(
-        const TrackState& t,
-        int screenWidth,
-        int screenHeight) const;
     void appendTrackHistory(TrackState& t, const cv::Point2d& egoMotionShift = cv::Point2d());
-    void updateTemporalPrediction(TrackState& t, int screenWidth, int screenHeight);
     bool shouldAcceptAsNewLock(const DetectionCandidate& det, const InnerAimTrack* current) const;
     int findTrackIndexById(int id) const;
     int chooseBestTrack(int screenWidth, int screenHeight) const;
