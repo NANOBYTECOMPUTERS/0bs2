@@ -63,6 +63,12 @@ class ConfigGuiControlContractTests(unittest.TestCase):
 
         for key in (
             "target_deadzone_px",
+            "target_stream_enabled",
+            "target_stream_interval_ms",
+            "target_stream_sharpness",
+            "target_max_pixel_speed",
+            "target_state_max_age_ms",
+            "target_min_stream_confidence",
             "target_max_pixel_step",
             "target_output_scale",
             "target_calibrated_pixel_counts_enabled",
@@ -77,10 +83,17 @@ class ConfigGuiControlContractTests(unittest.TestCase):
             self.assertIn(key, generator)
 
         self.assertIn('OverlayUI::BeginSection("Direct Targeting Movement"', draw_mouse)
-        self.assertIn('ImGui::SliderFloat("Max step (px/frame)"', draw_mouse)
+        self.assertIn('ImGui::Checkbox("Target stream"', draw_mouse)
+        self.assertIn('ImGui::SliderFloat("Stream interval (ms)"', draw_mouse)
+        self.assertIn('ImGui::SliderFloat("Stream sharpness"', draw_mouse)
+        self.assertIn('ImGui::SliderFloat("Max speed (px/s)"', draw_mouse)
+        self.assertIn('ImGui::SliderInt("State max age (ms)"', draw_mouse)
+        self.assertIn('ImGui::SliderFloat("Fallback max step (px/call)"', draw_mouse)
         self.assertIn('ImGui::SliderFloat("Prediction blend"', draw_mouse)
         self.assertIn('ImGui::SliderFloat("Max prediction lead (px)"', draw_mouse)
         self.assertIn('ImGui::Checkbox("Calibrated pixel counts"', draw_mouse)
+        self.assertIn("dispatchTargetStreamMovement(", mouse_cpp)
+        self.assertIn("targetStreamCv.wait_for(", mouse_cpp)
         self.assertIn("dispatchTargetMovement(", mouse_cpp)
         self.assertIn("blendPredictedAimPoint(", mouse_cpp)
         self.assertIn("pixelDeltaToCounts(pixelDx, pixelDy)", mouse_cpp)

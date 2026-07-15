@@ -182,6 +182,7 @@ void mouseThreadFunction(MouseThread& mouseThread)
             }
             targetTracker.reset();
             mouseThread.resetEgoMotionCompensation();
+            mouseThread.clearTargetMotionState();
             {
                 std::lock_guard<std::mutex> lk(g_trackerDebugMutex);
                 g_trackerDebugTracks.clear();
@@ -200,6 +201,7 @@ void mouseThreadFunction(MouseThread& mouseThread)
                 activeTarget.reset();
                 mouseThread.clearFuturePositions();
                 mouseThread.setTargetDetected(false);
+                mouseThread.clearTargetMotionState();
                 mouseThread.clearQueuedMoves();
                 hasNewDetection = false;
             }
@@ -258,6 +260,7 @@ void mouseThreadFunction(MouseThread& mouseThread)
                 hasAimObservation = true;
                 mouseThread.setLastTargetTime(std::chrono::steady_clock::now());
                 mouseThread.setTargetDetected(true);
+                mouseThread.publishTargetMotionState(lockInfo);
 
                 auto futurePositions = mouseThread.predictFuturePositions(
                     activeTarget->smoothX,
@@ -280,6 +283,7 @@ void mouseThreadFunction(MouseThread& mouseThread)
                     hasAimObservation = true;
                     mouseThread.setLastTargetTime(std::chrono::steady_clock::now());
                     mouseThread.setTargetDetected(true);
+                    mouseThread.publishTargetMotionState(*directTarget);
                     auto futurePositions = mouseThread.predictFuturePositions(
                         activeTarget->smoothX,
                         activeTarget->smoothY,
@@ -292,6 +296,7 @@ void mouseThreadFunction(MouseThread& mouseThread)
                     activeTarget.reset();
                     mouseThread.clearFuturePositions();
                     mouseThread.setTargetDetected(false);
+                    mouseThread.clearTargetMotionState();
                     mouseThread.clearQueuedMoves();
                 }
             }
@@ -306,6 +311,7 @@ void mouseThreadFunction(MouseThread& mouseThread)
                 activeTarget.reset();
                 mouseThread.clearFuturePositions();
                 mouseThread.setTargetDetected(false);
+                mouseThread.clearTargetMotionState();
                 mouseThread.clearQueuedMoves();
             }
         }
@@ -314,8 +320,6 @@ void mouseThreadFunction(MouseThread& mouseThread)
         {
             if (activeTarget && hasAimObservation)
             {
-                mouseThread.moveMouseTarget(*activeTarget);
-
                 if (config.auto_shoot)
                 {
                     mouseThread.pressMouse(*activeTarget);
@@ -325,6 +329,7 @@ void mouseThreadFunction(MouseThread& mouseThread)
             {
                 if (!activeTarget)
                 {
+                    mouseThread.clearTargetMotionState();
                     mouseThread.clearQueuedMoves();
                 }
 
@@ -336,6 +341,7 @@ void mouseThreadFunction(MouseThread& mouseThread)
         }
         else
         {
+            mouseThread.clearTargetMotionState();
             mouseThread.clearQueuedMoves();
             if (config.auto_shoot)
             {

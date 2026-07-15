@@ -40,6 +40,12 @@ float prev_ego_motion_compensation_strength = config.ego_motion_compensation_str
 float prev_ego_motion_compensation_max_shift_px = config.ego_motion_compensation_max_shift_px;
 int prev_ego_motion_compensation_max_age_ms = config.ego_motion_compensation_max_age_ms;
 float prev_target_deadzone_px = config.target_deadzone_px;
+bool prev_target_stream_enabled = config.target_stream_enabled;
+float prev_target_stream_interval_ms = config.target_stream_interval_ms;
+float prev_target_stream_sharpness = config.target_stream_sharpness;
+float prev_target_max_pixel_speed = config.target_max_pixel_speed;
+int prev_target_state_max_age_ms = config.target_state_max_age_ms;
+float prev_target_min_stream_confidence = config.target_min_stream_confidence;
 float prev_target_max_pixel_step = config.target_max_pixel_step;
 float prev_target_output_scale = config.target_output_scale;
 bool prev_target_calibrated_pixel_counts_enabled = config.target_calibrated_pixel_counts_enabled;
@@ -478,10 +484,24 @@ void draw_mouse()
     if (OverlayUI::BeginSection("Direct Targeting Movement", "mouse_section_direct_targeting"))
     {
         ImGui::SliderFloat("Deadzone (px)", &config.target_deadzone_px, 0.0f, 20.0f, "%.3f");
-        ImGui::SliderFloat("Max step (px/frame)", &config.target_max_pixel_step, 0.25f, 120.0f, "%.2f");
-        ImGui::SliderFloat("Output scale", &config.target_output_scale, 0.01f, 3.0f, "%.3f");
+        ImGui::Checkbox("Target stream", &config.target_stream_enabled);
+        if (!config.target_stream_enabled)
+            ImGui::BeginDisabled();
+
+        ImGui::SliderFloat("Stream interval (ms)", &config.target_stream_interval_ms, 0.5f, 8.0f, "%.2f");
+        ImGui::SliderFloat("Stream sharpness", &config.target_stream_sharpness, 1.0f, 80.0f, "%.2f");
+        ImGui::SliderFloat("Max speed (px/s)", &config.target_max_pixel_speed, 50.0f, 20000.0f, "%.0f");
+        ImGui::SliderInt("State max age (ms)", &config.target_state_max_age_ms, 16, 500);
+        ImGui::SliderFloat("Min stream confidence", &config.target_min_stream_confidence, 0.0f, 0.95f, "%.2f");
         ImGui::SliderFloat("Prediction blend", &config.target_prediction_blend, 0.0f, 0.65f, "%.3f");
         ImGui::SliderFloat("Max prediction lead (px)", &config.target_prediction_max_lead_px, 0.0f, 40.0f, "%.2f");
+
+        if (!config.target_stream_enabled)
+            ImGui::EndDisabled();
+
+        ImGui::Separator();
+        ImGui::SliderFloat("Fallback max step (px/call)", &config.target_max_pixel_step, 0.25f, 120.0f, "%.2f");
+        ImGui::SliderFloat("Fallback output scale", &config.target_output_scale, 0.01f, 3.0f, "%.3f");
         ImGui::Checkbox("Calibrated pixel counts", &config.target_calibrated_pixel_counts_enabled);
         if (!config.target_calibrated_pixel_counts_enabled)
             ImGui::BeginDisabled();
@@ -495,6 +515,12 @@ void draw_mouse()
         if (ImGui::Button("Reset direct defaults"))
         {
             config.target_deadzone_px = 0.0f;
+            config.target_stream_enabled = true;
+            config.target_stream_interval_ms = 1.0f;
+            config.target_stream_sharpness = 18.0f;
+            config.target_max_pixel_speed = 1800.0f;
+            config.target_state_max_age_ms = 120;
+            config.target_min_stream_confidence = 0.15f;
             config.target_max_pixel_step = 28.0f;
             config.target_output_scale = 0.28f;
             config.target_calibrated_pixel_counts_enabled = false;
@@ -554,6 +580,12 @@ void draw_mouse()
         prev_ego_motion_compensation_max_shift_px != config.ego_motion_compensation_max_shift_px ||
         prev_ego_motion_compensation_max_age_ms != config.ego_motion_compensation_max_age_ms ||
         prev_target_deadzone_px != config.target_deadzone_px ||
+        prev_target_stream_enabled != config.target_stream_enabled ||
+        prev_target_stream_interval_ms != config.target_stream_interval_ms ||
+        prev_target_stream_sharpness != config.target_stream_sharpness ||
+        prev_target_max_pixel_speed != config.target_max_pixel_speed ||
+        prev_target_state_max_age_ms != config.target_state_max_age_ms ||
+        prev_target_min_stream_confidence != config.target_min_stream_confidence ||
         prev_target_max_pixel_step != config.target_max_pixel_step ||
         prev_target_output_scale != config.target_output_scale ||
         prev_target_calibrated_pixel_counts_enabled != config.target_calibrated_pixel_counts_enabled ||
@@ -583,6 +615,12 @@ void draw_mouse()
         prev_ego_motion_compensation_max_shift_px = config.ego_motion_compensation_max_shift_px;
         prev_ego_motion_compensation_max_age_ms = config.ego_motion_compensation_max_age_ms;
         prev_target_deadzone_px = config.target_deadzone_px;
+        prev_target_stream_enabled = config.target_stream_enabled;
+        prev_target_stream_interval_ms = config.target_stream_interval_ms;
+        prev_target_stream_sharpness = config.target_stream_sharpness;
+        prev_target_max_pixel_speed = config.target_max_pixel_speed;
+        prev_target_state_max_age_ms = config.target_state_max_age_ms;
+        prev_target_min_stream_confidence = config.target_min_stream_confidence;
         prev_target_max_pixel_step = config.target_max_pixel_step;
         prev_target_output_scale = config.target_output_scale;
         prev_target_calibrated_pixel_counts_enabled = config.target_calibrated_pixel_counts_enabled;

@@ -85,6 +85,12 @@ public:
 
     // Direct targeting movement
     float target_deadzone_px;
+    bool target_stream_enabled;
+    float target_stream_interval_ms;
+    float target_stream_sharpness;
+    float target_max_pixel_speed;
+    int target_state_max_age_ms;
+    float target_min_stream_confidence;
     float target_max_pixel_step;
     float target_output_scale;
     bool target_calibrated_pixel_counts_enabled;

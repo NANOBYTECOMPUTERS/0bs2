@@ -17,6 +17,7 @@
 #include <queue>
 #include <thread>
 #include <condition_variable>
+#include <cstdint>
 #include <deque>
 #include <random>
 
@@ -48,12 +49,34 @@ private:
 
     struct Move { int dx; int dy; };
 
+    struct TargetMotionState
+    {
+        bool valid = false;
+        int trackId = -1;
+        bool observedThisFrame = false;
+        int missedFrames = 0;
+        double aimX = 0.0;
+        double aimY = 0.0;
+        double velocityX = 0.0;
+        double velocityY = 0.0;
+        double confidence = 0.0;
+        std::chrono::steady_clock::time_point observationTime{};
+        std::chrono::steady_clock::time_point publishTime{};
+        std::uint64_t sequence = 0;
+    };
+
     std::queue<Move>              moveQueue;
     std::mutex                    queueMtx;
     std::condition_variable       queueCv;
     const size_t                  queueLimit = 5;
     std::thread                   moveWorker;
+    std::thread                   targetStreamWorker;
     std::atomic<bool>             workerStop{ false };
+
+    mutable std::mutex            targetStateMutex;
+    std::condition_variable       targetStreamCv;
+    TargetMotionState             targetMotionState;
+    std::uint64_t                 targetStateSequence = 0;
 
     std::mutex                    movementMtx;
     double                        movementCountCarryX = 0.0;
@@ -73,7 +96,22 @@ private:
     double                        egoMotionCameraVelocityPxPerSec = 0.0;
 
     void moveWorkerLoop();
+    void targetStreamWorkerLoop();
     void queueMove(int dx, int dy);
+    bool snapshotTargetMotionState(TargetMotionState& out) const;
+    void emitPixelMovement(
+        double pixelDx,
+        double pixelDy,
+        std::chrono::steady_clock::time_point now);
+    bool dispatchTargetStreamMovement(
+        const TargetMotionState& state,
+        std::chrono::steady_clock::time_point now,
+        double dtSec,
+        double& appliedSinceObservationX,
+        double& appliedSinceObservationY);
+    std::pair<double, double> predictStreamAimPoint(
+        const TargetMotionState& state,
+        double ageSec) const;
     void dispatchTargetMovement(
         double pivotX,
         double pivotY,
@@ -152,6 +190,14 @@ public:
         double targetOffsetX,
         double targetOffsetY);
     void moveMouseTarget(const BoxTarget& target);
+    void publishTargetMotionState(const LockedTargetInfo& lockInfo);
+    void publishTargetMotionState(
+        const BoxTarget& target,
+        double velocityX = 0.0,
+        double velocityY = 0.0,
+        bool observedThisFrame = true,
+        int missedFrames = 0);
+    void clearTargetMotionState();
     void clearQueuedMoves();
     std::pair<double, double> consumeEgoMotionCompensation(
         std::chrono::steady_clock::time_point start,

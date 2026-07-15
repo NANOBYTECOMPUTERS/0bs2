@@ -1,6 +1,6 @@
 # 0BS GUI and Config Setting Reference
 
-Generated on 2026-07-14 from `dist\0BS\config.ini` and the ImGui source files under `overlay/`.
+Generated on 2026-07-15 from `dist\0BS\config.ini` and the ImGui source files under `overlay/`.
 
 This reference is ordered by the GUI sidebar tabs in `overlay/overlay.cpp`. It lists every GUI slider and every activate/deactivate checkbox, then documents config.ini settings that are not editable in the current DML GUI or are hidden/loadable config keys.
 
@@ -116,11 +116,16 @@ Removal gate: remove these only after a behavior baseline proves behavior stays 
 | State Estimator | Ego compensation strength | ego_motion_compensation_strength | 0.0-1.0 | n/a | Fraction of recent emitted motion subtracted from tracker priors/history to reduce camera-motion jitter. |
 | State Estimator | Ego max shift (px @640) | ego_motion_compensation_max_shift_px | 1-128 | n/a | Per-frame compensation clamp at 640 detection resolution; scales with detection_resolution. |
 | State Estimator | Ego max age (ms) | ego_motion_compensation_max_age_ms | 16-500 | n/a | Drops stale emitted-motion samples so compensation fails closed. |
-| Direct Targeting Movement | Deadzone (px) | target_deadzone_px | 0.000-20.000 | n/a | Minimum target error radius before direct movement is emitted. |
-| Direct Targeting Movement | Max step (px/frame) | target_max_pixel_step | 0.25-120.00 | n/a | Maximum pixel-space movement emitted for one tracker observation. |
-| Direct Targeting Movement | Output scale | target_output_scale | 0.010-3.000 | n/a | Multiplier applied to tracker aim-point error before clamping. |
+| Direct Targeting Movement | Deadzone (px) | target_deadzone_px | 0.000-20.000 | n/a | Minimum target error radius before stream movement is emitted. |
+| Direct Targeting Movement | Stream interval (ms) | target_stream_interval_ms | 0.50-8.00 | n/a | Paced target-stream wake interval. New tracker observations wake the stream immediately. |
+| Direct Targeting Movement | Stream sharpness | target_stream_sharpness | 1.00-80.00 | n/a | Time-based convergence factor for the target stream. |
+| Direct Targeting Movement | Max speed (px/s) | target_max_pixel_speed | 50-20000 | n/a | Maximum pixel-space stream speed before count conversion. |
+| Direct Targeting Movement | State max age (ms) | target_state_max_age_ms | 16-500 | n/a | Drops stale target-motion snapshots before streaming output. |
+| Direct Targeting Movement | Min stream confidence | target_min_stream_confidence | 0.00-0.95 | n/a | Minimum confidence required for the target stream to emit movement. |
 | Direct Targeting Movement | Prediction blend | target_prediction_blend | 0.000-0.650 | n/a | Fraction of bounded short-horizon predicted aim mixed into the observed tracker aim point. |
 | Direct Targeting Movement | Max prediction lead (px) | target_prediction_max_lead_px | 0.00-40.00 | n/a | Maximum pixel distance the mouse path may lead the current tracker aim point. |
+| Direct Targeting Movement | Fallback max step (px/call) | target_max_pixel_step | 0.25-120.00 | n/a | Legacy per-call clamp for non-stream direct movement helpers and aim-simulation parity. |
+| Direct Targeting Movement | Fallback output scale | target_output_scale | 0.010-3.000 | n/a | Legacy per-call scale for non-stream direct movement helpers and aim-simulation parity. |
 | Direct Targeting Movement | Counts / px X | target_counts_per_pixel_x | -50.0000-50.0000 | n/a | Horizontal calibrated mouse counts per screen-space pixel. |
 | Direct Targeting Movement | Counts / px Y | target_counts_per_pixel_y | -50.0000-50.0000 | n/a | Vertical calibrated mouse counts per screen-space pixel. |
 | Auto Shoot | bScope Multiplier | bScope_multiplier | 0.5-2.0 | n/a | Multiplier used by auto-shoot scope timing/behavior. Disabled in UI until Auto Shoot is on. |
@@ -134,6 +139,7 @@ Removal gate: remove these only after a behavior baseline proves behavior stays 
 | State Estimator | Seed velocity on acquire | kalman_velocity_seed_enabled | true/false | n/a | Seeds velocity from early measurement deltas during acquisition. |
 | State Estimator | Compensate detection delay | kalman_compensate_detection_delay | true/false | n/a | Accounts for detector latency in prediction. |
 | State Estimator | Ego-motion compensation | ego_motion_compensation_enabled | true/false | n/a | Opt-in tracker-prior compensation from emitted mouse/view motion. Raw detections and final mouse output are unchanged. |
+| Direct Targeting Movement | Target stream | target_stream_enabled | true/false | n/a | Enables the paced target-motion stream used by the live targeting path. |
 | Direct Targeting Movement | Calibrated pixel counts | target_calibrated_pixel_counts_enabled | true/false | n/a | Uses measured counts-per-pixel gains for direct targeting output instead of the default 1:1 pixel-count fallback. |
 | Auto Shoot | Auto Shoot | auto_shoot | true/false | n/a | Enables automatic shooting behavior. |
 | Input Method | Arduino 16-bit Mouse | arduino_16_bit_mouse | true/false | n/a | Arduino input only. Sends wider mouse movement values. |

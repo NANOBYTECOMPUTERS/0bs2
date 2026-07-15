@@ -10,6 +10,7 @@
 #include <atomic>
 #include <vector>
 #include <iostream>
+#include <limits>
 #include <random>
 #include <thread>
 
@@ -79,6 +80,7 @@ MouseThread::MouseThread(
     egoMotionCompensator.setSettings(buildEgoMotionSettingsFromConfig());
 
     moveWorker = std::thread(&MouseThread::moveWorkerLoop, this);
+    targetStreamWorker = std::thread(&MouseThread::targetStreamWorkerLoop, this);
 }
 
 void MouseThread::updateConfig(
@@ -103,6 +105,7 @@ void MouseThread::updateConfig(
     resetEgoMotionCompensation();
 
     resetDirectMovement();
+    clearTargetMotionState();
 }
 
 void MouseThread::updateDetectionGeometry(int width, int height)
@@ -131,12 +134,15 @@ void MouseThread::updateDetectionGeometry(int width, int height)
     resetEgoMotionCompensation();
 
     resetDirectMovement();
+    clearTargetMotionState();
 }
 
 MouseThread::~MouseThread()
 {
     workerStop = true;
     queueCv.notify_all();
+    targetStreamCv.notify_all();
+    if (targetStreamWorker.joinable()) targetStreamWorker.join();
     if (moveWorker.joinable()) moveWorker.join();
 }
 
@@ -180,6 +186,116 @@ void MouseThread::moveWorkerLoop()
     catch (...)
     {
         std::cerr << "[Mouse] Move worker crashed: unknown exception." << std::endl;
+    }
+}
+
+bool MouseThread::snapshotTargetMotionState(TargetMotionState& out) const
+{
+    std::lock_guard<std::mutex> lock(targetStateMutex);
+    if (!targetMotionState.valid)
+        return false;
+
+    out = targetMotionState;
+    return true;
+}
+
+void MouseThread::targetStreamWorkerLoop()
+{
+    try
+    {
+        auto lastTick = std::chrono::steady_clock::now();
+        std::uint64_t activeSequence = 0;
+        int activeTrackId = std::numeric_limits<int>::min();
+        double appliedSinceObservationX = 0.0;
+        double appliedSinceObservationY = 0.0;
+        bool wasStreaming = false;
+
+        while (!workerStop)
+        {
+            const auto now = std::chrono::steady_clock::now();
+            double dtSec = std::chrono::duration<double>(now - lastTick).count();
+            lastTick = now;
+            dtSec = std::clamp(dtSec, 0.0005, 0.050);
+
+            TargetMotionState state;
+            const bool haveState = snapshotTargetMotionState(state);
+            const bool streamEnabled = config.target_stream_enabled;
+            const bool aimingActive = aiming.load(std::memory_order_relaxed);
+
+            if (haveState && streamEnabled && aimingActive)
+            {
+                if (state.trackId != activeTrackId)
+                {
+                    resetDirectMovement();
+                    activeTrackId = state.trackId;
+                }
+
+                if (state.sequence != activeSequence)
+                {
+                    activeSequence = state.sequence;
+                    appliedSinceObservationX = 0.0;
+                    appliedSinceObservationY = 0.0;
+                }
+
+                const bool streamed = dispatchTargetStreamMovement(
+                    state,
+                    now,
+                    dtSec,
+                    appliedSinceObservationX,
+                    appliedSinceObservationY);
+
+                if (!streamed)
+                {
+                    appliedSinceObservationX = 0.0;
+                    appliedSinceObservationY = 0.0;
+                    if (wasStreaming)
+                    {
+                        resetDirectMovement();
+                        updateLastAppliedMouseDelta(0.0, 0.0);
+                    }
+                    wasStreaming = false;
+                }
+                else
+                {
+                    wasStreaming = true;
+                }
+            }
+            else
+            {
+                if (wasStreaming)
+                {
+                    resetDirectMovement();
+                    updateLastAppliedMouseDelta(0.0, 0.0);
+                }
+                wasStreaming = false;
+                appliedSinceObservationX = 0.0;
+                appliedSinceObservationY = 0.0;
+                activeSequence = haveState ? state.sequence : 0;
+                activeTrackId = haveState ? state.trackId : std::numeric_limits<int>::min();
+            }
+
+            const double intervalMs = std::clamp(
+                static_cast<double>(config.target_stream_interval_ms),
+                0.5,
+                8.0);
+            std::unique_lock<std::mutex> lock(targetStateMutex);
+            const std::uint64_t waitSequence = targetStateSequence;
+            targetStreamCv.wait_for(
+                lock,
+                std::chrono::duration<double, std::milli>(intervalMs),
+                [&] {
+                    return workerStop.load(std::memory_order_relaxed) ||
+                        targetStateSequence != waitSequence;
+                });
+        }
+    }
+    catch (const std::exception& e)
+    {
+        std::cerr << "[Mouse] Target stream worker crashed: " << e.what() << std::endl;
+    }
+    catch (...)
+    {
+        std::cerr << "[Mouse] Target stream worker crashed: unknown exception." << std::endl;
     }
 }
 
@@ -418,6 +534,157 @@ std::pair<double, double> MouseThread::pixelDeltaToCounts(double pixelDx, double
     return { pixelDx, pixelDy };
 }
 
+std::pair<double, double> MouseThread::predictStreamAimPoint(
+    const TargetMotionState& state,
+    double ageSec) const
+{
+    if (!std::isfinite(state.aimX) || !std::isfinite(state.aimY))
+        return { state.aimX, state.aimY };
+
+    ageSec = std::clamp(ageSec, 0.0, 0.250);
+    double predictedX = state.aimX;
+    double predictedY = state.aimY;
+    if (std::isfinite(state.velocityX) && std::isfinite(state.velocityY))
+    {
+        predictedX += state.velocityX * ageSec;
+        predictedY += state.velocityY * ageSec;
+    }
+
+    if (!std::isfinite(predictedX) || !std::isfinite(predictedY))
+        return { state.aimX, state.aimY };
+
+    double leadX = predictedX - state.aimX;
+    double leadY = predictedY - state.aimY;
+    const double maxLead = std::clamp(static_cast<double>(config.target_prediction_max_lead_px), 0.0, 40.0);
+    if (maxLead <= 1e-6)
+        return { state.aimX, state.aimY };
+
+    const double leadMagnitude = std::hypot(leadX, leadY);
+    if (leadMagnitude > maxLead && leadMagnitude > 1e-9)
+    {
+        const double scale = maxLead / leadMagnitude;
+        leadX *= scale;
+        leadY *= scale;
+    }
+
+    const double blend = std::clamp(static_cast<double>(config.target_prediction_blend), 0.0, 0.65);
+    const double minConfidence = std::clamp(static_cast<double>(config.target_min_stream_confidence), 0.0, 0.95);
+    const double confidenceRange = std::max(0.05, 1.0 - minConfidence);
+    const double confidenceGate = std::clamp((state.confidence - minConfidence) / confidenceRange, 0.0, 1.0);
+    const double effectiveBlend = blend * confidenceGate;
+
+    return {
+        state.aimX + leadX * effectiveBlend,
+        state.aimY + leadY * effectiveBlend
+    };
+}
+
+void MouseThread::emitPixelMovement(
+    double pixelDx,
+    double pixelDy,
+    std::chrono::steady_clock::time_point now)
+{
+    if (!std::isfinite(pixelDx) || !std::isfinite(pixelDy))
+        return;
+
+    if (std::abs(pixelDx) < 1e-9 && std::abs(pixelDy) < 1e-9)
+    {
+        updateLastAppliedMouseDelta(0.0, 0.0);
+        return;
+    }
+
+    target_detected.store(true);
+    last_target_time = now;
+    recordEgoMotionDelta(pixelDx, pixelDy, now);
+    updateLastAppliedMouseDelta(pixelDx, pixelDy);
+
+    const auto counts = pixelDeltaToCounts(pixelDx, pixelDy);
+    int dx = 0;
+    int dy = 0;
+    {
+        std::lock_guard<std::mutex> lock(movementMtx);
+        movementCountCarryX += counts.first;
+        movementCountCarryY += counts.second;
+        dx = static_cast<int>(std::round(movementCountCarryX));
+        dy = static_cast<int>(std::round(movementCountCarryY));
+        movementCountCarryX -= static_cast<double>(dx);
+        movementCountCarryY -= static_cast<double>(dy);
+    }
+
+    if (dx != 0 || dy != 0)
+        queueMove(dx, dy);
+}
+
+bool MouseThread::dispatchTargetStreamMovement(
+    const TargetMotionState& state,
+    std::chrono::steady_clock::time_point now,
+    double dtSec,
+    double& appliedSinceObservationX,
+    double& appliedSinceObservationY)
+{
+    if (!state.valid || state.observationTime.time_since_epoch().count() == 0)
+        return false;
+
+    if (state.missedFrames > 2)
+        return false;
+
+    const double minConfidence = std::clamp(static_cast<double>(config.target_min_stream_confidence), 0.0, 0.95);
+    if (!std::isfinite(state.confidence) || state.confidence < minConfidence)
+        return false;
+
+    double ageSec = std::chrono::duration<double>(now - state.observationTime).count();
+    if (!std::isfinite(ageSec))
+        return false;
+    ageSec = std::max(0.0, ageSec);
+
+    const double maxAgeSec = std::clamp(
+        static_cast<double>(config.target_state_max_age_ms),
+        16.0,
+        500.0) * 0.001;
+    if (ageSec > maxAgeSec)
+        return false;
+
+    const auto aim = predictStreamAimPoint(state, ageSec);
+    if (!std::isfinite(aim.first) || !std::isfinite(aim.second))
+        return false;
+
+    double pixelDx = aim.first - center_x - appliedSinceObservationX;
+    double pixelDy = aim.second - center_y - appliedSinceObservationY;
+    if (!std::isfinite(pixelDx) || !std::isfinite(pixelDy))
+        return false;
+
+    const double distance = std::hypot(pixelDx, pixelDy);
+    const double deadzone = std::clamp(static_cast<double>(config.target_deadzone_px), 0.0, 20.0);
+    if (distance <= deadzone)
+    {
+        updateLastAppliedMouseDelta(0.0, 0.0);
+        return true;
+    }
+
+    const double sharpness = std::clamp(static_cast<double>(config.target_stream_sharpness), 1.0, 80.0);
+    const double alpha = std::clamp(1.0 - std::exp(-sharpness * dtSec), 0.0, 1.0);
+    pixelDx *= alpha;
+    pixelDy *= alpha;
+
+    const double maxSpeed = std::clamp(static_cast<double>(config.target_max_pixel_speed), 50.0, 20000.0);
+    const double maxStep = std::max(0.01, maxSpeed * dtSec);
+    const double stepLength = std::hypot(pixelDx, pixelDy);
+    if (stepLength > maxStep && stepLength > 1e-9)
+    {
+        const double scale = maxStep / stepLength;
+        pixelDx *= scale;
+        pixelDy *= scale;
+    }
+
+    if (std::abs(pixelDx) < 1e-9 && std::abs(pixelDy) < 1e-9)
+        return true;
+
+    appliedSinceObservationX += pixelDx;
+    appliedSinceObservationY += pixelDy;
+    emitPixelMovement(pixelDx, pixelDy, now);
+    return true;
+}
+
 void MouseThread::recordEgoMotionDelta(double pixelDx, double pixelDy, std::chrono::steady_clock::time_point timestamp)
 {
     updateEgoMotionVelocityEstimate(pixelDx, pixelDy, timestamp);
@@ -520,27 +787,7 @@ void MouseThread::dispatchTargetMovement(
         pixelDy *= scale;
     }
 
-    const auto now = std::chrono::steady_clock::now();
-    target_detected.store(true);
-    last_target_time = now;
-    recordEgoMotionDelta(pixelDx, pixelDy, now);
-    updateLastAppliedMouseDelta(pixelDx, pixelDy);
-
-    const auto counts = pixelDeltaToCounts(pixelDx, pixelDy);
-    int dx = 0;
-    int dy = 0;
-    {
-        std::lock_guard<std::mutex> lock(movementMtx);
-        movementCountCarryX += counts.first;
-        movementCountCarryY += counts.second;
-        dx = static_cast<int>(std::round(movementCountCarryX));
-        dy = static_cast<int>(std::round(movementCountCarryY));
-        movementCountCarryX -= static_cast<double>(dx);
-        movementCountCarryY -= static_cast<double>(dy);
-    }
-
-    if (dx != 0 || dy != 0)
-        queueMove(dx, dy);
+    emitPixelMovement(pixelDx, pixelDy, std::chrono::steady_clock::now());
 }
 
 void MouseThread::resetDirectMovement()
@@ -617,6 +864,88 @@ void MouseThread::moveMouseTarget(const BoxTarget& target)
         target.confidence);
 }
 
+void MouseThread::publishTargetMotionState(const LockedTargetInfo& lockInfo)
+{
+    publishTargetMotionState(
+        lockInfo.target,
+        lockInfo.targetVelocityX,
+        lockInfo.targetVelocityY,
+        lockInfo.observedThisFrame,
+        lockInfo.missedFrames);
+}
+
+void MouseThread::publishTargetMotionState(
+    const BoxTarget& target,
+    double velocityX,
+    double velocityY,
+    bool observedThisFrame,
+    int missedFrames)
+{
+    if (!std::isfinite(target.smoothX) || !std::isfinite(target.smoothY))
+    {
+        clearTargetMotionState();
+        return;
+    }
+
+    if (target.trackId != directMovementTrackId)
+    {
+        resetPrediction();
+        directMovementTrackId = target.trackId;
+    }
+
+    const auto now = std::chrono::steady_clock::now();
+    target_detected.store(true);
+    last_target_time = now;
+
+    const auto blendedAim = blendPredictedAimPoint(target.smoothX, target.smoothY, target.confidence);
+    const double baseAimX = std::isfinite(blendedAim.first) ? blendedAim.first : target.smoothX;
+    const double baseAimY = std::isfinite(blendedAim.second) ? blendedAim.second : target.smoothY;
+
+    double streamVelocityX = std::isfinite(velocityX) ? velocityX : 0.0;
+    double streamVelocityY = std::isfinite(velocityY) ? velocityY : 0.0;
+    if (std::abs(streamVelocityX) < 1e-6 && std::isfinite(lastKalmanTelemetry.velocity_x))
+        streamVelocityX = lastKalmanTelemetry.velocity_x;
+    if (std::abs(streamVelocityY) < 1e-6 && std::isfinite(lastKalmanTelemetry.velocity_y))
+        streamVelocityY = lastKalmanTelemetry.velocity_y;
+
+    TargetMotionState next;
+    next.valid = true;
+    next.trackId = target.trackId;
+    next.observedThisFrame = observedThisFrame;
+    next.missedFrames = std::max(0, missedFrames);
+    next.aimX = baseAimX;
+    next.aimY = baseAimY;
+    next.velocityX = streamVelocityX;
+    next.velocityY = streamVelocityY;
+    next.confidence = std::clamp(target.confidence, 0.0, 1.0);
+    next.observationTime = now;
+    next.publishTime = now;
+
+    {
+        std::lock_guard<std::mutex> lock(targetStateMutex);
+        next.sequence = ++targetStateSequence;
+        targetMotionState = next;
+    }
+    targetStreamCv.notify_all();
+}
+
+void MouseThread::clearTargetMotionState()
+{
+    bool changed = false;
+    {
+        std::lock_guard<std::mutex> lock(targetStateMutex);
+        if (targetMotionState.valid)
+        {
+            targetMotionState = TargetMotionState{};
+            targetMotionState.sequence = ++targetStateSequence;
+            changed = true;
+        }
+    }
+
+    if (changed)
+        targetStreamCv.notify_all();
+}
+
 void MouseThread::updateLastAppliedMouseDelta(double dx, double dy)
 {
     std::lock_guard<std::mutex> lock(lastAppliedMouseDeltaMutex);
@@ -631,12 +960,17 @@ std::pair<double, double> MouseThread::getLastAppliedMouseDelta() const
 
 void MouseThread::clearQueuedMoves()
 {
-    std::lock_guard<std::mutex> lock(queueMtx);
-    std::queue<Move> empty;
-    moveQueue.swap(empty);
+    {
+        std::lock_guard<std::mutex> lock(queueMtx);
+        std::queue<Move> empty;
+        moveQueue.swap(empty);
+    }
+
+    clearTargetMotionState();
     resetWindState();
     resetEgoMotionCompensation();
     resetDirectMovement();
+    updateLastAppliedMouseDelta(0.0, 0.0);
 }
 
 void MouseThread::releaseMouse()
@@ -666,6 +1000,7 @@ void MouseThread::resetPrediction()
     directMovementTrackId = -1;
     resetDirectMovement();
     resetEgoMotionCompensation();
+    clearTargetMotionState();
     target_detected.store(false);
 }
 

@@ -41,19 +41,24 @@ class DirectTargetingContractTests(unittest.TestCase):
         ):
             self.assertNotIn(token, project_text)
 
-    def test_mouse_thread_dispatches_tracker_aim_points_directly(self):
+    def test_mouse_thread_publishes_tracker_state_to_paced_stream(self):
         mouse_h = self.read("mouse/mouse.h")
         mouse_cpp = self.read("mouse/mouse.cpp")
         loop_cpp = self.read("runtime/mouse_thread_loop.cpp")
 
         for token in (
+            "struct TargetMotionState",
+            "targetStreamWorkerLoop(",
+            "targetStreamCv.wait_for(",
+            "dispatchTargetStreamMovement(",
+            "publishTargetMotionState(",
             "dispatchTargetMovement(",
             "pixelDeltaToCounts(",
             "movementCountCarryX",
             "movementCountCarryY",
             "queueMove(dx, dy)",
             "recordEgoMotionDelta(pixelDx, pixelDy, now)",
-            "blendPredictedAimPoint(",
+            "1.0 - std::exp(-sharpness * dtSec)",
             "moveMouseTarget(",
             "directMovementTrackId",
         ):
@@ -61,7 +66,11 @@ class DirectTargetingContractTests(unittest.TestCase):
 
         self.assertIn("activeTarget->smoothX", loop_cpp)
         self.assertIn("activeTarget->smoothY", loop_cpp)
-        self.assertIn("mouseThread.moveMouseTarget(*activeTarget)", loop_cpp)
+        self.assertIn("mouseThread.publishTargetMotionState(lockInfo)", loop_cpp)
+        self.assertIn("mouseThread.publishTargetMotionState(*directTarget)", loop_cpp)
+        self.assertIn("mouseThread.clearTargetMotionState()", loop_cpp)
+        self.assertNotIn("mouseThread.moveMouseTarget(*activeTarget)", loop_cpp)
+        self.assertNotIn("std::this_thread::yield()", mouse_cpp)
         self.assertIn("return { pixelDx, pixelDy };", mouse_cpp)
 
         for token in (
@@ -89,6 +98,12 @@ class DirectTargetingContractTests(unittest.TestCase):
 
         for key in (
             "target_deadzone_px",
+            "target_stream_enabled",
+            "target_stream_interval_ms",
+            "target_stream_sharpness",
+            "target_max_pixel_speed",
+            "target_state_max_age_ms",
+            "target_min_stream_confidence",
             "target_max_pixel_step",
             "target_output_scale",
             "target_calibrated_pixel_counts_enabled",
@@ -103,7 +118,11 @@ class DirectTargetingContractTests(unittest.TestCase):
             self.assertIn(key, generator)
 
         self.assertIn('OverlayUI::BeginSection("Direct Targeting Movement"', draw_mouse)
+        self.assertIn('ImGui::Checkbox("Target stream"', draw_mouse)
+        self.assertIn('ImGui::SliderFloat("Stream interval (ms)"', draw_mouse)
+        self.assertIn('ImGui::SliderFloat("Max speed (px/s)"', draw_mouse)
         self.assertIn('ImGui::Checkbox("Calibrated pixel counts"', draw_mouse)
+        self.assertIn('MERGE_FIELD("target_stream_enabled"', config_cpp)
         self.assertIn('MERGE_FIELD("target_calibrated_pixel_counts_enabled"', config_cpp)
         self.assertIn('"target_counts_per_pixel_x = "', config_cpp)
         self.assertIn("config.target_calibrated_pixel_counts_enabled", self.read("mouse/mouse.cpp"))

@@ -121,6 +121,12 @@ bool Config::loadConfig(const std::string& filename)
 
         // Direct targeting movement
         target_deadzone_px = 0.0f;
+        target_stream_enabled = true;
+        target_stream_interval_ms = 1.0f;
+        target_stream_sharpness = 18.0f;
+        target_max_pixel_speed = 1800.0f;
+        target_state_max_age_ms = 120;
+        target_min_stream_confidence = 0.15f;
         target_max_pixel_step = 28.0f;
         target_output_scale = 0.28f;
         target_calibrated_pixel_counts_enabled = false;
@@ -398,6 +404,12 @@ bool Config::loadConfig(const std::string& filename)
 
     // Direct targeting movement
     target_deadzone_px = (float)get_double("target_deadzone_px", 0.0);
+    target_stream_enabled = get_bool("target_stream_enabled", true);
+    target_stream_interval_ms = (float)get_double("target_stream_interval_ms", 1.0);
+    target_stream_sharpness = (float)get_double("target_stream_sharpness", 18.0);
+    target_max_pixel_speed = (float)get_double("target_max_pixel_speed", 1800.0);
+    target_state_max_age_ms = get_long("target_state_max_age_ms", 120);
+    target_min_stream_confidence = (float)get_double("target_min_stream_confidence", 0.15);
     target_max_pixel_step = (float)get_double("target_max_pixel_step", 28.0);
     target_output_scale = (float)get_double("target_output_scale", 0.28);
     target_calibrated_pixel_counts_enabled = get_bool("target_calibrated_pixel_counts_enabled", false);
@@ -609,6 +621,16 @@ bool Config::loadConfig(const std::string& filename)
 
     if (target_deadzone_px < 0.0f) target_deadzone_px = 0.0f;
     if (target_deadzone_px > 20.0f) target_deadzone_px = 20.0f;
+    if (target_stream_interval_ms < 0.5f) target_stream_interval_ms = 0.5f;
+    if (target_stream_interval_ms > 8.0f) target_stream_interval_ms = 8.0f;
+    if (target_stream_sharpness < 1.0f) target_stream_sharpness = 1.0f;
+    if (target_stream_sharpness > 80.0f) target_stream_sharpness = 80.0f;
+    if (target_max_pixel_speed < 50.0f) target_max_pixel_speed = 50.0f;
+    if (target_max_pixel_speed > 20000.0f) target_max_pixel_speed = 20000.0f;
+    if (target_state_max_age_ms < 16) target_state_max_age_ms = 16;
+    if (target_state_max_age_ms > 500) target_state_max_age_ms = 500;
+    if (target_min_stream_confidence < 0.0f) target_min_stream_confidence = 0.0f;
+    if (target_min_stream_confidence > 0.95f) target_min_stream_confidence = 0.95f;
     if (target_max_pixel_step < 0.25f) target_max_pixel_step = 0.25f;
     if (target_max_pixel_step > 240.0f) target_max_pixel_step = 240.0f;
     if (target_output_scale < 0.01f) target_output_scale = 0.01f;
@@ -741,6 +763,12 @@ bool Config::loadConfigMerged(const std::string& filename)
     MERGE_FIELD("wind_D", wind_D);
 
     MERGE_FIELD("target_deadzone_px", target_deadzone_px);
+    MERGE_FIELD("target_stream_enabled", target_stream_enabled);
+    MERGE_FIELD("target_stream_interval_ms", target_stream_interval_ms);
+    MERGE_FIELD("target_stream_sharpness", target_stream_sharpness);
+    MERGE_FIELD("target_max_pixel_speed", target_max_pixel_speed);
+    MERGE_FIELD("target_state_max_age_ms", target_state_max_age_ms);
+    MERGE_FIELD("target_min_stream_confidence", target_min_stream_confidence);
     MERGE_FIELD("target_max_pixel_step", target_max_pixel_step);
     MERGE_FIELD("target_output_scale", target_output_scale);
     MERGE_FIELD("target_calibrated_pixel_counts_enabled", target_calibrated_pixel_counts_enabled);
@@ -995,6 +1023,12 @@ bool Config::saveConfig(const std::string& filename)
     file << "# Direct targeting movement\n"
         << std::fixed << std::setprecision(3)
         << "target_deadzone_px = " << target_deadzone_px << "\n"
+        << "target_stream_enabled = " << (target_stream_enabled ? "true" : "false") << "\n"
+        << "target_stream_interval_ms = " << target_stream_interval_ms << "\n"
+        << "target_stream_sharpness = " << target_stream_sharpness << "\n"
+        << "target_max_pixel_speed = " << target_max_pixel_speed << "\n"
+        << "target_state_max_age_ms = " << target_state_max_age_ms << "\n"
+        << "target_min_stream_confidence = " << target_min_stream_confidence << "\n"
         << "target_max_pixel_step = " << target_max_pixel_step << "\n"
         << "target_output_scale = " << target_output_scale << "\n"
         << "target_calibrated_pixel_counts_enabled = " << (target_calibrated_pixel_counts_enabled ? "true" : "false") << "\n"

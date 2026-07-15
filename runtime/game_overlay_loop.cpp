@@ -816,7 +816,7 @@ static void aim_sim_step(AimSimulationState& s, double dtSec, int panelW, int pa
     s.lastMoveX = 0;
     s.lastMoveY = 0;
 
-    if (distancePx > 0.0)
+    if (distancePx > 0.0 && config.target_stream_enabled)
     {
         double pixelDx = offsetX;
         double pixelDy = offsetY;
@@ -828,11 +828,13 @@ static void aim_sim_step(AimSimulationState& s, double dtSec, int panelW, int pa
         }
         else
         {
-            const double outputScale = std::clamp(static_cast<double>(config.target_output_scale), 0.01, 3.0);
-            const double maxStep = std::clamp(static_cast<double>(config.target_max_pixel_step), 0.25, 240.0);
-            pixelDx *= outputScale;
-            pixelDy *= outputScale;
+            const double sharpness = std::clamp(static_cast<double>(config.target_stream_sharpness), 1.0, 80.0);
+            const double alpha = std::clamp(1.0 - std::exp(-sharpness * dtSec), 0.0, 1.0);
+            pixelDx *= alpha;
+            pixelDy *= alpha;
 
+            const double maxSpeed = std::clamp(static_cast<double>(config.target_max_pixel_speed), 50.0, 20000.0);
+            const double maxStep = std::max(0.01, maxSpeed * std::clamp(dtSec, 0.0005, 0.050));
             const double stepLength = std::hypot(pixelDx, pixelDy);
             if (stepLength > maxStep && stepLength > 1e-9)
             {
