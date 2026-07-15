@@ -1,0 +1,91 @@
+```mermaid
+flowchart TD
+    START["0BS startup"] --> CFG["Config load and merge<br/>config.ini defaults + saved runtime settings"]
+    CFG --> UI["ImGui overlay<br/>Capture / Target / Mouse / AI / Debug / Stats"]
+    CFG --> INPUTSETUP["Input device setup<br/>Win32 / Razer / Arduino / Teensy / HID / KMBOX / Makcu"]
+    CFG --> CAPSETUP["Capture setup<br/>DXGI / WinRT / UDP / Virtual Camera"]
+    CFG --> DETSETUP["Detector setup<br/>DirectML or TensorRT CUDA"]
+
+    UI --> CFGSAVE["Save / Load config"]
+    CFGSAVE --> CFG
+    UI --> RUNTIMEFLAGS["Runtime controls<br/>aiming / shooting / zooming / input method changes"]
+    RUNTIMEFLAGS --> INPUTSETUP
+
+    CAPSETUP --> CAPTHREAD["Capture thread"]
+    CAPTHREAD --> FRAME["Captured frame<br/>image + capture timestamp"]
+    CAPTHREAD --> GEOM["Capture geometry<br/>model width / height<br/>screen mapping metadata"]
+
+    FRAME --> PREPROC["Detector preprocess<br/>resize / layout / backend upload"]
+    PREPROC --> DETECT{"Detection backend"}
+    DETECT -->|DML| DML["DirectML detector"]
+    DETECT -->|CUDA| TRT["TensorRT 11.1 detector<br/>OpenCV 5 CUDA support"]
+
+    DML --> DECODE["YOLO output decode<br/>YOLO26 layout aware"]
+    TRT --> DECODE
+    DECODE --> POST["Postprocess<br/>confidence filter<br/>YOLO26 NMS disabled"]
+    POST --> DBUF["DetectionBuffer publish<br/>boxes + classes + confidences<br/>capture/publish timestamps<br/>geometry"]
+
+    DBUF --> MLOOP["Mouse runtime loop<br/>waits on detection buffer"]
+    GEOM --> MLOOP
+    RUNTIMEFLAGS --> MLOOP
+
+    MLOOP --> STALE{"Detection fresh?"}
+    STALE -->|No| CLEAR["Clear active target state<br/>clear future positions<br/>clear queued moves"]
+    STALE -->|Yes| EGOCONSUME["Consume ego-motion compensation<br/>between tracker frames"]
+
+    EGOCONSUME --> TRACKER["MultiTargetTracker"]
+    TRACKER --> CAND["Candidate filtering<br/>class gates + confidence"]
+    CAND --> ASSOC["Association<br/>Hungarian + IoU + distance<br/>confidence + heading + lock bias"]
+    ASSOC --> BOXKF["Stable box state<br/>box Kalman + smoothing"]
+    BOXKF --> INNERAIM["Inner aim point<br/>head/body offset in box space"]
+    INNERAIM --> LOCK["Stable target ID<br/>locked target info"]
+
+    LOCK --> HASLOCK{"Valid lock or direct fallback?"}
+    HASLOCK -->|No| CLEAR
+    HASLOCK -->|Yes| PUBLISH["Publish target motion state<br/>track ID + aim point + velocity<br/>confidence + missed frames"]
+
+    PUBLISH --> AIMKF["Mouse aim estimator<br/>Kalman bounded prediction<br/>confidence-gated lead"]
+    AIMKF --> TSTATE["TargetMotionState snapshot<br/>thread-safe latest aim state"]
+    TSTATE --> STREAMCV["Wake target stream<br/>condition_variable wait_for<br/>no busy yield loop"]
+
+    STREAMCV --> STREAMLOOP["Target stream worker"]
+    STREAMLOOP --> STREAMGATE{"Can stream emit?"}
+    STREAMGATE -->|Target stream off| DBGSTATUS["Debug status<br/>target stream disabled"]
+    STREAMGATE -->|Aim inactive| DBGSTATUS
+    STREAMGATE -->|No state / stale / low confidence / missed| DBGSTATUS
+    STREAMGATE -->|Yes| PREDICTNOW["Predict current aim<br/>short horizon from latest state"]
+
+    PREDICTNOW --> ERROR["Pixel error<br/>predicted aim - frame center<br/>minus emitted local motion"]
+    ERROR --> SHAPE["Stream shaping<br/>deadzone<br/>alpha = 1 - exp(-sharpness * dt)<br/>max speed px/sec"]
+    SHAPE --> COUNTS["Pixel-to-count conversion"]
+    COUNTS --> CAL{"Calibrated counts enabled?"}
+    CAL -->|Yes| CALCOUNTS["counts = pixels * counts_per_pixel_x/y"]
+    CAL -->|No| FALLBACK["fallback<br/>1 corrected pixel = 1 count"]
+    CALCOUNTS --> CARRY["Fractional count carry<br/>round to integer dx/dy"]
+    FALLBACK --> CARRY
+    CARRY --> QUEUE["Mouse output queue"]
+    QUEUE --> DRIVER["Input backend driver<br/>Win32 / Razer / Arduino / Teensy / HID / KMBOX / Makcu"]
+    DRIVER --> MOVE["Mouse movement"]
+
+    CARRY --> EGOLOG["Record emitted pixel motion"]
+    EGOLOG --> EGOCOMP["Ego-motion compensator"]
+    EGOCOMP --> EGOCONSUME
+
+    MLOOP --> AUTOSHOOT["Auto shoot gate<br/>optional scope check + press/release"]
+    AUTOSHOOT --> DRIVER
+    MLOOP --> NORECOIL["Optional easy recoil compensation"]
+    NORECOIL --> DRIVER
+
+    TRACKER --> TRACKDBG["Tracker debug tracks<br/>locked ID + association metrics"]
+    AIMKF --> FUTURE["Future position debug"]
+    STREAMLOOP --> STREAMDBG["Target stream debug snapshot<br/>status + target age + predicted aim<br/>pixel delta + raw/queued counts + carry"]
+
+    TRACKDBG --> GAMEOVERLAY["Optional visual game overlay<br/>debug visualization only"]
+    FUTURE --> GAMEOVERLAY
+    STREAMDBG --> UI
+    TRACKDBG --> UI
+    GAMEOVERLAY -. "does not drive targeting" .-> MLOOP
+
+    CLEAR --> TSTATE
+    CLEAR --> QUEUE
+```
