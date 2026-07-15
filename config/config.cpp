@@ -122,6 +122,7 @@ bool Config::loadConfig(const std::string& filename)
         // Direct targeting movement
         target_deadzone_px = 0.0f;
         target_stream_enabled = true;
+        target_stream_debug_enabled = false;
         target_stream_interval_ms = 1.0f;
         target_stream_sharpness = 18.0f;
         target_max_pixel_speed = 1800.0f;
@@ -405,6 +406,7 @@ bool Config::loadConfig(const std::string& filename)
     // Direct targeting movement
     target_deadzone_px = (float)get_double("target_deadzone_px", 0.0);
     target_stream_enabled = get_bool("target_stream_enabled", true);
+    target_stream_debug_enabled = get_bool("target_stream_debug_enabled", false);
     target_stream_interval_ms = (float)get_double("target_stream_interval_ms", 1.0);
     target_stream_sharpness = (float)get_double("target_stream_sharpness", 18.0);
     target_max_pixel_speed = (float)get_double("target_max_pixel_speed", 1800.0);
@@ -764,6 +766,7 @@ bool Config::loadConfigMerged(const std::string& filename)
 
     MERGE_FIELD("target_deadzone_px", target_deadzone_px);
     MERGE_FIELD("target_stream_enabled", target_stream_enabled);
+    MERGE_FIELD("target_stream_debug_enabled", target_stream_debug_enabled);
     MERGE_FIELD("target_stream_interval_ms", target_stream_interval_ms);
     MERGE_FIELD("target_stream_sharpness", target_stream_sharpness);
     MERGE_FIELD("target_max_pixel_speed", target_max_pixel_speed);
@@ -1024,6 +1027,7 @@ bool Config::saveConfig(const std::string& filename)
         << std::fixed << std::setprecision(3)
         << "target_deadzone_px = " << target_deadzone_px << "\n"
         << "target_stream_enabled = " << (target_stream_enabled ? "true" : "false") << "\n"
+        << "target_stream_debug_enabled = " << (target_stream_debug_enabled ? "true" : "false") << "\n"
         << "target_stream_interval_ms = " << target_stream_interval_ms << "\n"
         << "target_stream_sharpness = " << target_stream_sharpness << "\n"
         << "target_max_pixel_speed = " << target_max_pixel_speed << "\n"

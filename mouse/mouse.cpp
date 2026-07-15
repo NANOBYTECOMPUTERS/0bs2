@@ -199,6 +199,65 @@ bool MouseThread::snapshotTargetMotionState(TargetMotionState& out) const
     return true;
 }
 
+MouseThread::TargetStreamDebugSnapshot MouseThread::makeTargetStreamDebugSnapshot(
+    const TargetMotionState* state,
+    std::chrono::steady_clock::time_point now,
+    double dtSec,
+    const char* status)
+{
+    TargetStreamDebugSnapshot snapshot;
+    snapshot.enabled = config.target_stream_debug_enabled;
+    if (!snapshot.enabled)
+        return snapshot;
+
+    snapshot.streamEnabled = config.target_stream_enabled;
+    snapshot.aimingActive = aiming.load(std::memory_order_relaxed);
+    snapshot.status = status;
+    snapshot.tickDtMs = dtSec * 1000.0;
+    snapshot.centerX = center_x;
+    snapshot.centerY = center_y;
+    snapshot.deadzonePx = std::clamp(static_cast<double>(config.target_deadzone_px), 0.0, 20.0);
+    snapshot.maxSpeedPxPerSec = std::clamp(static_cast<double>(config.target_max_pixel_speed), 50.0, 20000.0);
+    snapshot.maxStepPx = std::max(0.01, snapshot.maxSpeedPxPerSec * std::clamp(dtSec, 0.0005, 0.050));
+    snapshot.calibratedCounts = config.target_calibrated_pixel_counts_enabled;
+    snapshot.updatedAt = now;
+
+    {
+        std::lock_guard<std::mutex> lock(movementMtx);
+        snapshot.carryX = movementCountCarryX;
+        snapshot.carryY = movementCountCarryY;
+    }
+
+    if (state)
+    {
+        snapshot.hasState = state->valid;
+        snapshot.sequence = state->sequence;
+        snapshot.trackId = state->trackId;
+        snapshot.observedThisFrame = state->observedThisFrame;
+        snapshot.missedFrames = state->missedFrames;
+        snapshot.confidence = state->confidence;
+        snapshot.aimX = state->aimX;
+        snapshot.aimY = state->aimY;
+        if (state->observationTime.time_since_epoch().count() != 0)
+        {
+            snapshot.stateAgeMs = std::max(
+                0.0,
+                std::chrono::duration<double, std::milli>(now - state->observationTime).count());
+        }
+    }
+
+    return snapshot;
+}
+
+void MouseThread::updateTargetStreamDebug(const TargetStreamDebugSnapshot& snapshot)
+{
+    if (!config.target_stream_debug_enabled)
+        return;
+
+    std::lock_guard<std::mutex> lock(targetStreamDebugMutex);
+    targetStreamDebug = snapshot;
+}
+
 void MouseThread::targetStreamWorkerLoop()
 {
     try
@@ -262,6 +321,18 @@ void MouseThread::targetStreamWorkerLoop()
             }
             else
             {
+                const char* status = "No target state";
+                if (!streamEnabled)
+                    status = "Target stream disabled";
+                else if (!aimingActive)
+                    status = "Aim inactive";
+
+                updateTargetStreamDebug(makeTargetStreamDebugSnapshot(
+                    haveState ? &state : nullptr,
+                    now,
+                    dtSec,
+                    status));
+
                 if (wasStreaming)
                 {
                     resetDirectMovement();
@@ -579,18 +650,18 @@ std::pair<double, double> MouseThread::predictStreamAimPoint(
     };
 }
 
-void MouseThread::emitPixelMovement(
+MouseThread::Move MouseThread::emitPixelMovement(
     double pixelDx,
     double pixelDy,
     std::chrono::steady_clock::time_point now)
 {
     if (!std::isfinite(pixelDx) || !std::isfinite(pixelDy))
-        return;
+        return { 0, 0 };
 
     if (std::abs(pixelDx) < 1e-9 && std::abs(pixelDy) < 1e-9)
     {
         updateLastAppliedMouseDelta(0.0, 0.0);
-        return;
+        return { 0, 0 };
     }
 
     target_detected.store(true);
@@ -613,6 +684,8 @@ void MouseThread::emitPixelMovement(
 
     if (dx != 0 || dy != 0)
         queueMove(dx, dy);
+
+    return { dx, dy };
 }
 
 bool MouseThread::dispatchTargetStreamMovement(
@@ -623,18 +696,30 @@ bool MouseThread::dispatchTargetStreamMovement(
     double& appliedSinceObservationY)
 {
     if (!state.valid || state.observationTime.time_since_epoch().count() == 0)
+    {
+        updateTargetStreamDebug(makeTargetStreamDebugSnapshot(&state, now, dtSec, "Invalid target state"));
         return false;
+    }
 
     if (state.missedFrames > 2)
+    {
+        updateTargetStreamDebug(makeTargetStreamDebugSnapshot(&state, now, dtSec, "Too many missed frames"));
         return false;
+    }
 
     const double minConfidence = std::clamp(static_cast<double>(config.target_min_stream_confidence), 0.0, 0.95);
     if (!std::isfinite(state.confidence) || state.confidence < minConfidence)
+    {
+        updateTargetStreamDebug(makeTargetStreamDebugSnapshot(&state, now, dtSec, "Low confidence"));
         return false;
+    }
 
     double ageSec = std::chrono::duration<double>(now - state.observationTime).count();
     if (!std::isfinite(ageSec))
+    {
+        updateTargetStreamDebug(makeTargetStreamDebugSnapshot(&state, now, dtSec, "Invalid state age"));
         return false;
+    }
     ageSec = std::max(0.0, ageSec);
 
     const double maxAgeSec = std::clamp(
@@ -642,32 +727,57 @@ bool MouseThread::dispatchTargetStreamMovement(
         16.0,
         500.0) * 0.001;
     if (ageSec > maxAgeSec)
+    {
+        updateTargetStreamDebug(makeTargetStreamDebugSnapshot(&state, now, dtSec, "Stale target state"));
         return false;
+    }
 
     const auto aim = predictStreamAimPoint(state, ageSec);
     if (!std::isfinite(aim.first) || !std::isfinite(aim.second))
+    {
+        updateTargetStreamDebug(makeTargetStreamDebugSnapshot(&state, now, dtSec, "Invalid predicted aim"));
         return false;
+    }
 
     double pixelDx = aim.first - center_x - appliedSinceObservationX;
     double pixelDy = aim.second - center_y - appliedSinceObservationY;
     if (!std::isfinite(pixelDx) || !std::isfinite(pixelDy))
+    {
+        updateTargetStreamDebug(makeTargetStreamDebugSnapshot(&state, now, dtSec, "Invalid stream error"));
         return false;
+    }
+
+    TargetStreamDebugSnapshot debug = makeTargetStreamDebugSnapshot(&state, now, dtSec, "Evaluating");
+    debug.streaming = true;
+    debug.predictedX = aim.first;
+    debug.predictedY = aim.second;
+    debug.errorX = pixelDx;
+    debug.errorY = pixelDy;
+    debug.appliedSinceObservationX = appliedSinceObservationX;
+    debug.appliedSinceObservationY = appliedSinceObservationY;
 
     const double distance = std::hypot(pixelDx, pixelDy);
+    debug.distancePx = distance;
     const double deadzone = std::clamp(static_cast<double>(config.target_deadzone_px), 0.0, 20.0);
+    debug.deadzonePx = deadzone;
     if (distance <= deadzone)
     {
+        debug.status = "Inside deadzone";
         updateLastAppliedMouseDelta(0.0, 0.0);
+        updateTargetStreamDebug(debug);
         return true;
     }
 
     const double sharpness = std::clamp(static_cast<double>(config.target_stream_sharpness), 1.0, 80.0);
     const double alpha = std::clamp(1.0 - std::exp(-sharpness * dtSec), 0.0, 1.0);
+    debug.alpha = alpha;
     pixelDx *= alpha;
     pixelDy *= alpha;
 
     const double maxSpeed = std::clamp(static_cast<double>(config.target_max_pixel_speed), 50.0, 20000.0);
     const double maxStep = std::max(0.01, maxSpeed * dtSec);
+    debug.maxSpeedPxPerSec = maxSpeed;
+    debug.maxStepPx = maxStep;
     const double stepLength = std::hypot(pixelDx, pixelDy);
     if (stepLength > maxStep && stepLength > 1e-9)
     {
@@ -677,11 +787,32 @@ bool MouseThread::dispatchTargetStreamMovement(
     }
 
     if (std::abs(pixelDx) < 1e-9 && std::abs(pixelDy) < 1e-9)
+    {
+        debug.status = "No movement";
+        updateTargetStreamDebug(debug);
         return true;
+    }
 
     appliedSinceObservationX += pixelDx;
     appliedSinceObservationY += pixelDy;
-    emitPixelMovement(pixelDx, pixelDy, now);
+    debug.appliedSinceObservationX = appliedSinceObservationX;
+    debug.appliedSinceObservationY = appliedSinceObservationY;
+    debug.emittedPixelX = pixelDx;
+    debug.emittedPixelY = pixelDy;
+    const auto rawCounts = pixelDeltaToCounts(pixelDx, pixelDy);
+    debug.emittedCountRawX = rawCounts.first;
+    debug.emittedCountRawY = rawCounts.second;
+    const Move emitted = emitPixelMovement(pixelDx, pixelDy, now);
+    debug.emittedCountX = emitted.dx;
+    debug.emittedCountY = emitted.dy;
+    debug.emittedMovement = true;
+    debug.status = (emitted.dx != 0 || emitted.dy != 0) ? "Emitting" : "Carry only";
+    {
+        std::lock_guard<std::mutex> lock(movementMtx);
+        debug.carryX = movementCountCarryX;
+        debug.carryY = movementCountCarryY;
+    }
+    updateTargetStreamDebug(debug);
     return true;
 }
 
@@ -1113,6 +1244,47 @@ std::vector<std::pair<double, double>> MouseThread::getWindDebugTrail()
     for (const auto& p : windDebugTrail)
         out.emplace_back(p.x, p.y);
     return out;
+}
+
+MouseThread::TargetStreamDebugSnapshot MouseThread::getTargetStreamDebugSnapshot() const
+{
+    TargetStreamDebugSnapshot snapshot;
+    snapshot.enabled = config.target_stream_debug_enabled;
+    snapshot.streamEnabled = config.target_stream_enabled;
+    snapshot.aimingActive = aiming.load(std::memory_order_relaxed);
+    snapshot.centerX = center_x;
+    snapshot.centerY = center_y;
+    snapshot.deadzonePx = std::clamp(static_cast<double>(config.target_deadzone_px), 0.0, 20.0);
+    snapshot.maxSpeedPxPerSec = std::clamp(static_cast<double>(config.target_max_pixel_speed), 50.0, 20000.0);
+    snapshot.calibratedCounts = config.target_calibrated_pixel_counts_enabled;
+
+    if (!snapshot.enabled)
+        return snapshot;
+
+    {
+        std::lock_guard<std::mutex> lock(targetStreamDebugMutex);
+        snapshot = targetStreamDebug;
+    }
+
+    snapshot.enabled = true;
+    snapshot.streamEnabled = config.target_stream_enabled;
+    snapshot.aimingActive = aiming.load(std::memory_order_relaxed);
+    if (snapshot.updatedAt.time_since_epoch().count() == 0)
+    {
+        snapshot.status = "Waiting for stream tick";
+        snapshot.centerX = center_x;
+        snapshot.centerY = center_y;
+        snapshot.deadzonePx = std::clamp(static_cast<double>(config.target_deadzone_px), 0.0, 20.0);
+        snapshot.maxSpeedPxPerSec = std::clamp(static_cast<double>(config.target_max_pixel_speed), 50.0, 20000.0);
+        snapshot.calibratedCounts = config.target_calibrated_pixel_counts_enabled;
+        return snapshot;
+    }
+
+    snapshot.snapshotAgeMs = std::max(
+        0.0,
+        std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - snapshot.updatedAt).count());
+    return snapshot;
 }
 
 void MouseThread::setMouseInput(IMouseInput* newMouseInput)

@@ -99,6 +99,7 @@ class DirectTargetingContractTests(unittest.TestCase):
         for key in (
             "target_deadzone_px",
             "target_stream_enabled",
+            "target_stream_debug_enabled",
             "target_stream_interval_ms",
             "target_stream_sharpness",
             "target_max_pixel_speed",
@@ -119,13 +120,40 @@ class DirectTargetingContractTests(unittest.TestCase):
 
         self.assertIn('OverlayUI::BeginSection("Direct Targeting Movement"', draw_mouse)
         self.assertIn('ImGui::Checkbox("Target stream"', draw_mouse)
+        self.assertIn('ImGui::Checkbox("Target stream debug"', draw_mouse)
         self.assertIn('ImGui::SliderFloat("Stream interval (ms)"', draw_mouse)
         self.assertIn('ImGui::SliderFloat("Max speed (px/s)"', draw_mouse)
         self.assertIn('ImGui::Checkbox("Calibrated pixel counts"', draw_mouse)
         self.assertIn('MERGE_FIELD("target_stream_enabled"', config_cpp)
+        self.assertIn('MERGE_FIELD("target_stream_debug_enabled"', config_cpp)
         self.assertIn('MERGE_FIELD("target_calibrated_pixel_counts_enabled"', config_cpp)
         self.assertIn('"target_counts_per_pixel_x = "', config_cpp)
         self.assertIn("config.target_calibrated_pixel_counts_enabled", self.read("mouse/mouse.cpp"))
+
+    def test_target_stream_debug_snapshot_is_passive_and_visible(self):
+        mouse_h = self.read("mouse/mouse.h")
+        mouse_cpp = self.read("mouse/mouse.cpp")
+        draw_mouse = self.read("overlay/draw_mouse.cpp")
+
+        for token in (
+            "struct TargetStreamDebugSnapshot",
+            "getTargetStreamDebugSnapshot() const",
+            "updateTargetStreamDebug(",
+            "makeTargetStreamDebugSnapshot(",
+            "emittedPixelX",
+            "emittedCountRawX",
+            "emittedCountX",
+            "status = \"Debug disabled\"",
+            "Target stream debug",
+            "Status: %s",
+            "Raw counts:",
+            "Carry:",
+            "Limits:",
+        ):
+            self.assertIn(token, mouse_h + mouse_cpp + draw_mouse)
+
+        self.assertIn("if (!config.target_stream_debug_enabled)", mouse_cpp)
+        self.assertNotIn("sendMovementToDriver(debug", mouse_cpp)
 
 
 if __name__ == "__main__":

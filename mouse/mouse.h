@@ -28,6 +28,51 @@
 
 class MouseThread
 {
+public:
+    struct TargetStreamDebugSnapshot
+    {
+        bool enabled = false;
+        bool streamEnabled = false;
+        bool aimingActive = false;
+        bool hasState = false;
+        bool streaming = false;
+        bool emittedMovement = false;
+        bool calibratedCounts = false;
+        const char* status = "Debug disabled";
+        std::uint64_t sequence = 0;
+        int trackId = -1;
+        bool observedThisFrame = false;
+        int missedFrames = 0;
+        double confidence = 0.0;
+        double stateAgeMs = 0.0;
+        double snapshotAgeMs = 0.0;
+        double tickDtMs = 0.0;
+        double centerX = 0.0;
+        double centerY = 0.0;
+        double aimX = 0.0;
+        double aimY = 0.0;
+        double predictedX = 0.0;
+        double predictedY = 0.0;
+        double errorX = 0.0;
+        double errorY = 0.0;
+        double appliedSinceObservationX = 0.0;
+        double appliedSinceObservationY = 0.0;
+        double emittedPixelX = 0.0;
+        double emittedPixelY = 0.0;
+        double emittedCountRawX = 0.0;
+        double emittedCountRawY = 0.0;
+        int emittedCountX = 0;
+        int emittedCountY = 0;
+        double carryX = 0.0;
+        double carryY = 0.0;
+        double distancePx = 0.0;
+        double deadzonePx = 0.0;
+        double alpha = 0.0;
+        double maxStepPx = 0.0;
+        double maxSpeedPxPerSec = 0.0;
+        std::chrono::steady_clock::time_point updatedAt{};
+    };
+
 private:
     double screen_width;
     double screen_height;
@@ -77,6 +122,8 @@ private:
     std::condition_variable       targetStreamCv;
     TargetMotionState             targetMotionState;
     std::uint64_t                 targetStateSequence = 0;
+    mutable std::mutex            targetStreamDebugMutex;
+    TargetStreamDebugSnapshot     targetStreamDebug;
 
     std::mutex                    movementMtx;
     double                        movementCountCarryX = 0.0;
@@ -99,7 +146,13 @@ private:
     void targetStreamWorkerLoop();
     void queueMove(int dx, int dy);
     bool snapshotTargetMotionState(TargetMotionState& out) const;
-    void emitPixelMovement(
+    void updateTargetStreamDebug(const TargetStreamDebugSnapshot& snapshot);
+    TargetStreamDebugSnapshot makeTargetStreamDebugSnapshot(
+        const TargetMotionState* state,
+        std::chrono::steady_clock::time_point now,
+        double dtSec,
+        const char* status);
+    Move emitPixelMovement(
         double pixelDx,
         double pixelDy,
         std::chrono::steady_clock::time_point now);
@@ -219,6 +272,7 @@ public:
     std::vector<std::pair<double, double>> getFuturePositions();
     void clearWindDebugTrail();
     std::vector<std::pair<double, double>> getWindDebugTrail();
+    TargetStreamDebugSnapshot getTargetStreamDebugSnapshot() const;
 
     void moveRelative(int dx, int dy);
     void setMouseInput(IMouseInput* newMouseInput);

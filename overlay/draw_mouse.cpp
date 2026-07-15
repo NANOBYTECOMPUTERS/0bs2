@@ -41,6 +41,7 @@ float prev_ego_motion_compensation_max_shift_px = config.ego_motion_compensation
 int prev_ego_motion_compensation_max_age_ms = config.ego_motion_compensation_max_age_ms;
 float prev_target_deadzone_px = config.target_deadzone_px;
 bool prev_target_stream_enabled = config.target_stream_enabled;
+bool prev_target_stream_debug_enabled = config.target_stream_debug_enabled;
 float prev_target_stream_interval_ms = config.target_stream_interval_ms;
 float prev_target_stream_sharpness = config.target_stream_sharpness;
 float prev_target_max_pixel_speed = config.target_max_pixel_speed;
@@ -512,10 +513,78 @@ void draw_mouse()
         if (!config.target_calibrated_pixel_counts_enabled)
             ImGui::EndDisabled();
 
+        ImGui::Separator();
+        ImGui::Checkbox("Target stream debug", &config.target_stream_debug_enabled);
+        if (config.target_stream_debug_enabled)
+        {
+            const MouseThread::TargetStreamDebugSnapshot debug =
+                globalMouseThread
+                ? globalMouseThread->getTargetStreamDebugSnapshot()
+                : MouseThread::TargetStreamDebugSnapshot{};
+
+            ImGui::Text("Status: %s", debug.status ? debug.status : "Unavailable");
+            ImGui::Text(
+                "State: stream=%s aim=%s target=%s observed=%s",
+                debug.streamEnabled ? "on" : "off",
+                debug.aimingActive ? "on" : "off",
+                debug.hasState ? "yes" : "no",
+                debug.observedThisFrame ? "yes" : "no");
+            ImGui::Text(
+                "Track: id=%d seq=%llu missed=%d conf=%.2f age=%.1f ms snap=%.1f ms",
+                debug.trackId,
+                static_cast<unsigned long long>(debug.sequence),
+                debug.missedFrames,
+                debug.confidence,
+                debug.stateAgeMs,
+                debug.snapshotAgeMs);
+            ImGui::Text(
+                "Center: %.1f, %.1f",
+                debug.centerX,
+                debug.centerY);
+            ImGui::Text(
+                "Aim: base=(%.1f, %.1f) predicted=(%.1f, %.1f)",
+                debug.aimX,
+                debug.aimY,
+                debug.predictedX,
+                debug.predictedY);
+            ImGui::Text(
+                "Error: dx=%.2f dy=%.2f dist=%.2f applied=(%.2f, %.2f)",
+                debug.errorX,
+                debug.errorY,
+                debug.distancePx,
+                debug.appliedSinceObservationX,
+                debug.appliedSinceObservationY);
+            ImGui::Text(
+                "Emit px: %.3f, %.3f",
+                debug.emittedPixelX,
+                debug.emittedPixelY);
+            ImGui::Text(
+                "Raw counts: %.3f, %.3f queued=(%d, %d)",
+                debug.emittedCountRawX,
+                debug.emittedCountRawY,
+                debug.emittedCountX,
+                debug.emittedCountY);
+            ImGui::Text(
+                "Carry: %.3f, %.3f",
+                debug.carryX,
+                debug.carryY);
+            ImGui::Text(
+                "Shape: dt=%.2f ms alpha=%.3f maxStep=%.2f",
+                debug.tickDtMs,
+                debug.alpha,
+                debug.maxStepPx);
+            ImGui::Text(
+                "Limits: deadzone=%.2f maxSpeed=%.0f calibrated=%s",
+                debug.deadzonePx,
+                debug.maxSpeedPxPerSec,
+                debug.calibratedCounts ? "yes" : "no");
+        }
+
         if (ImGui::Button("Reset direct defaults"))
         {
             config.target_deadzone_px = 0.0f;
             config.target_stream_enabled = true;
+            config.target_stream_debug_enabled = false;
             config.target_stream_interval_ms = 1.0f;
             config.target_stream_sharpness = 18.0f;
             config.target_max_pixel_speed = 1800.0f;
@@ -581,6 +650,7 @@ void draw_mouse()
         prev_ego_motion_compensation_max_age_ms != config.ego_motion_compensation_max_age_ms ||
         prev_target_deadzone_px != config.target_deadzone_px ||
         prev_target_stream_enabled != config.target_stream_enabled ||
+        prev_target_stream_debug_enabled != config.target_stream_debug_enabled ||
         prev_target_stream_interval_ms != config.target_stream_interval_ms ||
         prev_target_stream_sharpness != config.target_stream_sharpness ||
         prev_target_max_pixel_speed != config.target_max_pixel_speed ||
@@ -616,6 +686,7 @@ void draw_mouse()
         prev_ego_motion_compensation_max_age_ms = config.ego_motion_compensation_max_age_ms;
         prev_target_deadzone_px = config.target_deadzone_px;
         prev_target_stream_enabled = config.target_stream_enabled;
+        prev_target_stream_debug_enabled = config.target_stream_debug_enabled;
         prev_target_stream_interval_ms = config.target_stream_interval_ms;
         prev_target_stream_sharpness = config.target_stream_sharpness;
         prev_target_max_pixel_speed = config.target_max_pixel_speed;

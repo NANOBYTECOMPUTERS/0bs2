@@ -64,6 +64,7 @@ class ConfigGuiControlContractTests(unittest.TestCase):
         for key in (
             "target_deadzone_px",
             "target_stream_enabled",
+            "target_stream_debug_enabled",
             "target_stream_interval_ms",
             "target_stream_sharpness",
             "target_max_pixel_speed",
@@ -84,6 +85,7 @@ class ConfigGuiControlContractTests(unittest.TestCase):
 
         self.assertIn('OverlayUI::BeginSection("Direct Targeting Movement"', draw_mouse)
         self.assertIn('ImGui::Checkbox("Target stream"', draw_mouse)
+        self.assertIn('ImGui::Checkbox("Target stream debug"', draw_mouse)
         self.assertIn('ImGui::SliderFloat("Stream interval (ms)"', draw_mouse)
         self.assertIn('ImGui::SliderFloat("Stream sharpness"', draw_mouse)
         self.assertIn('ImGui::SliderFloat("Max speed (px/s)"', draw_mouse)
@@ -93,6 +95,7 @@ class ConfigGuiControlContractTests(unittest.TestCase):
         self.assertIn('ImGui::SliderFloat("Max prediction lead (px)"', draw_mouse)
         self.assertIn('ImGui::Checkbox("Calibrated pixel counts"', draw_mouse)
         self.assertIn("dispatchTargetStreamMovement(", mouse_cpp)
+        self.assertIn("getTargetStreamDebugSnapshot()", mouse_cpp)
         self.assertIn("targetStreamCv.wait_for(", mouse_cpp)
         self.assertIn("dispatchTargetMovement(", mouse_cpp)
         self.assertIn("blendPredictedAimPoint(", mouse_cpp)
