@@ -21,8 +21,6 @@ std::string ghub_version = get_ghub_version();
 
 namespace
 {
-int prev_fovX = config.fovX;
-int prev_fovY = config.fovY;
 bool prev_runtime_latency_sweep_enabled = config.runtime_latency_sweep_enabled;
 std::string prev_estimator_mode = config.estimator_mode;
 bool prev_kalman_enabled = config.kalman_enabled;
@@ -47,6 +45,8 @@ float prev_target_output_scale = config.target_output_scale;
 bool prev_target_calibrated_pixel_counts_enabled = config.target_calibrated_pixel_counts_enabled;
 float prev_target_counts_per_pixel_x = config.target_counts_per_pixel_x;
 float prev_target_counts_per_pixel_y = config.target_counts_per_pixel_y;
+float prev_target_prediction_blend = config.target_prediction_blend;
+float prev_target_prediction_max_lead_px = config.target_prediction_max_lead_px;
 bool prev_auto_shoot = config.auto_shoot;
 float prev_bScope_multiplier = config.bScope_multiplier;
 
@@ -57,115 +57,8 @@ void refreshMouseThread()
 
     globalMouseThread->updateConfig(
         config.detection_resolution,
-        config.fovX,
-        config.fovY,
         config.auto_shoot,
         config.bScope_multiplier);
-}
-
-void drawGameProfileEditor()
-{
-    std::vector<std::string> profileNames;
-    for (const auto& kv : config.game_profiles)
-        profileNames.push_back(kv.first);
-
-    static int selectedIndex = 0;
-    for (size_t i = 0; i < profileNames.size(); ++i)
-    {
-        if (profileNames[i] == config.active_game)
-        {
-            selectedIndex = static_cast<int>(i);
-            break;
-        }
-    }
-
-    std::vector<const char*> profileItems;
-    profileItems.reserve(profileNames.size());
-    for (const auto& name : profileNames)
-        profileItems.push_back(name.c_str());
-
-    if (!profileItems.empty() &&
-        ImGui::Combo("Active Game Profile", &selectedIndex, profileItems.data(), static_cast<int>(profileItems.size())))
-    {
-        config.active_game = profileNames[selectedIndex];
-        OverlayConfig_MarkDirty();
-        refreshMouseThread();
-    }
-
-    const auto& gp = config.currentProfile();
-    ImGui::Text("Current profile: %s", gp.name.c_str());
-    ImGui::Text("Sens: %.4f", gp.sens);
-    ImGui::Text("Yaw: %.4f", gp.yaw);
-    ImGui::Text("Pitch: %.4f", gp.pitch);
-    ImGui::Text("FOV scaled: %s", gp.fovScaled ? "true" : "false");
-
-    if (gp.name == "UNIFIED")
-        return;
-
-    Config::GameProfile& modifiable = config.game_profiles[gp.name];
-    bool changed = false;
-
-    float sens = static_cast<float>(modifiable.sens);
-    float yaw = static_cast<float>(modifiable.yaw);
-    float pitch = static_cast<float>(modifiable.pitch);
-    float baseFov = static_cast<float>(modifiable.baseFOV);
-
-    changed |= ImGui::SliderFloat("Sensitivity", &sens, 0.001f, 10.0f, "%.4f");
-    changed |= ImGui::SliderFloat("Yaw", &yaw, 0.001f, 0.1f, "%.4f");
-    changed |= ImGui::SliderFloat("Pitch", &pitch, 0.001f, 0.1f, "%.4f");
-    changed |= ImGui::Checkbox("FOV Scaled", &modifiable.fovScaled);
-    if (modifiable.fovScaled)
-        changed |= ImGui::SliderFloat("Base FOV", &baseFov, 10.0f, 180.0f, "%.1f");
-
-    if (!changed)
-        return;
-
-    modifiable.sens = static_cast<double>(sens);
-    modifiable.yaw = static_cast<double>(yaw);
-    modifiable.pitch = static_cast<double>(pitch);
-    modifiable.baseFOV = static_cast<double>(baseFov);
-    OverlayConfig_MarkDirty();
-    refreshMouseThread();
-}
-
-void drawProfileManager()
-{
-    static char newProfileName[64] = "";
-    ImGui::InputText("New profile name", newProfileName, sizeof(newProfileName));
-    ImGui::SameLine();
-    if (ImGui::Button("Add Profile"))
-    {
-        std::string name = std::string(newProfileName);
-        if (!name.empty() && config.game_profiles.count(name) == 0)
-        {
-            Config::GameProfile gp;
-            gp.name = name;
-            gp.sens = 1.0;
-            gp.yaw = 0.022;
-            gp.pitch = 0.022;
-            gp.fovScaled = false;
-            gp.baseFOV = 90.0;
-            config.game_profiles[name] = gp;
-            config.active_game = name;
-            newProfileName[0] = '\0';
-            OverlayConfig_MarkDirty();
-            refreshMouseThread();
-        }
-    }
-
-    const auto& gp = config.currentProfile();
-    if (gp.name == "UNIFIED")
-        return;
-
-    ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(200, 50, 50, 255));
-    if (ImGui::Button("Delete Current Profile"))
-    {
-        config.game_profiles.erase(gp.name);
-        config.active_game = config.game_profiles.empty() ? "UNIFIED" : config.game_profiles.begin()->first;
-        OverlayConfig_MarkDirty();
-        refreshMouseThread();
-    }
-    ImGui::PopStyleColor();
 }
 
 void drawInputMethod()
@@ -553,13 +446,6 @@ void drawInputMethod()
 
 void draw_mouse()
 {
-    if (OverlayUI::BeginSection("FOV", "mouse_section_fov"))
-    {
-        ImGui::SliderInt("FOV X", &config.fovX, 10, 120);
-        ImGui::SliderInt("FOV Y", &config.fovY, 10, 120);
-        OverlayUI::EndSection();
-    }
-
     if (OverlayUI::BeginSection("State Estimator", "mouse_section_state_estimator"))
     {
         ImGui::Checkbox("Runtime latency sweep", &config.runtime_latency_sweep_enabled);
@@ -594,6 +480,8 @@ void draw_mouse()
         ImGui::SliderFloat("Deadzone (px)", &config.target_deadzone_px, 0.0f, 20.0f, "%.3f");
         ImGui::SliderFloat("Max step (px/frame)", &config.target_max_pixel_step, 0.25f, 120.0f, "%.2f");
         ImGui::SliderFloat("Output scale", &config.target_output_scale, 0.01f, 3.0f, "%.3f");
+        ImGui::SliderFloat("Prediction blend", &config.target_prediction_blend, 0.0f, 0.65f, "%.3f");
+        ImGui::SliderFloat("Max prediction lead (px)", &config.target_prediction_max_lead_px, 0.0f, 40.0f, "%.2f");
         ImGui::Checkbox("Calibrated pixel counts", &config.target_calibrated_pixel_counts_enabled);
         if (!config.target_calibrated_pixel_counts_enabled)
             ImGui::BeginDisabled();
@@ -612,22 +500,12 @@ void draw_mouse()
             config.target_calibrated_pixel_counts_enabled = false;
             config.target_counts_per_pixel_x = 0.0f;
             config.target_counts_per_pixel_y = 0.0f;
+            config.target_prediction_blend = 0.18f;
+            config.target_prediction_max_lead_px = 8.0f;
             OverlayConfig_MarkDirty();
             refreshMouseThread();
         }
 
-        OverlayUI::EndSection();
-    }
-
-    if (OverlayUI::BeginSection("Game Profile", "mouse_section_game_profile"))
-    {
-        drawGameProfileEditor();
-        OverlayUI::EndSection();
-    }
-
-    if (OverlayUI::BeginSection("Manage Profiles", "mouse_section_manage_profiles"))
-    {
-        drawProfileManager();
         OverlayUI::EndSection();
     }
 
@@ -657,9 +535,7 @@ void draw_mouse()
         OverlayUI::EndSection();
     }
 
-    if (prev_fovX != config.fovX ||
-        prev_fovY != config.fovY ||
-        prev_runtime_latency_sweep_enabled != config.runtime_latency_sweep_enabled ||
+    if (prev_runtime_latency_sweep_enabled != config.runtime_latency_sweep_enabled ||
         prev_estimator_mode != config.estimator_mode ||
         prev_kalman_enabled != config.kalman_enabled ||
         prev_kalman_process_noise_position != config.kalman_process_noise_position ||
@@ -683,11 +559,11 @@ void draw_mouse()
         prev_target_calibrated_pixel_counts_enabled != config.target_calibrated_pixel_counts_enabled ||
         prev_target_counts_per_pixel_x != config.target_counts_per_pixel_x ||
         prev_target_counts_per_pixel_y != config.target_counts_per_pixel_y ||
+        prev_target_prediction_blend != config.target_prediction_blend ||
+        prev_target_prediction_max_lead_px != config.target_prediction_max_lead_px ||
         prev_auto_shoot != config.auto_shoot ||
         prev_bScope_multiplier != config.bScope_multiplier)
     {
-        prev_fovX = config.fovX;
-        prev_fovY = config.fovY;
         prev_runtime_latency_sweep_enabled = config.runtime_latency_sweep_enabled;
         prev_estimator_mode = config.estimator_mode;
         prev_kalman_enabled = config.kalman_enabled;
@@ -712,6 +588,8 @@ void draw_mouse()
         prev_target_calibrated_pixel_counts_enabled = config.target_calibrated_pixel_counts_enabled;
         prev_target_counts_per_pixel_x = config.target_counts_per_pixel_x;
         prev_target_counts_per_pixel_y = config.target_counts_per_pixel_y;
+        prev_target_prediction_blend = config.target_prediction_blend;
+        prev_target_prediction_max_lead_px = config.target_prediction_max_lead_px;
         prev_auto_shoot = config.auto_shoot;
         prev_bScope_multiplier = config.bScope_multiplier;
 

@@ -12,8 +12,6 @@ Activate/deactivate,Target,Targeting,Disable Headshot,disable_headshot,true/fals
 Activate/deactivate,Target,Targeting,Auto Aim,auto_aim,true/false,n/a,GUI,Allows target selection/movement logic to act automatically while held conditions are met.,overlay/draw_target.cpp
 Slider,Target,Offsets,Approximate Body Y Offset,body_y_offset,0.05-0.90,n/a,GUI,Vertical aim point used for body-class detections.,overlay/draw_target.cpp
 Slider,Target,Offsets,Approximate Head Y Offset,head_y_offset,0.05-0.55,n/a,GUI,Vertical aim point used for head-class detections.,overlay/draw_target.cpp
-Slider,Mouse,FOV,FOV X,fovX,10-120,n/a,GUI,Horizontal field of view for the mouse controller.,overlay/draw_mouse.cpp
-Slider,Mouse,FOV,FOV Y,fovY,10-120,n/a,GUI,Vertical field of view for the mouse controller.,overlay/draw_mouse.cpp
 Activate/deactivate,Mouse,State Estimator,Runtime latency sweep,runtime_latency_sweep_enabled,true/false,n/a,GUI,Enables side-by-side latency sweep behavior for estimator and PID experiments.,overlay/draw_mouse.cpp
 Activate/deactivate,Mouse,State Estimator,Enable Kalman estimator,kalman_enabled,true/false,n/a,GUI,Enables Kalman filtering for target motion estimation.,overlay/draw_mouse.cpp
 Activate/deactivate,Mouse,State Estimator,Seed velocity on acquire,kalman_velocity_seed_enabled,true/false,n/a,GUI,Seeds velocity from early measurement deltas during acquisition.,overlay/draw_mouse.cpp
@@ -34,14 +32,11 @@ Slider,Mouse,State Estimator,Ego max age (ms),ego_motion_compensation_max_age_ms
 Slider,Mouse,Direct Targeting Movement,Deadzone (px),target_deadzone_px,0.000-20.000,n/a,GUI,Minimum target error radius before direct movement is emitted.,overlay/draw_mouse.cpp
 Slider,Mouse,Direct Targeting Movement,Max step (px/frame),target_max_pixel_step,0.25-120.00,n/a,GUI,Maximum pixel-space movement emitted for one tracker observation.,overlay/draw_mouse.cpp
 Slider,Mouse,Direct Targeting Movement,Output scale,target_output_scale,0.010-3.000,n/a,GUI,Multiplier applied to tracker aim-point error before clamping.,overlay/draw_mouse.cpp
-Activate/deactivate,Mouse,Direct Targeting Movement,Calibrated pixel counts,target_calibrated_pixel_counts_enabled,true/false,n/a,GUI,Uses measured counts-per-pixel gains for direct targeting output instead of FOV/profile conversion when both gains are nonzero.,overlay/draw_mouse.cpp
+Slider,Mouse,Direct Targeting Movement,Prediction blend,target_prediction_blend,0.000-0.650,n/a,GUI,Fraction of bounded short-horizon predicted aim mixed into the observed tracker aim point.,overlay/draw_mouse.cpp
+Slider,Mouse,Direct Targeting Movement,Max prediction lead (px),target_prediction_max_lead_px,0.00-40.00,n/a,GUI,Maximum pixel distance the mouse path may lead the current tracker aim point.,overlay/draw_mouse.cpp
+Activate/deactivate,Mouse,Direct Targeting Movement,Calibrated pixel counts,target_calibrated_pixel_counts_enabled,true/false,n/a,GUI,Uses measured counts-per-pixel gains for direct targeting output instead of the default 1:1 pixel-count fallback.,overlay/draw_mouse.cpp
 Slider,Mouse,Direct Targeting Movement,Counts / px X,target_counts_per_pixel_x,-50.0000-50.0000,n/a,GUI,Horizontal calibrated mouse counts per screen-space pixel.,overlay/draw_mouse.cpp
 Slider,Mouse,Direct Targeting Movement,Counts / px Y,target_counts_per_pixel_y,-50.0000-50.0000,n/a,GUI,Vertical calibrated mouse counts per screen-space pixel.,overlay/draw_mouse.cpp
-Slider,Mouse,Game Profile,Sensitivity,Games.<profile>.sens,0.0010-10.0000,profile/local,GUI,Editable for custom profiles. UNIFIED is shown read-only.,overlay/draw_mouse.cpp
-Slider,Mouse,Game Profile,Yaw,Games.<profile>.yaw,0.0010-0.1000,profile/local,GUI,Horizontal degree-to-count conversion for a custom profile.,overlay/draw_mouse.cpp
-Slider,Mouse,Game Profile,Pitch,Games.<profile>.pitch,0.0010-0.1000,profile/local,GUI,Vertical degree-to-count conversion for a custom profile.,overlay/draw_mouse.cpp
-Activate/deactivate,Mouse,Game Profile,FOV Scaled,Games.<profile>.fovScaled,true/false,profile/local,GUI,"When enabled, the profile also uses a Base FOV value.",overlay/draw_mouse.cpp
-Slider,Mouse,Game Profile,Base FOV,Games.<profile>.baseFOV,10.0-180.0,profile/local,GUI,Shown only when FOV Scaled is enabled on a custom profile.,overlay/draw_mouse.cpp
 Activate/deactivate,Mouse,Auto Shoot,Auto Shoot,auto_shoot,true/false,n/a,GUI,Enables automatic shooting behavior.,overlay/draw_mouse.cpp
 Slider,Mouse,Auto Shoot,bScope Multiplier,bScope_multiplier,0.5-2.0,n/a,GUI,Multiplier used by auto-shoot scope timing/behavior. Disabled in UI until Auto Shoot is on.,overlay/draw_mouse.cpp
 Activate/deactivate,Mouse,Input Method,Arduino 16-bit Mouse,arduino_16_bit_mouse,true/false,n/a,GUI,Arduino input only. Sends wider mouse movement values.,overlay/draw_mouse.cpp
@@ -106,8 +101,6 @@ Combo,Capture,Monitor Capture,Capture monitor,monitor_idx,monitor index,n/a,GUI,
 Combo,Capture,Virtual Camera,Virtual camera,virtual_camera_name,available cameras,n/a,GUI,Filtered list of DirectShow video input devices.,overlay/draw_capture.cpp
 Input text,Capture,UDP Capture,UDP IP,udp_ip,IPv4/string,n/a,GUI,Applied with the Apply UDP Settings button.,overlay/draw_capture.cpp
 Input int,Capture,UDP Capture,UDP Port,udp_port,1-65535,n/a,GUI,Applied with the Apply UDP Settings button.,overlay/draw_capture.cpp
-Combo,Mouse,Game Profile,Active Game Profile,active_game,profile names,n/a,GUI,Selects the active game profile.,overlay/draw_mouse.cpp
-Add/delete,Mouse,Manage Profiles,Game profile rows,Games.<profile>,"name = sens,yaw,pitch[,true,baseFOV]",profile/local,GUI,Custom profiles can be added/deleted; UNIFIED is read-only.,overlay/draw_mouse.cpp
 Combo,Mouse,Input Method,Mouse Input Method,input_method,"WIN32, GHUB, RAZER, DIRECT, ARDUINO, TEENSY41, TEENSY41_HID, KMBOX_NET, KMBOX_A, MAKCU",n/a,GUI,Changes active mouse backend.,overlay/draw_mouse.cpp
 Combo,Mouse,Input Method,Arduino/Teensy Port,arduino_port,COM1-COM30,n/a,GUI,Arduino and Teensy 4.1 serial input.,overlay/draw_mouse.cpp
 Combo,Mouse,Input Method,Arduino/Teensy Baudrate,arduino_baudrate,9600-115200,n/a,GUI,Arduino and Teensy 4.1 serial input.,overlay/draw_mouse.cpp
@@ -143,7 +136,6 @@ Config-only setting,,System reserves,systemMemoryReserveMB,systemMemoryReserveMB
 Config-only setting,,Custom classes,class_player,class_player,integer class id,0,Config only,Detector class id treated as player/body. Not exposed in the GUI.,config/config.cpp
 Config-only setting,,Custom classes,class_head,class_head,integer class id,1,Config only,Detector class id treated as head. Not exposed in the GUI.,config/config.cpp
 Config-only setting,,Debug,show_fps,show_fps,true/false,false,Config only,Legacy/debug FPS display flag. Saved in config.ini but not exposed in the current GUI.,config/config.cpp
-Config-only setting,,Game profiles,Games.UNIFIED,Games.UNIFIED,"sens,yaw,pitch[,true,baseFOV]","1.00,0.02,0.02",Config only,Default profile row used for degree-to-count conversion. UNIFIED is shown read-only in the GUI.,config/config.cpp
 Config-only setting,,Advanced mouse,minSpeedMultiplier,minSpeedMultiplier,float,0.1,Loadable hidden key,Legacy minimum movement speed multiplier. Loadable from config.ini if added manually; saveConfig does not currently emit it.,config/config.cpp
 Config-only setting,,Advanced mouse,maxSpeedMultiplier,maxSpeedMultiplier,float,0.1,Loadable hidden key,Legacy maximum movement speed multiplier. Loadable from config.ini if added manually; saveConfig does not currently emit it.,config/config.cpp
 Config-only setting,,Advanced mouse,predictionInterval,predictionInterval,seconds,0.01,Loadable hidden key,Prediction sample interval used by legacy/auxiliary prediction logic. Loadable from config.ini if added manually; saveConfig does not currently emit it.,config/config.cpp

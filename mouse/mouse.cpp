@@ -50,15 +50,11 @@ aim::EgoMotionSettings buildEgoMotionSettingsFromConfig()
 
 MouseThread::MouseThread(
     int resolution,
-    int fovX,
-    int fovY,
     bool auto_shoot,
     float bScope_multiplier,
     IMouseInput* mouseInputDevice)
     : screen_width(resolution),
     screen_height(resolution),
-    fov_x(fovX),
-    fov_y(fovY),
     center_x(resolution / 2.0),
     center_y(resolution / 2.0),
     auto_shoot(auto_shoot),
@@ -79,6 +75,7 @@ MouseThread::MouseThread(
     targetKalman.reset();
     lastKalmanTelemetry = {};
     lastPredictionLookaheadSec = 0.0;
+    directMovementTrackId = -1;
     egoMotionCompensator.setSettings(buildEgoMotionSettingsFromConfig());
 
     moveWorker = std::thread(&MouseThread::moveWorkerLoop, this);
@@ -86,14 +83,11 @@ MouseThread::MouseThread(
 
 void MouseThread::updateConfig(
     int resolution,
-    int fovX,
-    int fovY,
     bool auto_shoot,
     float bScope_multiplier
 )
 {
     screen_width = screen_height = resolution;
-    fov_x = fovX;  fov_y = fovY;
     this->auto_shoot = auto_shoot;
     this->bScope_multiplier = bScope_multiplier;
 
@@ -105,6 +99,7 @@ void MouseThread::updateConfig(
     targetKalman.reset();
     lastKalmanTelemetry = {};
     lastPredictionLookaheadSec = 0.0;
+    directMovementTrackId = -1;
     resetEgoMotionCompensation();
 
     resetDirectMovement();
@@ -132,6 +127,7 @@ void MouseThread::updateDetectionGeometry(int width, int height)
     targetKalman.reset();
     lastKalmanTelemetry = {};
     lastPredictionLookaheadSec = 0.0;
+    directMovementTrackId = -1;
     resetEgoMotionCompensation();
 
     resetDirectMovement();
@@ -219,33 +215,16 @@ void MouseThread::appendWindDebugStep(int dx, int dy)
 
     {
         std::lock_guard<std::recursive_mutex> cfgLock(configMutex);
-        const Config::GameProfile* gpPtr = nullptr;
-
-        auto activeIt = config.game_profiles.find(config.active_game);
-        if (activeIt != config.game_profiles.end())
-            gpPtr = &activeIt->second;
-        else
+        const double countsPerPixelX = static_cast<double>(config.target_counts_per_pixel_x);
+        const double countsPerPixelY = static_cast<double>(config.target_counts_per_pixel_y);
+        if (config.target_calibrated_pixel_counts_enabled &&
+            std::isfinite(countsPerPixelX) &&
+            std::isfinite(countsPerPixelY) &&
+            std::abs(countsPerPixelX) > 1e-9 &&
+            std::abs(countsPerPixelY) > 1e-9)
         {
-            auto unifiedIt = config.game_profiles.find("UNIFIED");
-            if (unifiedIt != config.game_profiles.end())
-                gpPtr = &unifiedIt->second;
-        }
-
-        if (gpPtr && gpPtr->sens != 0.0 && gpPtr->yaw != 0.0 && gpPtr->pitch != 0.0)
-        {
-            const double fovNow = std::max(1.0, fov_x);
-            const double fovScale = (gpPtr->fovScaled && gpPtr->baseFOV > 1.0) ? (fovNow / gpPtr->baseFOV) : 1.0;
-            const double degX = static_cast<double>(dx) * gpPtr->sens * gpPtr->yaw * fovScale;
-            const double degY = static_cast<double>(dy) * gpPtr->sens * gpPtr->pitch * fovScale;
-
-            const double degPerPxX = fov_x / std::max(1.0, screen_width);
-            const double degPerPxY = fov_y / std::max(1.0, screen_height);
-
-            if (std::abs(degPerPxX) > 1e-8 && std::abs(degPerPxY) > 1e-8)
-            {
-                deltaPxX = degX / degPerPxX;
-                deltaPxY = degY / degPerPxY;
-            }
+            deltaPxX = static_cast<double>(dx) / countsPerPixelX;
+            deltaPxY = static_cast<double>(dy) / countsPerPixelY;
         }
     }
 
@@ -345,6 +324,43 @@ std::pair<double, double> MouseThread::predict_target_position(double target_x, 
     return { predictedX, predictedY };
 }
 
+std::pair<double, double> MouseThread::blendPredictedAimPoint(double pivotX, double pivotY, double confidence)
+{
+    if (!std::isfinite(pivotX) || !std::isfinite(pivotY))
+        return { pivotX, pivotY };
+
+    if (!config.kalman_enabled)
+        return { pivotX, pivotY };
+
+    target_detected.store(true);
+    const auto predicted = predict_target_position(pivotX, pivotY);
+    if (!std::isfinite(predicted.first) || !std::isfinite(predicted.second))
+        return { pivotX, pivotY };
+
+    double leadX = predicted.first - pivotX;
+    double leadY = predicted.second - pivotY;
+    const double maxLead = std::clamp(static_cast<double>(config.target_prediction_max_lead_px), 0.0, 40.0);
+    if (maxLead <= 1e-6)
+        return { pivotX, pivotY };
+
+    const double leadMagnitude = std::hypot(leadX, leadY);
+    if (leadMagnitude > maxLead && leadMagnitude > 1e-9)
+    {
+        const double scale = maxLead / leadMagnitude;
+        leadX *= scale;
+        leadY *= scale;
+    }
+
+    const double blend = std::clamp(static_cast<double>(config.target_prediction_blend), 0.0, 0.65);
+    const double confidenceGate = std::clamp((confidence - 0.30) / 0.55, 0.0, 1.0);
+    const double effectiveBlend = blend * confidenceGate;
+
+    return {
+        pivotX + leadX * effectiveBlend,
+        pivotY + leadY * effectiveBlend
+    };
+}
+
 void MouseThread::sendMovementToDriver(int dx, int dy)
 {
     if (dx == 0 && dy == 0)
@@ -399,19 +415,7 @@ std::pair<double, double> MouseThread::pixelDeltaToCounts(double pixelDx, double
         return { pixelDx * countsPerPixelX, pixelDy * countsPerPixelY };
     }
 
-    const double degPerPxX = fov_x / std::max(1.0, screen_width);
-    const double degPerPxY = fov_y / std::max(1.0, screen_height);
-    const double degX = pixelDx * degPerPxX;
-    const double degY = pixelDy * degPerPxY;
-
-    try
-    {
-        return config.degToCounts(degX, degY, fov_x);
-    }
-    catch (...)
-    {
-        return { 0.0, 0.0 };
-    }
+    return { pixelDx, pixelDy };
 }
 
 void MouseThread::recordEgoMotionDelta(double pixelDx, double pixelDy, std::chrono::steady_clock::time_point timestamp)
@@ -564,12 +568,7 @@ bool MouseThread::check_target_in_scope(double target_x, double target_y, double
 
 void MouseThread::moveMouse(const BoxTarget& target)
 {
-    moveMousePivot(
-        target.x + target.w / 2.0,
-        target.y + target.h / 2.0,
-        target.w,
-        target.h,
-        1.0);
+    moveMouseTarget(target);
 }
 
 void MouseThread::moveMousePivot(double pivotX, double pivotY)
@@ -581,8 +580,8 @@ void MouseThread::moveMousePivot(double pivotX, double pivotY, double targetWidt
 {
     (void)targetWidth;
     (void)targetHeight;
-    (void)confidence;
-    dispatchTargetMovement(pivotX, pivotY);
+    const auto blendedAim = blendPredictedAimPoint(pivotX, pivotY, confidence);
+    dispatchTargetMovement(blendedAim.first, blendedAim.second);
 }
 
 void MouseThread::moveMousePivot(
@@ -596,8 +595,26 @@ void MouseThread::moveMousePivot(
 {
     (void)targetWidth;
     (void)targetHeight;
-    (void)confidence;
-    dispatchTargetMovement(pivotX, pivotY, targetOffsetX, targetOffsetY);
+    const double observedX = pivotX + (std::isfinite(targetOffsetX) ? targetOffsetX : 0.0);
+    const double observedY = pivotY + (std::isfinite(targetOffsetY) ? targetOffsetY : 0.0);
+    const auto blendedAim = blendPredictedAimPoint(observedX, observedY, confidence);
+    dispatchTargetMovement(blendedAim.first, blendedAim.second);
+}
+
+void MouseThread::moveMouseTarget(const BoxTarget& target)
+{
+    if (target.trackId != directMovementTrackId)
+    {
+        resetPrediction();
+        directMovementTrackId = target.trackId;
+    }
+
+    moveMousePivot(
+        target.smoothX,
+        target.smoothY,
+        target.w,
+        target.h,
+        target.confidence);
 }
 
 void MouseThread::updateLastAppliedMouseDelta(double dx, double dy)
@@ -646,6 +663,8 @@ void MouseThread::resetPrediction()
     targetKalman.reset();
     lastKalmanTelemetry = {};
     lastPredictionLookaheadSec = 0.0;
+    directMovementTrackId = -1;
+    resetDirectMovement();
     resetEgoMotionCompensation();
     target_detected.store(false);
 }
@@ -655,7 +674,7 @@ void MouseThread::setTargetDetected(bool detected)
     const bool wasDetected = target_detected.exchange(detected);
     if (!detected && wasDetected)
     {
-        resetDirectMovement();
+        resetPrediction();
     }
 }
 

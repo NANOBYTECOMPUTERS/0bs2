@@ -68,6 +68,8 @@ class ConfigGuiControlContractTests(unittest.TestCase):
             "target_calibrated_pixel_counts_enabled",
             "target_counts_per_pixel_x",
             "target_counts_per_pixel_y",
+            "target_prediction_blend",
+            "target_prediction_max_lead_px",
         ):
             self.assertIn(key, config_h)
             self.assertIn(key, config_cpp)
@@ -76,10 +78,26 @@ class ConfigGuiControlContractTests(unittest.TestCase):
 
         self.assertIn('OverlayUI::BeginSection("Direct Targeting Movement"', draw_mouse)
         self.assertIn('ImGui::SliderFloat("Max step (px/frame)"', draw_mouse)
+        self.assertIn('ImGui::SliderFloat("Prediction blend"', draw_mouse)
+        self.assertIn('ImGui::SliderFloat("Max prediction lead (px)"', draw_mouse)
         self.assertIn('ImGui::Checkbox("Calibrated pixel counts"', draw_mouse)
         self.assertIn("dispatchTargetMovement(", mouse_cpp)
+        self.assertIn("blendPredictedAimPoint(", mouse_cpp)
         self.assertIn("pixelDeltaToCounts(pixelDx, pixelDy)", mouse_cpp)
         self.assertIn("config.target_calibrated_pixel_counts_enabled", mouse_cpp)
+        self.assertIn("return { pixelDx, pixelDy };", mouse_cpp)
+        self.assertNotIn('OverlayUI::BeginSection("FOV"', draw_mouse)
+        self.assertNotIn('ImGui::SliderInt("FOV X"', draw_mouse)
+        self.assertNotIn('ImGui::SliderInt("FOV Y"', draw_mouse)
+        self.assertNotIn('ImGui::Checkbox("FOV Scaled"', draw_mouse)
+        self.assertNotIn('ImGui::SliderFloat("Base FOV"', draw_mouse)
+        self.assertNotIn('OverlayUI::BeginSection("Game Profile"', draw_mouse)
+        self.assertNotIn('OverlayUI::BeginSection("Manage Profiles"', draw_mouse)
+        self.assertNotIn('ImGui::SliderFloat("Yaw"', draw_mouse)
+        self.assertNotIn('ImGui::SliderFloat("Pitch"', draw_mouse)
+        self.assertNotIn("GameProfile", config_h)
+        self.assertNotIn("degToCounts", config_h + config_cpp)
+        self.assertNotIn("active_game", config_h + config_cpp + generator)
 
     def test_target_offset_controls_share_tracker_clamp_ranges(self):
         config_h = self.read("config/config.h")

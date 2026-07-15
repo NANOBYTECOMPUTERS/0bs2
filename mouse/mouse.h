@@ -30,8 +30,6 @@ class MouseThread
 private:
     double screen_width;
     double screen_height;
-    double fov_x;
-    double fov_y;
     double center_x;
     double center_y;
     bool   auto_shoot;
@@ -68,6 +66,7 @@ private:
     aim::AimKalman2D              targetKalman;
     aim::AimKalmanTelemetry       lastKalmanTelemetry;
     double                        lastPredictionLookaheadSec = 0.0;
+    int                           directMovementTrackId = -1;
     aim::EgoMotionCompensator     egoMotionCompensator;
     mutable std::mutex            egoMotionVelocityMutex;
     std::chrono::steady_clock::time_point egoMotionVelocityLastTimestamp{};
@@ -122,14 +121,13 @@ private:
 
     double currentDetectionDelaySec() const;
     double currentPredictionLookaheadSec(double detectionDelaySec) const;
+    std::pair<double, double> blendPredictedAimPoint(double pivotX, double pivotY, double confidence);
 
 public:
     std::mutex input_method_mutex;
 
     MouseThread(
         int  resolution,
-        int  fovX,
-        int  fovY,
         bool auto_shoot,
         float bScope_multiplier,
         IMouseInput* mouseInputDevice = nullptr
@@ -138,8 +136,6 @@ public:
 
     void updateConfig(
         int resolution,
-        int fovX,
-        int fovY,
         bool auto_shoot,
         float bScope_multiplier
     );
@@ -155,6 +151,7 @@ public:
         double confidence,
         double targetOffsetX,
         double targetOffsetY);
+    void moveMouseTarget(const BoxTarget& target);
     void clearQueuedMoves();
     std::pair<double, double> consumeEgoMotionCompensation(
         std::chrono::steady_clock::time_point start,

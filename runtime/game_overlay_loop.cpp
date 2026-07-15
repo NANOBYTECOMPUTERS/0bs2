@@ -477,30 +477,6 @@ static AimSimHistorySample aim_sim_sample_history(const std::deque<AimSimHistory
     return history.back();
 }
 
-static double aim_sim_calculate_speed_multiplier(double distance, double maxDistance)
-{
-    // Legacy prediction compatibility: retained for aim-sim and overlay demo parity.
-    // Removal requires a behavior baseline that proves parity.
-    const double snapRadius = std::max(0.0, static_cast<double>(config.snapRadius));
-    const double nearRadius = std::max(1e-3, static_cast<double>(config.nearRadius));
-    const double curveExp = std::max(0.1, static_cast<double>(config.speedCurveExponent));
-    const double minSpeed = static_cast<double>(config.minSpeedMultiplier);
-    const double maxSpeed = static_cast<double>(config.maxSpeedMultiplier);
-
-    if (distance < snapRadius)
-        return minSpeed * config.snapBoostFactor;
-
-    if (distance < nearRadius)
-    {
-        const double t = distance / nearRadius;
-        const double curve = 1.0 - std::pow(1.0 - t, curveExp);
-        return minSpeed + (maxSpeed - minSpeed) * curve;
-    }
-
-    const double norm = std::clamp(distance / std::max(1e-6, maxDistance), 0.0, 1.0);
-    return minSpeed + (maxSpeed - minSpeed) * norm;
-}
-
 static void aim_sim_enqueue_move(AimSimulationState& s, double executeAtSec, int mx, int my)
 {
     if (mx == 0 && my == 0)
@@ -625,38 +601,42 @@ static void aim_sim_enqueue_relative_path(AimSimulationState& s, double executeA
     }
 }
 
-static AimSimVec2 aim_sim_counts_to_world_delta(int mx, int my, int detRes, double scaleToCtrlX, double scaleToCtrlY)
+static std::pair<double, double> aim_sim_pixel_delta_to_counts(double pixelDx, double pixelDy)
 {
-    if (detRes <= 0 || scaleToCtrlX <= 1e-8 || scaleToCtrlY <= 1e-8)
-        return {};
-
-    const Config::GameProfile* gpPtr = nullptr;
-    auto activeIt = config.game_profiles.find(config.active_game);
-    if (activeIt != config.game_profiles.end())
-        gpPtr = &activeIt->second;
-    else
+    const double countsPerPixelX = static_cast<double>(config.target_counts_per_pixel_x);
+    const double countsPerPixelY = static_cast<double>(config.target_counts_per_pixel_y);
+    if (config.target_calibrated_pixel_counts_enabled &&
+        std::isfinite(pixelDx) &&
+        std::isfinite(pixelDy) &&
+        std::isfinite(countsPerPixelX) &&
+        std::isfinite(countsPerPixelY) &&
+        std::abs(countsPerPixelX) > 1e-9 &&
+        std::abs(countsPerPixelY) > 1e-9)
     {
-        auto unifiedIt = config.game_profiles.find("UNIFIED");
-        if (unifiedIt != config.game_profiles.end())
-            gpPtr = &unifiedIt->second;
+        return { pixelDx * countsPerPixelX, pixelDy * countsPerPixelY };
     }
-    if (!gpPtr)
+
+    return { pixelDx, pixelDy };
+}
+
+static AimSimVec2 aim_sim_counts_to_world_delta(int mx, int my, double scaleToCtrlX, double scaleToCtrlY)
+{
+    if (scaleToCtrlX <= 1e-8 || scaleToCtrlY <= 1e-8)
         return {};
-    const auto& gp = *gpPtr;
 
-    if (gp.sens == 0.0 || gp.yaw == 0.0 || gp.pitch == 0.0)
-        return {};
-
-    const double fovNow = std::max(1.0, static_cast<double>(config.fovX));
-    const double fovScale = (gp.fovScaled && gp.baseFOV > 1.0) ? (fovNow / gp.baseFOV) : 1.0;
-    const double degX = static_cast<double>(mx) * gp.sens * gp.yaw * fovScale;
-    const double degY = static_cast<double>(my) * gp.sens * gp.pitch * fovScale;
-
-    const double degPerPxX = fovNow / static_cast<double>(detRes);
-    const double degPerPxY = std::max(1e-6, static_cast<double>(config.fovY) / static_cast<double>(detRes));
-
-    const double controlPxX = degX / degPerPxX;
-    const double controlPxY = degY / degPerPxY;
+    double controlPxX = static_cast<double>(mx);
+    double controlPxY = static_cast<double>(my);
+    const double countsPerPixelX = static_cast<double>(config.target_counts_per_pixel_x);
+    const double countsPerPixelY = static_cast<double>(config.target_counts_per_pixel_y);
+    if (config.target_calibrated_pixel_counts_enabled &&
+        std::isfinite(countsPerPixelX) &&
+        std::isfinite(countsPerPixelY) &&
+        std::abs(countsPerPixelX) > 1e-9 &&
+        std::abs(countsPerPixelY) > 1e-9)
+    {
+        controlPxX /= countsPerPixelX;
+        controlPxY /= countsPerPixelY;
+    }
 
     AimSimVec2 deltaWorld;
     deltaWorld.x = controlPxX / scaleToCtrlX;
@@ -838,23 +818,36 @@ static void aim_sim_step(AimSimulationState& s, double dtSec, int panelW, int pa
 
     if (distancePx > 0.0)
     {
-        const double degPerPxX = static_cast<double>(config.fovX) / static_cast<double>(detRes);
-        const double degPerPxY = static_cast<double>(config.fovY) / static_cast<double>(detRes);
-        const double maxDistanceCtrl = std::hypot(static_cast<double>(detRes), static_cast<double>(detRes)) * 0.5;
-        const double speed = aim_sim_calculate_speed_multiplier(distancePx, maxDistanceCtrl);
-        const auto countsPair = config.degToCounts(offsetX * degPerPxX, offsetY * degPerPxY, config.fovX);
+        double pixelDx = offsetX;
+        double pixelDy = offsetY;
+        const double deadzone = std::clamp(static_cast<double>(config.target_deadzone_px), 0.0, 20.0);
+        if (distancePx <= deadzone)
+        {
+            pixelDx = 0.0;
+            pixelDy = 0.0;
+        }
+        else
+        {
+            const double outputScale = std::clamp(static_cast<double>(config.target_output_scale), 0.01, 3.0);
+            const double maxStep = std::clamp(static_cast<double>(config.target_max_pixel_step), 0.25, 240.0);
+            pixelDx *= outputScale;
+            pixelDy *= outputScale;
 
-        double corr = 1.0;
-        const double fps = 1.0 / std::max(1e-8, dtSec);
-        if (fps > 30.0)
-            corr = 30.0 / fps;
+            const double stepLength = std::hypot(pixelDx, pixelDy);
+            if (stepLength > maxStep && stepLength > 1e-9)
+            {
+                const double scale = maxStep / stepLength;
+                pixelDx *= scale;
+                pixelDy *= scale;
+            }
+        }
 
-        const double moveX = countsPair.first * speed * corr;
-        const double moveY = countsPair.second * speed * corr;
+        const auto countsPair = aim_sim_pixel_delta_to_counts(pixelDx, pixelDy);
 
-        const int mx = static_cast<int>(moveX);
-        const int my = static_cast<int>(moveY);
-        aim_sim_enqueue_relative_path(s, s.simTimeSec + inputMs * 0.001, mx, my);
+        const int mx = static_cast<int>(std::round(countsPair.first));
+        const int my = static_cast<int>(std::round(countsPair.second));
+        if (mx != 0 || my != 0)
+            aim_sim_enqueue_relative_path(s, s.simTimeSec + inputMs * 0.001, mx, my);
     }
 
     while (!s.queuedMoves.empty() && s.queuedMoves.front().executeAtSec <= s.simTimeSec)
@@ -862,7 +855,7 @@ static void aim_sim_step(AimSimulationState& s, double dtSec, int panelW, int pa
         const AimSimQueuedMove m = s.queuedMoves.front();
         s.queuedMoves.pop_front();
 
-        const AimSimVec2 worldDelta = aim_sim_counts_to_world_delta(m.mx, m.my, detRes, scaleToCtrlX, scaleToCtrlY);
+        const AimSimVec2 worldDelta = aim_sim_counts_to_world_delta(m.mx, m.my, scaleToCtrlX, scaleToCtrlY);
         s.aimPos.x += worldDelta.x;
         s.aimPos.y += worldDelta.y;
 

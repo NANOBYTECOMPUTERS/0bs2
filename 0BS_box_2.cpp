@@ -221,8 +221,6 @@ static void RefreshRuntimeAfterConfigLoadUnlocked(const Config& previousConfig)
     {
         globalMouseThread->updateConfig(
             config.detection_resolution,
-            config.fovX,
-            config.fovY,
             config.auto_shoot,
             config.bScope_multiplier);
     }
@@ -403,8 +401,6 @@ int main()
 
         MouseThread mouseThread(
             config.detection_resolution,
-            config.fovX,
-            config.fovY,
             config.auto_shoot,
             config.bScope_multiplier,
             activeMouseInputOwner.get()

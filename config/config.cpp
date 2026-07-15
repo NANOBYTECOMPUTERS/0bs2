@@ -78,8 +78,6 @@ bool Config::loadConfig(const std::string& filename)
         auto_aim = false;
 
         // Mouse
-        fovX = 106;
-        fovY = 74;
         minSpeedMultiplier = 0.1f;
         maxSpeedMultiplier = 0.1f;
 
@@ -128,6 +126,8 @@ bool Config::loadConfig(const std::string& filename)
         target_calibrated_pixel_counts_enabled = false;
         target_counts_per_pixel_x = 0.0f;
         target_counts_per_pixel_y = 0.0f;
+        target_prediction_blend = 0.18f;
+        target_prediction_max_lead_px = 8.0f;
 
         // Tracker identity pipeline
         tracker_v2_enabled = true;
@@ -287,18 +287,6 @@ bool Config::loadConfig(const std::string& filename)
         debug_log_file_enabled = false;
         debug_log_file_path = "logs/0BS.log";
 
-        // Game profiles
-        game_profiles.clear();
-        GameProfile uni;
-        uni.name = "UNIFIED";
-        uni.sens = 1.0;
-        uni.yaw = 0.022;
-        uni.pitch = uni.yaw;
-        uni.fovScaled = false;
-        uni.baseFOV = 0.0;
-        game_profiles[uni.name] = uni;
-        active_game = uni.name;
-
         saveConfig(target);
         return true;
     }
@@ -332,55 +320,6 @@ bool Config::loadConfig(const std::string& filename)
         {
             return ini.GetDoubleValue("", key, defval);
         };
-
-    game_profiles.clear();
-
-    CSimpleIniA::TNamesDepend keys;
-    ini.GetAllKeys("Games", keys);
-
-    for (const auto& k : keys)
-    {
-        std::string name = k.pItem;
-        std::string val = ini.GetValue("Games", k.pItem, "");
-        auto parts = splitString(val, ',');
-
-        try
-        {
-            if (parts.size() < 2)
-                throw std::runtime_error("not enough values");
-
-            GameProfile gp;
-            gp.name = name;
-            gp.sens = std::stod(parts[0]);
-            gp.yaw = std::stod(parts[1]);
-            gp.pitch = parts.size() > 2 ? std::stod(parts[2]) : gp.yaw;
-            gp.fovScaled = parts.size() > 3 && (parts[3] == "true" || parts[3] == "1");
-            gp.baseFOV = parts.size() > 4 ? std::stod(parts[4]) : 0.0;
-
-            game_profiles[name] = gp;
-        }
-        catch (const std::exception& e)
-        {
-            std::cerr << "[Config] Failed to parse profile: " << name
-                << " = " << val << " (" << e.what() << ")" << std::endl;
-        }
-    }
-
-    if (!game_profiles.count("UNIFIED"))
-    {
-        GameProfile uni;
-        uni.name = "UNIFIED";
-        uni.sens = 1.0;
-        uni.yaw = 0.022;
-        uni.pitch = uni.yaw;
-        uni.fovScaled = false;
-        uni.baseFOV = 0.0;
-        game_profiles[uni.name] = uni;
-    }
-
-    active_game = get_string("active_game", active_game);
-    if (!game_profiles.count(active_game) && !game_profiles.empty())
-        active_game = game_profiles.begin()->first;
 
     // Capture
     capture_method = get_string("capture_method", "duplication_api");
@@ -416,8 +355,6 @@ bool Config::loadConfig(const std::string& filename)
     auto_aim = get_bool("auto_aim", false);
 
     // Mouse
-    fovX = get_long("fovX", 106);
-    fovY = get_long("fovY", 74);
     minSpeedMultiplier = (float)get_double("minSpeedMultiplier", 0.1);
     maxSpeedMultiplier = (float)get_double("maxSpeedMultiplier", 0.1);
 
@@ -466,6 +403,8 @@ bool Config::loadConfig(const std::string& filename)
     target_calibrated_pixel_counts_enabled = get_bool("target_calibrated_pixel_counts_enabled", false);
     target_counts_per_pixel_x = (float)get_double("target_counts_per_pixel_x", 0.0);
     target_counts_per_pixel_y = (float)get_double("target_counts_per_pixel_y", 0.0);
+    target_prediction_blend = (float)get_double("target_prediction_blend", 0.18);
+    target_prediction_max_lead_px = (float)get_double("target_prediction_max_lead_px", 8.0);
 
     // Tracker identity pipeline
     tracker_v2_enabled = get_bool("tracker_v2_enabled", true);
@@ -678,6 +617,10 @@ bool Config::loadConfig(const std::string& filename)
     if (target_counts_per_pixel_x > 50.0f) target_counts_per_pixel_x = 50.0f;
     if (target_counts_per_pixel_y < -50.0f) target_counts_per_pixel_y = -50.0f;
     if (target_counts_per_pixel_y > 50.0f) target_counts_per_pixel_y = 50.0f;
+    if (target_prediction_blend < 0.0f) target_prediction_blend = 0.0f;
+    if (target_prediction_blend > 0.65f) target_prediction_blend = 0.65f;
+    if (target_prediction_max_lead_px < 0.0f) target_prediction_max_lead_px = 0.0f;
+    if (target_prediction_max_lead_px > 40.0f) target_prediction_max_lead_px = 40.0f;
     if (tracker_v2_high_confidence < 0.0f) tracker_v2_high_confidence = 0.0f;
     if (tracker_v2_high_confidence > 1.0f) tracker_v2_high_confidence = 1.0f;
     if (tracker_v2_new_track_confidence < 0.0f) tracker_v2_new_track_confidence = 0.0f;
@@ -759,8 +702,6 @@ bool Config::loadConfigMerged(const std::string& filename)
     MERGE_FIELD("head_y_offset", head_y_offset);
     MERGE_FIELD("auto_aim", auto_aim);
 
-    MERGE_FIELD("fovX", fovX);
-    MERGE_FIELD("fovY", fovY);
     MERGE_FIELD("minSpeedMultiplier", minSpeedMultiplier);
     MERGE_FIELD("maxSpeedMultiplier", maxSpeedMultiplier);
     MERGE_FIELD("predictionInterval", predictionInterval);
@@ -805,6 +746,8 @@ bool Config::loadConfigMerged(const std::string& filename)
     MERGE_FIELD("target_calibrated_pixel_counts_enabled", target_calibrated_pixel_counts_enabled);
     MERGE_FIELD("target_counts_per_pixel_x", target_counts_per_pixel_x);
     MERGE_FIELD("target_counts_per_pixel_y", target_counts_per_pixel_y);
+    MERGE_FIELD("target_prediction_blend", target_prediction_blend);
+    MERGE_FIELD("target_prediction_max_lead_px", target_prediction_max_lead_px);
 
     MERGE_FIELD("tracker_v2_enabled", tracker_v2_enabled);
     MERGE_FIELD("tracker_v2_high_confidence", tracker_v2_high_confidence);
@@ -930,20 +873,7 @@ bool Config::loadConfigMerged(const std::string& filename)
     MERGE_FIELD("debug_log_file_enabled", debug_log_file_enabled);
     MERGE_FIELD("debug_log_file_path", debug_log_file_path);
 
-    if (hasKey("active_game"))
-        active_game = loaded.active_game;
-
 #undef MERGE_FIELD
-
-    CSimpleIniA::TNamesDepend gameKeys;
-    ini.GetAllKeys("Games", gameKeys);
-    for (const auto& k : gameKeys)
-    {
-        std::string name = k.pItem;
-        auto it = loaded.game_profiles.find(name);
-        if (it != loaded.game_profiles.end())
-            game_profiles[name] = it->second;
-    }
 
     config_path = loaded.config_path;
     return validate();
@@ -1038,8 +968,6 @@ bool Config::saveConfig(const std::string& filename)
 
     // Mouse
     file << "# Mouse move\n"
-        << "fovX = " << fovX << "\n"
-        << "fovY = " << fovY << "\n"
         << "prediction_futurePositions = " << prediction_futurePositions << "\n"
         << "draw_futurePositions = " << (draw_futurePositions ? "true" : "false") << "\n"
         << "runtime_latency_sweep_enabled = " << (runtime_latency_sweep_enabled ? "true" : "false") << "\n"
@@ -1072,7 +1000,10 @@ bool Config::saveConfig(const std::string& filename)
         << "target_calibrated_pixel_counts_enabled = " << (target_calibrated_pixel_counts_enabled ? "true" : "false") << "\n"
         << std::fixed << std::setprecision(4)
         << "target_counts_per_pixel_x = " << target_counts_per_pixel_x << "\n"
-        << "target_counts_per_pixel_y = " << target_counts_per_pixel_y << "\n\n";
+        << "target_counts_per_pixel_y = " << target_counts_per_pixel_y << "\n"
+        << std::fixed << std::setprecision(3)
+        << "target_prediction_blend = " << target_prediction_blend << "\n"
+        << "target_prediction_max_lead_px = " << target_prediction_max_lead_px << "\n\n";
 
     file << "# Tracker identity pipeline\n"
         << "tracker_v2_enabled = " << (tracker_v2_enabled ? "true" : "false") << "\n"
@@ -1243,41 +1174,6 @@ bool Config::saveConfig(const std::string& filename)
         << "debug_log_file_enabled = " << (debug_log_file_enabled ? "true" : "false") << "\n"
         << "debug_log_file_path = " << debug_log_file_path << "\n\n";
 
-    // Active game
-    file << "# Active game profile\n";
-    file << "active_game = " << active_game << "\n\n";
-    file << "[Games]\n";
-    for (auto& kv : game_profiles)
-    {
-        auto & gp = kv.second;
-        file << gp.name << " = "
-             << gp.sens << "," << gp.yaw;
-        file << "," << gp.pitch;
-        if (gp.fovScaled)
-            file << ",true," << gp.baseFOV;
-        file << "\n";
-    }
-
     file.close();
     return true;
-}
-
-const Config::GameProfile& Config::currentProfile() const
-{
-    auto it = game_profiles.find(active_game);
-    if (it != game_profiles.end()) return it->second;
-    throw std::runtime_error("Active game profile not found: " + active_game);
-}
-
-std::pair<double, double> Config::degToCounts(double degX, double degY, double fovNow) const
-{
-    const auto& gp = currentProfile();
-    double scale = (gp.fovScaled && gp.baseFOV > 1.0) ? (fovNow / gp.baseFOV) : 1.0;
-
-    if (gp.sens == 0.0 || gp.yaw == 0.0 || gp.pitch == 0.0)
-        return { 0.0, 0.0 };
-
-    double cx = degX / (gp.sens * gp.yaw * scale);
-    double cy = degY / (gp.sens * gp.pitch * scale);
-    return { cx, cy };
 }

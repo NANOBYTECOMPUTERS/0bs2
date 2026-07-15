@@ -53,18 +53,31 @@ class DirectTargetingContractTests(unittest.TestCase):
             "movementCountCarryY",
             "queueMove(dx, dy)",
             "recordEgoMotionDelta(pixelDx, pixelDy, now)",
+            "blendPredictedAimPoint(",
+            "moveMouseTarget(",
+            "directMovementTrackId",
         ):
             self.assertIn(token, mouse_cpp + mouse_h)
 
         self.assertIn("activeTarget->smoothX", loop_cpp)
         self.assertIn("activeTarget->smoothY", loop_cpp)
-        self.assertIn("mouseThread.moveMousePivot(", loop_cpp)
+        self.assertIn("mouseThread.moveMouseTarget(*activeTarget)", loop_cpp)
+        self.assertIn("return { pixelDx, pixelDy };", mouse_cpp)
 
         for token in (
             join("Pid", "Mouse", "Controller"),
             join("Smart", "Blender"),
             join("feed", "_forward"),
             join("smart", "_blending"),
+            "fov_x",
+            "fov_y",
+            "fovX",
+            "fovY",
+            "degToCounts(",
+            "GameProfile",
+            "currentProfile(",
+            "game_profiles",
+            "active_game",
         ):
             self.assertNotIn(token, mouse_cpp + mouse_h + loop_cpp)
 
@@ -81,6 +94,8 @@ class DirectTargetingContractTests(unittest.TestCase):
             "target_calibrated_pixel_counts_enabled",
             "target_counts_per_pixel_x",
             "target_counts_per_pixel_y",
+            "target_prediction_blend",
+            "target_prediction_max_lead_px",
         ):
             self.assertIn(key, config_h)
             self.assertIn(key, config_cpp)

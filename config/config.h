@@ -3,8 +3,6 @@
 
 #include <string>
 #include <vector>
-#include <unordered_map>
-#include <utility>
 
 class Config
 {
@@ -40,9 +38,6 @@ public:
     bool auto_aim;
 
     // Mouse
-    int fovX;
-    int fovY;
-
     // Legacy prediction compatibility: deprecated but retained/loadable for old configs
     // and for aim-sim/overlay demo parity. Runtime convergence should use tracker/Kalman.
     float minSpeedMultiplier;
@@ -95,6 +90,8 @@ public:
     bool target_calibrated_pixel_counts_enabled;
     float target_counts_per_pixel_x;
     float target_counts_per_pixel_y;
+    float target_prediction_blend;
+    float target_prediction_max_lead_px;
 
     // Tracker identity pipeline
     bool tracker_v2_enabled;
@@ -256,22 +253,6 @@ public:
     bool verbose;
     bool debug_log_file_enabled;
     std::string debug_log_file_path;
-
-    struct GameProfile
-    {
-        std::string name;
-        double sens;
-        double yaw;
-        double pitch;
-        bool fovScaled;
-        double baseFOV;
-    };
-
-    std::unordered_map<std::string, GameProfile> game_profiles;
-    std::string                                  active_game;
-
-    const GameProfile & currentProfile() const;
-    std::pair<double, double> degToCounts(double degX, double degY, double fovNow) const;
 
     bool validate();
     bool loadConfig(const std::string& filename = "config.ini");

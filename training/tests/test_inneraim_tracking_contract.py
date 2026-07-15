@@ -94,7 +94,7 @@ class InnerAimTrackingContractTest(unittest.TestCase):
         self.assertIn("shouldAcceptAsNewLock(", target_h)
         self.assertIn("activeTarget->smoothX", mouse_loop)
         self.assertIn("activeTarget->smoothY", mouse_loop)
-        self.assertIn("moveMousePivot(", mouse_loop)
+        self.assertIn("moveMouseTarget(*activeTarget)", mouse_loop)
         self.assertIn("0.0, 0.0", mouse_loop)
 
     def test_inneraim_kalman_respects_mouse_tab_checkbox(self):

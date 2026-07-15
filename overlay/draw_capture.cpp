@@ -65,8 +65,6 @@ void draw_capture_settings()
 
             globalMouseThread->updateConfig(
                 config.detection_resolution,
-                config.fovX,
-                config.fovY,
                 config.auto_shoot,
                 config.bScope_multiplier);
             OverlayConfig_MarkDirty();

@@ -27,7 +27,8 @@ class DetectionTrackingContractTest(unittest.TestCase):
         loop = self.read("runtime/mouse_thread_loop.cpp")
         self.assertIn("confidences = detectionBuffer.confidences", loop)
         self.assertIn("targetTracker.update(", loop)
-        self.assertIn("activeTarget->confidence", loop)
+        self.assertIn("mouseThread.moveMouseTarget(*activeTarget)", loop)
+        self.assertIn("target.confidence", self.read("mouse/mouse.cpp"))
 
     def test_mouse_loop_has_direct_detection_fallback_without_overlay_dependency(self):
         loop = self.read("runtime/mouse_thread_loop.cpp")
@@ -44,11 +45,12 @@ class DetectionTrackingContractTest(unittest.TestCase):
             "BoxTarget target(",
             "target.smoothX = bestPivotX",
             "target.smoothY = bestPivotY",
-            "mouseThread.moveMousePivot(",
+            "mouseThread.moveMouseTarget(*activeTarget)",
         ):
             self.assertIn(token, loop)
 
         self.assertIn("void updateDetectionGeometry(int width, int height)", mouse_h)
+        self.assertIn("void moveMouseTarget(const BoxTarget& target)", mouse_h)
         self.assertIn("MouseThread::updateDetectionGeometry", mouse_cpp)
         self.assertIn("center_x = screen_width * 0.5", mouse_cpp)
         self.assertIn("center_y = screen_height * 0.5", mouse_cpp)

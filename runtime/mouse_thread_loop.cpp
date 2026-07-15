@@ -176,8 +176,6 @@ void mouseThreadFunction(MouseThread& mouseThread)
                 std::lock_guard<std::recursive_mutex> cfgLock(configMutex);
                 mouseThread.updateConfig(
                     config.detection_resolution,
-                    config.fovX,
-                    config.fovY,
                     config.auto_shoot,
                     config.bScope_multiplier
                 );
@@ -316,12 +314,7 @@ void mouseThreadFunction(MouseThread& mouseThread)
         {
             if (activeTarget && hasAimObservation)
             {
-                mouseThread.moveMousePivot(
-                    activeTarget->smoothX,
-                    activeTarget->smoothY,
-                    activeTarget->w,
-                    activeTarget->h,
-                    activeTarget->confidence);
+                mouseThread.moveMouseTarget(*activeTarget);
 
                 if (config.auto_shoot)
                 {

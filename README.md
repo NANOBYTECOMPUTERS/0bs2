@@ -104,8 +104,6 @@ Removal gate: remove these only after a behavior baseline proves behavior stays 
 
 | Section | Slider | Config key | Range | Current | Notes |
 | --- | --- | --- | --- | --- | --- |
-| FOV | FOV X | fovX | 10-120 | n/a | Horizontal field of view for the mouse controller. |
-| FOV | FOV Y | fovY | 10-120 | n/a | Vertical field of view for the mouse controller. |
 | State Estimator | Acquisition frames | kalman_acquisition_frames | 3-5 | n/a | Frames used to ramp prediction weight after target acquisition. |
 | State Estimator | Process noise position | kalman_process_noise_position | 0.0001-5000 | n/a | Position process noise. Higher values adapt faster to position changes. |
 | State Estimator | Process noise velocity | kalman_process_noise_velocity | 0.0001-50000 | n/a | Velocity process noise. Higher values adapt faster to speed changes. |
@@ -121,12 +119,10 @@ Removal gate: remove these only after a behavior baseline proves behavior stays 
 | Direct Targeting Movement | Deadzone (px) | target_deadzone_px | 0.000-20.000 | n/a | Minimum target error radius before direct movement is emitted. |
 | Direct Targeting Movement | Max step (px/frame) | target_max_pixel_step | 0.25-120.00 | n/a | Maximum pixel-space movement emitted for one tracker observation. |
 | Direct Targeting Movement | Output scale | target_output_scale | 0.010-3.000 | n/a | Multiplier applied to tracker aim-point error before clamping. |
+| Direct Targeting Movement | Prediction blend | target_prediction_blend | 0.000-0.650 | n/a | Fraction of bounded short-horizon predicted aim mixed into the observed tracker aim point. |
+| Direct Targeting Movement | Max prediction lead (px) | target_prediction_max_lead_px | 0.00-40.00 | n/a | Maximum pixel distance the mouse path may lead the current tracker aim point. |
 | Direct Targeting Movement | Counts / px X | target_counts_per_pixel_x | -50.0000-50.0000 | n/a | Horizontal calibrated mouse counts per screen-space pixel. |
 | Direct Targeting Movement | Counts / px Y | target_counts_per_pixel_y | -50.0000-50.0000 | n/a | Vertical calibrated mouse counts per screen-space pixel. |
-| Game Profile | Sensitivity | Games.<profile>.sens | 0.0010-10.0000 | profile/local | Editable for custom profiles. UNIFIED is shown read-only. |
-| Game Profile | Yaw | Games.<profile>.yaw | 0.0010-0.1000 | profile/local | Horizontal degree-to-count conversion for a custom profile. |
-| Game Profile | Pitch | Games.<profile>.pitch | 0.0010-0.1000 | profile/local | Vertical degree-to-count conversion for a custom profile. |
-| Game Profile | Base FOV | Games.<profile>.baseFOV | 10.0-180.0 | profile/local | Shown only when FOV Scaled is enabled on a custom profile. |
 | Auto Shoot | bScope Multiplier | bScope_multiplier | 0.5-2.0 | n/a | Multiplier used by auto-shoot scope timing/behavior. Disabled in UI until Auto Shoot is on. |
 
 ### Activate/Deactivate
@@ -138,8 +134,7 @@ Removal gate: remove these only after a behavior baseline proves behavior stays 
 | State Estimator | Seed velocity on acquire | kalman_velocity_seed_enabled | true/false | n/a | Seeds velocity from early measurement deltas during acquisition. |
 | State Estimator | Compensate detection delay | kalman_compensate_detection_delay | true/false | n/a | Accounts for detector latency in prediction. |
 | State Estimator | Ego-motion compensation | ego_motion_compensation_enabled | true/false | n/a | Opt-in tracker-prior compensation from emitted mouse/view motion. Raw detections and final mouse output are unchanged. |
-| Direct Targeting Movement | Calibrated pixel counts | target_calibrated_pixel_counts_enabled | true/false | n/a | Uses measured counts-per-pixel gains for direct targeting output instead of FOV/profile conversion when both gains are nonzero. |
-| Game Profile | FOV Scaled | Games.<profile>.fovScaled | true/false | profile/local | When enabled, the profile also uses a Base FOV value. |
+| Direct Targeting Movement | Calibrated pixel counts | target_calibrated_pixel_counts_enabled | true/false | n/a | Uses measured counts-per-pixel gains for direct targeting output instead of the default 1:1 pixel-count fallback. |
 | Auto Shoot | Auto Shoot | auto_shoot | true/false | n/a | Enables automatic shooting behavior. |
 | Input Method | Arduino 16-bit Mouse | arduino_16_bit_mouse | true/false | n/a | Arduino input only. Sends wider mouse movement values. |
 | Input Method | Arduino Enable Keys | arduino_enable_keys | true/false | n/a | Arduino input only. Enables keyboard key output through Arduino. |
@@ -148,8 +143,6 @@ Removal gate: remove these only after a behavior baseline proves behavior stays 
 
 | Section | Control | Config key | Type/options | Current | Notes |
 | --- | --- | --- | --- | --- | --- |
-| Game Profile | Active Game Profile | active_game | profile names | n/a | Selects the active game profile. |
-| Manage Profiles | Game profile rows | Games.<profile> | name = sens,yaw,pitch[,true,baseFOV] | profile/local | Custom profiles can be added/deleted; UNIFIED is read-only. |
 | Input Method | Mouse Input Method | input_method | WIN32, GHUB, RAZER, DIRECT, ARDUINO, TEENSY41, TEENSY41_HID, KMBOX_NET, KMBOX_A, MAKCU | n/a | Changes active mouse backend. |
 | Input Method | Arduino/Teensy Port | arduino_port | COM1-COM30 | n/a | Arduino and Teensy 4.1 serial input. |
 | Input Method | Arduino/Teensy Baudrate | arduino_baudrate | 9600-115200 | n/a | Arduino and Teensy 4.1 serial input. |
@@ -330,7 +323,6 @@ These settings are editable by changing `config.ini` directly. Some are build-ga
 | Custom classes | class_player | 0 | integer class id | Config only | Detector class id treated as player/body. | Not exposed in the GUI. |
 | Custom classes | class_head | 1 | integer class id | Config only | Detector class id treated as head. | Not exposed in the GUI. |
 | Debug | show_fps | false | true/false | Config only | Legacy/debug FPS display flag. | Saved in config.ini but not exposed in the current GUI. |
-| Game profiles | Games.UNIFIED | 1.00,0.02,0.02 | sens,yaw,pitch[,true,baseFOV] | Config only | Default profile row used for degree-to-count conversion. | UNIFIED is shown read-only in the GUI. |
 | Advanced mouse | minSpeedMultiplier | 0.1 | float | Loadable hidden key | Legacy minimum movement speed multiplier. | Loadable from config.ini if added manually; saveConfig does not currently emit it. |
 | Advanced mouse | maxSpeedMultiplier | 0.1 | float | Loadable hidden key | Legacy maximum movement speed multiplier. | Loadable from config.ini if added manually; saveConfig does not currently emit it. |
 | Advanced mouse | predictionInterval | 0.01 | seconds | Loadable hidden key | Prediction sample interval used by legacy/auxiliary prediction logic. | Loadable from config.ini if added manually; saveConfig does not currently emit it. |
