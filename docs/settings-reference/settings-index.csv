@@ -12,7 +12,7 @@ Activate/deactivate,Target,Targeting,Disable Headshot,disable_headshot,true/fals
 Activate/deactivate,Target,Targeting,Auto Aim,auto_aim,true/false,n/a,GUI,Allows target selection/movement logic to act automatically while held conditions are met.,overlay/draw_target.cpp
 Slider,Target,Offsets,Approximate Body Y Offset,body_y_offset,0.05-0.90,n/a,GUI,Vertical aim point used for body-class detections.,overlay/draw_target.cpp
 Slider,Target,Offsets,Approximate Head Y Offset,head_y_offset,0.05-0.55,n/a,GUI,Vertical aim point used for head-class detections.,overlay/draw_target.cpp
-Activate/deactivate,Mouse,State Estimator,Runtime latency sweep,runtime_latency_sweep_enabled,true/false,n/a,GUI,Enables side-by-side latency sweep behavior for estimator and PID experiments.,overlay/draw_mouse.cpp
+Activate/deactivate,Mouse,State Estimator,Runtime latency sweep,runtime_latency_sweep_enabled,true/false,n/a,GUI,Enables side-by-side latency sweep behavior for estimator comparisons.,overlay/draw_mouse.cpp
 Activate/deactivate,Mouse,State Estimator,Enable Kalman estimator,kalman_enabled,true/false,n/a,GUI,Enables Kalman filtering for target motion estimation.,overlay/draw_mouse.cpp
 Activate/deactivate,Mouse,State Estimator,Seed velocity on acquire,kalman_velocity_seed_enabled,true/false,n/a,GUI,Seeds velocity from early measurement deltas during acquisition.,overlay/draw_mouse.cpp
 Slider,Mouse,State Estimator,Acquisition frames,kalman_acquisition_frames,3-5,n/a,GUI,Frames used to ramp prediction weight after target acquisition.,overlay/draw_mouse.cpp

@@ -9,6 +9,7 @@ This reference is ordered by the GUI sidebar tabs in `overlay/overlay.cpp`. It l
 - PDF: `docs/settings-reference/0BS-settings-reference.pdf`
 - Search index: `docs/settings-reference/settings-index.csv`
 - Directory README: `docs/settings-reference/README.md`
+- Program flow chart: `docs/program-flow.mmd`
 
 Search by GUI label, config key, tab, section, or source file. Rows marked `CUDA GUI / DML config-only` appear as GUI controls only in CUDA builds; the current `x64/DML/config.ini` keeps those values as config-only settings.
 
@@ -134,7 +135,7 @@ Removal gate: remove these only after a behavior baseline proves behavior stays 
 
 | Section | Control | Config key | Values | Current | Notes |
 | --- | --- | --- | --- | --- | --- |
-| State Estimator | Runtime latency sweep | runtime_latency_sweep_enabled | true/false | n/a | Enables side-by-side latency sweep behavior for estimator and PID experiments. |
+| State Estimator | Runtime latency sweep | runtime_latency_sweep_enabled | true/false | n/a | Enables side-by-side latency sweep behavior for estimator comparisons. |
 | State Estimator | Enable Kalman estimator | kalman_enabled | true/false | n/a | Enables Kalman filtering for target motion estimation. |
 | State Estimator | Seed velocity on acquire | kalman_velocity_seed_enabled | true/false | n/a | Seeds velocity from early measurement deltas during acquisition. |
 | State Estimator | Compensate detection delay | kalman_compensate_detection_delay | true/false | n/a | Accounts for detector latency in prediction. |

@@ -94,7 +94,7 @@ GUI_CONTROLS: list[dict[str, str]] = [
     row("Target", "Offsets", "Approximate Body Y Offset", "body_y_offset", "Slider", "0.05-0.90", "Vertical aim point used for body-class detections.", "overlay/draw_target.cpp"),
     row("Target", "Offsets", "Approximate Head Y Offset", "head_y_offset", "Slider", "0.05-0.55", "Vertical aim point used for head-class detections.", "overlay/draw_target.cpp"),
     # Mouse
-    row("Mouse", "State Estimator", "Runtime latency sweep", "runtime_latency_sweep_enabled", "Activate/deactivate", "true/false", "Enables side-by-side latency sweep behavior for estimator and PID experiments.", "overlay/draw_mouse.cpp"),
+    row("Mouse", "State Estimator", "Runtime latency sweep", "runtime_latency_sweep_enabled", "Activate/deactivate", "true/false", "Enables side-by-side latency sweep behavior for estimator comparisons.", "overlay/draw_mouse.cpp"),
     row("Mouse", "State Estimator", "Enable Kalman estimator", "kalman_enabled", "Activate/deactivate", "true/false", "Enables Kalman filtering for target motion estimation.", "overlay/draw_mouse.cpp"),
     row("Mouse", "State Estimator", "Seed velocity on acquire", "kalman_velocity_seed_enabled", "Activate/deactivate", "true/false", "Seeds velocity from early measurement deltas during acquisition.", "overlay/draw_mouse.cpp"),
     row("Mouse", "State Estimator", "Acquisition frames", "kalman_acquisition_frames", "Slider", "3-5", "Frames used to ramp prediction weight after target acquisition.", "overlay/draw_mouse.cpp"),
@@ -339,6 +339,7 @@ def generate_markdown() -> str:
     out.append("- PDF: `docs/settings-reference/0BS-settings-reference.pdf`")
     out.append("- Search index: `docs/settings-reference/settings-index.csv`")
     out.append("- Directory README: `docs/settings-reference/README.md`")
+    out.append("- Program flow chart: `docs/program-flow.mmd`")
     out.append("")
     out.append("Search by GUI label, config key, tab, section, or source file. Rows marked `CUDA GUI / DML config-only` appear as GUI controls only in CUDA builds; the current `x64/DML/config.ini` keeps those values as config-only settings.")
     out.append("")
