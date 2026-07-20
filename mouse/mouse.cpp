@@ -6,11 +6,15 @@
 #include <cmath>
 #include <algorithm>
 #include <chrono>
+#include <filesystem>
+#include <fstream>
+#include <iomanip>
 #include <mutex>
 #include <atomic>
 #include <vector>
 #include <iostream>
 #include <limits>
+#include <sstream>
 #include <random>
 #include <thread>
 
@@ -106,6 +110,8 @@ void MouseThread::updateConfig(
 
     resetDirectMovement();
     clearTargetMotionState();
+    if (!config.target_signal_diagnostics_enabled)
+        resetTargetSignalDiagnostics();
 }
 
 void MouseThread::updateDetectionGeometry(int width, int height)
@@ -135,6 +141,8 @@ void MouseThread::updateDetectionGeometry(int width, int height)
 
     resetDirectMovement();
     clearTargetMotionState();
+    if (!config.target_signal_diagnostics_enabled)
+        resetTargetSignalDiagnostics();
 }
 
 MouseThread::~MouseThread()
@@ -144,6 +152,7 @@ MouseThread::~MouseThread()
     targetStreamCv.notify_all();
     if (targetStreamWorker.joinable()) targetStreamWorker.join();
     if (moveWorker.joinable()) moveWorker.join();
+    resetTargetSignalDiagnostics();
 }
 
 void MouseThread::queueMove(int dx, int dy)
@@ -207,7 +216,7 @@ MouseThread::TargetStreamDebugSnapshot MouseThread::makeTargetStreamDebugSnapsho
 {
     TargetStreamDebugSnapshot snapshot;
     snapshot.enabled = config.target_stream_debug_enabled;
-    if (!snapshot.enabled)
+    if (!snapshot.enabled && !targetSignalDiagnosticsActive())
         return snapshot;
 
     snapshot.streamEnabled = config.target_stream_enabled;
@@ -251,11 +260,396 @@ MouseThread::TargetStreamDebugSnapshot MouseThread::makeTargetStreamDebugSnapsho
 
 void MouseThread::updateTargetStreamDebug(const TargetStreamDebugSnapshot& snapshot)
 {
-    if (!config.target_stream_debug_enabled)
+    if (!config.target_stream_debug_enabled && !targetSignalDiagnosticsActive())
         return;
 
-    std::lock_guard<std::mutex> lock(targetStreamDebugMutex);
-    targetStreamDebug = snapshot;
+    if (config.target_stream_debug_enabled)
+    {
+        std::lock_guard<std::mutex> lock(targetStreamDebugMutex);
+        targetStreamDebug = snapshot;
+    }
+
+    if (targetSignalDiagnosticsActive())
+        recordTargetSignalDiagnosticSample(snapshot, snapshot.updatedAt);
+}
+
+bool MouseThread::targetSignalDiagnosticsActive() const
+{
+    return config.target_signal_diagnostics_enabled;
+}
+
+void MouseThread::recordTargetSignalDiagnosticSample(
+    const TargetStreamDebugSnapshot& snapshot,
+    std::chrono::steady_clock::time_point now)
+{
+    if (!targetSignalDiagnosticsActive())
+        return;
+
+    if (now.time_since_epoch().count() == 0)
+        now = std::chrono::steady_clock::now();
+
+    std::lock_guard<std::mutex> lock(targetSignalDiagnosticsMutex);
+    if (targetSignalStartTime.time_since_epoch().count() == 0)
+        targetSignalStartTime = now;
+
+    const std::string status = snapshot.status ? snapshot.status : "";
+    TargetSignalSample sample;
+    sample.timeSec = std::chrono::duration<double>(now - targetSignalStartTime).count();
+    sample.trackId = snapshot.trackId;
+    sample.hasState = snapshot.hasState;
+    sample.streaming = snapshot.streaming;
+    sample.emittedMovement = snapshot.emittedMovement;
+    sample.blocked = !snapshot.streaming &&
+        status != "Inside deadzone" &&
+        status != "Carry only" &&
+        status != "Emitting" &&
+        status != "No movement";
+    sample.confidence = snapshot.confidence;
+    sample.stateAgeMs = snapshot.stateAgeMs;
+    sample.tickDtMs = snapshot.tickDtMs;
+    sample.aimX = snapshot.aimX;
+    sample.aimY = snapshot.aimY;
+    sample.predictedX = snapshot.predictedX;
+    sample.predictedY = snapshot.predictedY;
+    sample.errorX = snapshot.errorX;
+    sample.errorY = snapshot.errorY;
+    sample.distancePx = snapshot.distancePx;
+    sample.emittedPixelX = snapshot.emittedPixelX;
+    sample.emittedPixelY = snapshot.emittedPixelY;
+    sample.emittedCountRawX = snapshot.emittedCountRawX;
+    sample.emittedCountRawY = snapshot.emittedCountRawY;
+    sample.emittedCountX = snapshot.emittedCountX;
+    sample.emittedCountY = snapshot.emittedCountY;
+    sample.carryX = snapshot.carryX;
+    sample.carryY = snapshot.carryY;
+    sample.alpha = snapshot.alpha;
+    sample.maxStepPx = snapshot.maxStepPx;
+    sample.status = snapshot.status ? snapshot.status : "";
+
+    targetSignalSamples.push_back(sample);
+    const size_t maxSamples = static_cast<size_t>(std::clamp(config.target_signal_window_samples, 64, 2048));
+    while (targetSignalSamples.size() > maxSamples)
+        targetSignalSamples.pop_front();
+
+    if (config.target_signal_logging_enabled)
+    {
+        const double intervalMs = std::clamp(static_cast<double>(config.target_signal_log_interval_ms), 1.0, 1000.0);
+        if (targetSignalLastLogTime.time_since_epoch().count() == 0 ||
+            std::chrono::duration<double, std::milli>(now - targetSignalLastLogTime).count() >= intervalMs)
+        {
+            appendTargetSignalLogRowLocked(sample);
+            targetSignalLastLogTime = now;
+        }
+    }
+    else if (targetSignalLogFile.is_open())
+    {
+        targetSignalLogFile.close();
+        targetSignalLogPath.clear();
+        targetSignalLogHeaderWritten = false;
+    }
+
+    targetSignalDiagnostics = computeTargetSignalDiagnosticsLocked(now);
+}
+
+void MouseThread::appendTargetSignalLogRowLocked(const TargetSignalSample& sample)
+{
+    std::string path = config.target_signal_log_file_path.empty()
+        ? "logs/target_signal_diagnostics.csv"
+        : config.target_signal_log_file_path;
+
+    if (targetSignalLogPath != path || !targetSignalLogFile.is_open())
+    {
+        if (targetSignalLogFile.is_open())
+            targetSignalLogFile.close();
+
+        targetSignalLogPath = path;
+        targetSignalLogHeaderWritten = false;
+
+        const std::filesystem::path fsPath(path);
+        const std::filesystem::path parent = fsPath.parent_path();
+        if (!parent.empty())
+        {
+            std::error_code ec;
+            std::filesystem::create_directories(parent, ec);
+        }
+
+        std::error_code existsEc;
+        const bool exists = std::filesystem::exists(fsPath, existsEc);
+        std::error_code sizeEc;
+        const auto existingSize = exists ? std::filesystem::file_size(fsPath, sizeEc) : 0;
+        const bool needsHeader = !exists || sizeEc || existingSize == 0;
+        targetSignalLogFile.open(path, std::ios::app);
+        targetSignalLogHeaderWritten = !needsHeader;
+    }
+
+    if (!targetSignalLogFile.is_open())
+        return;
+
+    if (!targetSignalLogHeaderWritten)
+    {
+        targetSignalLogFile
+            << "time_sec,track_id,status,has_state,streaming,emitted,blocked,confidence,state_age_ms,tick_dt_ms,"
+            << "aim_x,aim_y,predicted_x,predicted_y,error_x,error_y,distance_px,"
+            << "emitted_pixel_x,emitted_pixel_y,raw_count_x,raw_count_y,queued_count_x,queued_count_y,"
+            << "carry_x,carry_y,alpha,max_step_px\n";
+        targetSignalLogHeaderWritten = true;
+    }
+
+    targetSignalLogFile
+        << std::fixed << std::setprecision(6)
+        << sample.timeSec << ","
+        << sample.trackId << ","
+        << (sample.status ? sample.status : "") << ","
+        << (sample.hasState ? 1 : 0) << ","
+        << (sample.streaming ? 1 : 0) << ","
+        << (sample.emittedMovement ? 1 : 0) << ","
+        << (sample.blocked ? 1 : 0) << ","
+        << sample.confidence << ","
+        << sample.stateAgeMs << ","
+        << sample.tickDtMs << ","
+        << sample.aimX << ","
+        << sample.aimY << ","
+        << sample.predictedX << ","
+        << sample.predictedY << ","
+        << sample.errorX << ","
+        << sample.errorY << ","
+        << sample.distancePx << ","
+        << sample.emittedPixelX << ","
+        << sample.emittedPixelY << ","
+        << sample.emittedCountRawX << ","
+        << sample.emittedCountRawY << ","
+        << sample.emittedCountX << ","
+        << sample.emittedCountY << ","
+        << sample.carryX << ","
+        << sample.carryY << ","
+        << sample.alpha << ","
+        << sample.maxStepPx << "\n";
+}
+
+MouseThread::TargetSignalDiagnosticsSnapshot MouseThread::computeTargetSignalDiagnosticsLocked(
+    std::chrono::steady_clock::time_point now) const
+{
+    TargetSignalDiagnosticsSnapshot out;
+    out.enabled = config.target_signal_diagnostics_enabled;
+    out.loggingEnabled = config.target_signal_logging_enabled;
+    out.windowSamples = std::clamp(config.target_signal_window_samples, 64, 2048);
+    out.logFilePath = config.target_signal_log_file_path.empty()
+        ? "logs/target_signal_diagnostics.csv"
+        : config.target_signal_log_file_path;
+    out.updatedAt = now;
+
+    const size_t n = targetSignalSamples.size();
+    out.sampleCount = static_cast<int>(n);
+    if (!out.enabled)
+        return out;
+
+    if (n < 2)
+    {
+        out.recommendation = "Collecting target signal samples.";
+        return out;
+    }
+
+    const double windowSec = std::max(0.0, targetSignalSamples.back().timeSec - targetSignalSamples.front().timeSec);
+    out.windowSeconds = windowSec;
+
+    double sumDt = 0.0;
+    double sumDt2 = 0.0;
+    double sumErr = 0.0;
+    double sumErr2 = 0.0;
+    double maxErr = 0.0;
+    double sumEmit = 0.0;
+    double sumEmit2 = 0.0;
+    double sumQueued = 0.0;
+    int carryOnly = 0;
+    int zeroOutput = 0;
+    int blocked = 0;
+
+    for (const auto& sample : targetSignalSamples)
+    {
+        const double dt = std::max(0.0, sample.tickDtMs);
+        sumDt += dt;
+        sumDt2 += dt * dt;
+
+        const double err = std::hypot(sample.errorX, sample.errorY);
+        sumErr += err;
+        sumErr2 += err * err;
+        maxErr = std::max(maxErr, err);
+
+        const double emit = std::hypot(sample.emittedPixelX, sample.emittedPixelY);
+        sumEmit += emit;
+        sumEmit2 += emit * emit;
+
+        const double queued = std::hypot(
+            static_cast<double>(sample.emittedCountX),
+            static_cast<double>(sample.emittedCountY));
+        sumQueued += queued;
+
+        if (sample.emittedMovement && sample.emittedCountX == 0 && sample.emittedCountY == 0)
+            ++carryOnly;
+        if (std::abs(sample.emittedPixelX) < 1e-9 && std::abs(sample.emittedPixelY) < 1e-9)
+            ++zeroOutput;
+        if (sample.blocked)
+            ++blocked;
+    }
+
+    const double invN = 1.0 / static_cast<double>(n);
+    out.avgDtMs = sumDt * invN;
+    out.dtJitterMs = std::sqrt(std::max(0.0, sumDt2 * invN - out.avgDtMs * out.avgDtMs));
+    out.sampleRateHz = out.avgDtMs > 1e-6 ? 1000.0 / out.avgDtMs : 0.0;
+    out.avgErrorPx = sumErr * invN;
+    out.rmsErrorPx = std::sqrt(sumErr2 * invN);
+    out.peakErrorPx = maxErr;
+    out.avgEmitPx = sumEmit * invN;
+    out.rmsEmitPx = std::sqrt(sumEmit2 * invN);
+    out.avgQueuedCounts = sumQueued * invN;
+    out.queuedCountsPerSec = windowSec > 1e-6 ? sumQueued / windowSec : 0.0;
+    out.carryOnlyRatio = static_cast<double>(carryOnly) * invN;
+    out.zeroOutputRatio = static_cast<double>(zeroOutput) * invN;
+    out.staleOrBlockedRatio = static_cast<double>(blocked) * invN;
+
+    if (n >= 16 && out.sampleRateHz > 1.0)
+    {
+        std::vector<double> errorSignal;
+        errorSignal.reserve(n);
+        for (const auto& sample : targetSignalSamples)
+            errorSignal.push_back(std::hypot(sample.errorX, sample.errorY));
+
+        const double meanErr = out.avgErrorPx;
+        const size_t maxBins = std::min<size_t>(n / 2, 96);
+        constexpr double pi = 3.14159265358979323846;
+        double bestMag = 0.0;
+        double bestFreq = 0.0;
+        for (size_t k = 1; k <= maxBins; ++k)
+        {
+            const double freq = static_cast<double>(k) * out.sampleRateHz / static_cast<double>(n);
+            if (freq < 0.5 || freq > out.sampleRateHz * 0.45)
+                continue;
+
+            double re = 0.0;
+            double im = 0.0;
+            for (size_t i = 0; i < n; ++i)
+            {
+                const double angle = -2.0 * pi * static_cast<double>(k) * static_cast<double>(i) / static_cast<double>(n);
+                const double v = errorSignal[i] - meanErr;
+                re += v * std::cos(angle);
+                im += v * std::sin(angle);
+            }
+
+            const double mag = std::hypot(re, im) / static_cast<double>(n);
+            if (mag > bestMag)
+            {
+                bestMag = mag;
+                bestFreq = freq;
+            }
+        }
+        out.dominantErrorFrequencyHz = bestFreq;
+        out.dominantErrorMagnitude = bestMag;
+
+        std::vector<double> emitSignal;
+        emitSignal.reserve(n);
+        double meanEmit = 0.0;
+        for (const auto& sample : targetSignalSamples)
+        {
+            const double emit = std::hypot(sample.emittedPixelX, sample.emittedPixelY);
+            emitSignal.push_back(emit);
+            meanEmit += emit;
+        }
+        meanEmit *= invN;
+
+        const int maxLag = static_cast<int>(std::min<size_t>(32, n / 4));
+        double bestCorr = 0.0;
+        int bestLag = 0;
+        for (int lag = 0; lag <= maxLag; ++lag)
+        {
+            double xy = 0.0;
+            double xx = 0.0;
+            double yy = 0.0;
+            int count = 0;
+            for (size_t i = static_cast<size_t>(lag); i < n; ++i)
+            {
+                const double x = errorSignal[i - static_cast<size_t>(lag)] - meanErr;
+                const double y = emitSignal[i] - meanEmit;
+                xy += x * y;
+                xx += x * x;
+                yy += y * y;
+                ++count;
+            }
+
+            if (count < 4 || xx <= 1e-12 || yy <= 1e-12)
+                continue;
+
+            const double corr = xy / std::sqrt(xx * yy);
+            if (corr > bestCorr)
+            {
+                bestCorr = corr;
+                bestLag = lag;
+            }
+        }
+
+        out.errorToOutputCorrelation = bestCorr;
+        out.errorToOutputLagMs = static_cast<double>(bestLag) * out.avgDtMs;
+        out.phaseLagDegrees = bestFreq > 1e-6
+            ? std::fmod(360.0 * bestFreq * out.errorToOutputLagMs * 0.001, 360.0)
+            : 0.0;
+    }
+
+    const double jitterRatio = out.avgDtMs > 1e-6 ? std::clamp(out.dtJitterMs / out.avgDtMs, 0.0, 1.0) : 1.0;
+    out.cadenceHealth = 100.0 * (1.0 - jitterRatio);
+    out.stabilityScore = std::clamp(
+        100.0 -
+        std::clamp(out.rmsErrorPx * 2.0, 0.0, 60.0) -
+        std::clamp(out.staleOrBlockedRatio * 40.0, 0.0, 40.0) -
+        std::clamp(out.carryOnlyRatio * 15.0, 0.0, 15.0),
+        0.0,
+        100.0);
+
+    if (n < 64)
+    {
+        out.recommendation = "Collect more samples before tuning.";
+    }
+    else if (out.staleOrBlockedRatio > 0.25)
+    {
+        out.recommendation = "Autotune hint: target state is often blocked or stale; check confidence, state max age, and ID stability first.";
+    }
+    else if (out.avgDtMs < 0.9)
+    {
+        out.recommendation = "Autotune hint: stream cadence is faster than typical HID pacing; try target_stream_interval_ms near 1.0 ms.";
+    }
+    else if (jitterRatio > 0.35)
+    {
+        out.recommendation = "Autotune hint: stream cadence jitter is high; raise interval slightly or reduce CPU contention.";
+    }
+    else if (out.carryOnlyRatio > 0.60 && out.rmsErrorPx > config.target_deadzone_px + 1.0f)
+    {
+        out.recommendation = "Autotune hint: most movement is fractional carry; verify counts-per-pixel calibration or use a slightly slower stream interval.";
+    }
+    else if (out.dominantErrorFrequencyHz > 10.0 && out.dominantErrorMagnitude > 0.75)
+    {
+        out.recommendation = "Autotune hint: high-frequency aim noise detected; reduce prediction blend or increase tracker smoothing.";
+    }
+    else if (out.errorToOutputLagMs > 8.0 && out.errorToOutputCorrelation > 0.25)
+    {
+        out.recommendation = "Autotune hint: output trails target error; consider slightly higher prediction blend or stream sharpness.";
+    }
+    else
+    {
+        out.recommendation = "Signal looks usable; keep logging for backend-specific tuning baselines.";
+    }
+
+    return out;
+}
+
+void MouseThread::resetTargetSignalDiagnostics()
+{
+    std::lock_guard<std::mutex> lock(targetSignalDiagnosticsMutex);
+    targetSignalSamples.clear();
+    targetSignalDiagnostics = {};
+    targetSignalStartTime = {};
+    targetSignalLastLogTime = {};
+    if (targetSignalLogFile.is_open())
+        targetSignalLogFile.close();
+    targetSignalLogPath.clear();
+    targetSignalLogHeaderWritten = false;
 }
 
 void MouseThread::targetStreamWorkerLoop()
@@ -1246,6 +1640,11 @@ std::vector<std::pair<double, double>> MouseThread::getWindDebugTrail()
     return out;
 }
 
+void MouseThread::clearTargetSignalDiagnostics()
+{
+    resetTargetSignalDiagnostics();
+}
+
 MouseThread::TargetStreamDebugSnapshot MouseThread::getTargetStreamDebugSnapshot() const
 {
     TargetStreamDebugSnapshot snapshot;
@@ -1284,6 +1683,26 @@ MouseThread::TargetStreamDebugSnapshot MouseThread::getTargetStreamDebugSnapshot
         0.0,
         std::chrono::duration<double, std::milli>(
             std::chrono::steady_clock::now() - snapshot.updatedAt).count());
+    return snapshot;
+}
+
+MouseThread::TargetSignalDiagnosticsSnapshot MouseThread::getTargetSignalDiagnosticsSnapshot() const
+{
+    TargetSignalDiagnosticsSnapshot snapshot;
+    snapshot.enabled = config.target_signal_diagnostics_enabled;
+    snapshot.loggingEnabled = config.target_signal_logging_enabled;
+    snapshot.windowSamples = std::clamp(config.target_signal_window_samples, 64, 2048);
+    snapshot.logFilePath = config.target_signal_log_file_path.empty()
+        ? "logs/target_signal_diagnostics.csv"
+        : config.target_signal_log_file_path;
+
+    if (!snapshot.enabled)
+        return snapshot;
+
+    std::lock_guard<std::mutex> lock(targetSignalDiagnosticsMutex);
+    snapshot = computeTargetSignalDiagnosticsLocked(std::chrono::steady_clock::now());
+    if (snapshot.sampleCount == 0)
+        snapshot.recommendation = "Waiting for target signal samples.";
     return snapshot;
 }
 

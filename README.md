@@ -1,6 +1,6 @@
 # 0BS GUI and Config Setting Reference
 
-Generated on 2026-07-15 from `dist\0BS\config.ini` and the ImGui source files under `overlay/`.
+Generated on 2026-07-20 from `dist\0BS\config.ini` and the ImGui source files under `overlay/`.
 
 This reference is ordered by the GUI sidebar tabs in `overlay/overlay.cpp`. It lists every GUI slider and every activate/deactivate checkbox, then documents config.ini settings that are not editable in the current DML GUI or are hidden/loadable config keys.
 
@@ -127,6 +127,8 @@ Removal gate: remove these only after a behavior baseline proves behavior stays 
 | Direct Targeting Movement | Max prediction lead (px) | target_prediction_max_lead_px | 0.00-40.00 | n/a | Maximum pixel distance the mouse path may lead the current tracker aim point. |
 | Direct Targeting Movement | Fallback max step (px/call) | target_max_pixel_step | 0.25-120.00 | n/a | Legacy per-call clamp for non-stream direct movement helpers and aim-simulation parity. |
 | Direct Targeting Movement | Fallback output scale | target_output_scale | 0.010-3.000 | n/a | Legacy per-call scale for non-stream direct movement helpers and aim-simulation parity. |
+| Direct Targeting Movement | Signal window samples | target_signal_window_samples | 64-2048 | n/a | Rolling sample window used for live diagnostic averages and frequency/lag estimates. |
+| Direct Targeting Movement | Signal log interval (ms) | target_signal_log_interval_ms | 1.0-1000.0 | n/a | Minimum interval between CSV diagnostic rows. |
 | Direct Targeting Movement | Counts / px X | target_counts_per_pixel_x | -50.0000-50.0000 | n/a | Horizontal calibrated mouse counts per screen-space pixel. |
 | Direct Targeting Movement | Counts / px Y | target_counts_per_pixel_y | -50.0000-50.0000 | n/a | Vertical calibrated mouse counts per screen-space pixel. |
 | Auto Shoot | bScope Multiplier | bScope_multiplier | 0.5-2.0 | n/a | Multiplier used by auto-shoot scope timing/behavior. Disabled in UI until Auto Shoot is on. |
@@ -142,6 +144,8 @@ Removal gate: remove these only after a behavior baseline proves behavior stays 
 | State Estimator | Ego-motion compensation | ego_motion_compensation_enabled | true/false | n/a | Opt-in tracker-prior compensation from emitted mouse/view motion. Raw detections and final mouse output are unchanged. |
 | Direct Targeting Movement | Target stream | target_stream_enabled | true/false | n/a | Enables the paced target-motion stream used by the live targeting path. |
 | Direct Targeting Movement | Target stream debug | target_stream_debug_enabled | true/false | n/a | Shows live target-stream status, prediction, pixel delta, count output, and block reason in the Mouse tab. |
+| Direct Targeting Movement | Target signal diagnostics | target_signal_diagnostics_enabled | true/false | n/a | Shows passive tuning diagnostics for stream cadence, error, output counts, frequency content, lag, and stability. |
+| Direct Targeting Movement | Signal CSV logging | target_signal_logging_enabled | true/false | n/a | Writes target signal samples to CSV for offline or automatic tuning analysis. |
 | Direct Targeting Movement | Calibrated pixel counts | target_calibrated_pixel_counts_enabled | true/false | n/a | Uses measured counts-per-pixel gains for direct targeting output instead of the default 1:1 pixel-count fallback. |
 | Auto Shoot | Auto Shoot | auto_shoot | true/false | n/a | Enables automatic shooting behavior. |
 | Input Method | Arduino 16-bit Mouse | arduino_16_bit_mouse | true/false | n/a | Arduino input only. Sends wider mouse movement values. |

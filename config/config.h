@@ -87,6 +87,11 @@ public:
     float target_deadzone_px;
     bool target_stream_enabled;
     bool target_stream_debug_enabled;
+    bool target_signal_diagnostics_enabled;
+    bool target_signal_logging_enabled;
+    int target_signal_window_samples;
+    float target_signal_log_interval_ms;
+    std::string target_signal_log_file_path;
     float target_stream_interval_ms;
     float target_stream_sharpness;
     float target_max_pixel_speed;

@@ -42,6 +42,11 @@ int prev_ego_motion_compensation_max_age_ms = config.ego_motion_compensation_max
 float prev_target_deadzone_px = config.target_deadzone_px;
 bool prev_target_stream_enabled = config.target_stream_enabled;
 bool prev_target_stream_debug_enabled = config.target_stream_debug_enabled;
+bool prev_target_signal_diagnostics_enabled = config.target_signal_diagnostics_enabled;
+bool prev_target_signal_logging_enabled = config.target_signal_logging_enabled;
+int prev_target_signal_window_samples = config.target_signal_window_samples;
+float prev_target_signal_log_interval_ms = config.target_signal_log_interval_ms;
+std::string prev_target_signal_log_file_path = config.target_signal_log_file_path;
 float prev_target_stream_interval_ms = config.target_stream_interval_ms;
 float prev_target_stream_sharpness = config.target_stream_sharpness;
 float prev_target_max_pixel_speed = config.target_max_pixel_speed;
@@ -580,11 +585,96 @@ void draw_mouse()
                 debug.calibratedCounts ? "yes" : "no");
         }
 
+        ImGui::Separator();
+        ImGui::Checkbox("Target signal diagnostics", &config.target_signal_diagnostics_enabled);
+        if (config.target_signal_diagnostics_enabled)
+        {
+            static char signalLogPath[260] = "";
+            static std::string lastSignalLogPath;
+            if (lastSignalLogPath != config.target_signal_log_file_path)
+            {
+                strncpy(signalLogPath, config.target_signal_log_file_path.c_str(), sizeof(signalLogPath));
+                signalLogPath[sizeof(signalLogPath) - 1] = '\0';
+                lastSignalLogPath = config.target_signal_log_file_path;
+            }
+
+            ImGui::Checkbox("Signal CSV logging", &config.target_signal_logging_enabled);
+            ImGui::SliderInt("Signal window samples", &config.target_signal_window_samples, 64, 2048);
+            if (!config.target_signal_logging_enabled)
+                ImGui::BeginDisabled();
+
+            ImGui::SliderFloat("Signal log interval (ms)", &config.target_signal_log_interval_ms, 1.0f, 1000.0f, "%.1f");
+            ImGui::InputText("Signal log file", signalLogPath, sizeof(signalLogPath));
+            if (ImGui::Button("Apply signal log file"))
+            {
+                config.target_signal_log_file_path = signalLogPath;
+                lastSignalLogPath = config.target_signal_log_file_path;
+            }
+
+            if (!config.target_signal_logging_enabled)
+                ImGui::EndDisabled();
+
+            ImGui::SameLine();
+            if (ImGui::Button("Clear signal diagnostics") && globalMouseThread)
+                globalMouseThread->clearTargetSignalDiagnostics();
+
+            const MouseThread::TargetSignalDiagnosticsSnapshot signal =
+                globalMouseThread
+                ? globalMouseThread->getTargetSignalDiagnosticsSnapshot()
+                : MouseThread::TargetSignalDiagnosticsSnapshot{};
+
+            ImGui::Text(
+                "Samples: %d/%d window=%.2f s rate=%.1f Hz",
+                signal.sampleCount,
+                signal.windowSamples,
+                signal.windowSeconds,
+                signal.sampleRateHz);
+            ImGui::Text(
+                "Cadence: avg=%.3f ms jitter=%.3f ms health=%.0f",
+                signal.avgDtMs,
+                signal.dtJitterMs,
+                signal.cadenceHealth);
+            ImGui::Text(
+                "Error: avg=%.2f px rms=%.2f px peak=%.2f px",
+                signal.avgErrorPx,
+                signal.rmsErrorPx,
+                signal.peakErrorPx);
+            ImGui::Text(
+                "Output: avg=%.3f px rms=%.3f px queued=%.3f counts %.1f counts/s",
+                signal.avgEmitPx,
+                signal.rmsEmitPx,
+                signal.avgQueuedCounts,
+                signal.queuedCountsPerSec);
+            ImGui::Text(
+                "Ratios: carry-only=%.0f%% zero=%.0f%% blocked=%.0f%%",
+                signal.carryOnlyRatio * 100.0,
+                signal.zeroOutputRatio * 100.0,
+                signal.staleOrBlockedRatio * 100.0);
+            ImGui::Text(
+                "Frequency: dominant=%.2f Hz magnitude=%.3f",
+                signal.dominantErrorFrequencyHz,
+                signal.dominantErrorMagnitude);
+            ImGui::Text(
+                "Lag: %.2f ms corr=%.3f phase=%.1f deg",
+                signal.errorToOutputLagMs,
+                signal.errorToOutputCorrelation,
+                signal.phaseLagDegrees);
+            ImGui::Text("Stability: %.0f", signal.stabilityScore);
+            if (signal.loggingEnabled)
+                ImGui::Text("Log: %s", signal.logFilePath.c_str());
+            ImGui::TextWrapped("Recommendation: %s", signal.recommendation.c_str());
+        }
+
         if (ImGui::Button("Reset direct defaults"))
         {
             config.target_deadzone_px = 0.0f;
             config.target_stream_enabled = true;
             config.target_stream_debug_enabled = false;
+            config.target_signal_diagnostics_enabled = false;
+            config.target_signal_logging_enabled = false;
+            config.target_signal_window_samples = 512;
+            config.target_signal_log_interval_ms = 10.0f;
+            config.target_signal_log_file_path = "logs/target_signal_diagnostics.csv";
             config.target_stream_interval_ms = 1.0f;
             config.target_stream_sharpness = 18.0f;
             config.target_max_pixel_speed = 1800.0f;
@@ -651,6 +741,11 @@ void draw_mouse()
         prev_target_deadzone_px != config.target_deadzone_px ||
         prev_target_stream_enabled != config.target_stream_enabled ||
         prev_target_stream_debug_enabled != config.target_stream_debug_enabled ||
+        prev_target_signal_diagnostics_enabled != config.target_signal_diagnostics_enabled ||
+        prev_target_signal_logging_enabled != config.target_signal_logging_enabled ||
+        prev_target_signal_window_samples != config.target_signal_window_samples ||
+        prev_target_signal_log_interval_ms != config.target_signal_log_interval_ms ||
+        prev_target_signal_log_file_path != config.target_signal_log_file_path ||
         prev_target_stream_interval_ms != config.target_stream_interval_ms ||
         prev_target_stream_sharpness != config.target_stream_sharpness ||
         prev_target_max_pixel_speed != config.target_max_pixel_speed ||
@@ -687,6 +782,11 @@ void draw_mouse()
         prev_target_deadzone_px = config.target_deadzone_px;
         prev_target_stream_enabled = config.target_stream_enabled;
         prev_target_stream_debug_enabled = config.target_stream_debug_enabled;
+        prev_target_signal_diagnostics_enabled = config.target_signal_diagnostics_enabled;
+        prev_target_signal_logging_enabled = config.target_signal_logging_enabled;
+        prev_target_signal_window_samples = config.target_signal_window_samples;
+        prev_target_signal_log_interval_ms = config.target_signal_log_interval_ms;
+        prev_target_signal_log_file_path = config.target_signal_log_file_path;
         prev_target_stream_interval_ms = config.target_stream_interval_ms;
         prev_target_stream_sharpness = config.target_stream_sharpness;
         prev_target_max_pixel_speed = config.target_max_pixel_speed;

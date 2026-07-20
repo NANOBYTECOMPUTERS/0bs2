@@ -50,6 +50,7 @@ training/models/
 training/**/models/
 training/logs/
 training/**/logs/
+logs/
 
 # Python caches and local environments
 __pycache__/

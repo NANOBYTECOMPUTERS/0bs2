@@ -65,6 +65,11 @@ class ConfigGuiControlContractTests(unittest.TestCase):
             "target_deadzone_px",
             "target_stream_enabled",
             "target_stream_debug_enabled",
+            "target_signal_diagnostics_enabled",
+            "target_signal_logging_enabled",
+            "target_signal_window_samples",
+            "target_signal_log_interval_ms",
+            "target_signal_log_file_path",
             "target_stream_interval_ms",
             "target_stream_sharpness",
             "target_max_pixel_speed",
@@ -86,6 +91,10 @@ class ConfigGuiControlContractTests(unittest.TestCase):
         self.assertIn('OverlayUI::BeginSection("Direct Targeting Movement"', draw_mouse)
         self.assertIn('ImGui::Checkbox("Target stream"', draw_mouse)
         self.assertIn('ImGui::Checkbox("Target stream debug"', draw_mouse)
+        self.assertIn('ImGui::Checkbox("Target signal diagnostics"', draw_mouse)
+        self.assertIn('ImGui::Checkbox("Signal CSV logging"', draw_mouse)
+        self.assertIn('ImGui::SliderInt("Signal window samples"', draw_mouse)
+        self.assertIn('ImGui::InputText("Signal log file"', draw_mouse)
         self.assertIn('ImGui::SliderFloat("Stream interval (ms)"', draw_mouse)
         self.assertIn('ImGui::SliderFloat("Stream sharpness"', draw_mouse)
         self.assertIn('ImGui::SliderFloat("Max speed (px/s)"', draw_mouse)
@@ -97,6 +106,8 @@ class ConfigGuiControlContractTests(unittest.TestCase):
         self.assertIn("dispatchTargetStreamMovement(", mouse_cpp)
         self.assertIn("getTargetStreamDebugSnapshot()", mouse_cpp)
         self.assertIn("targetStreamCv.wait_for(", mouse_cpp)
+        self.assertIn("getTargetSignalDiagnosticsSnapshot()", mouse_cpp)
+        self.assertIn("appendTargetSignalLogRowLocked(", mouse_cpp)
         self.assertIn("dispatchTargetMovement(", mouse_cpp)
         self.assertIn("blendPredictedAimPoint(", mouse_cpp)
         self.assertIn("pixelDeltaToCounts(pixelDx, pixelDy)", mouse_cpp)

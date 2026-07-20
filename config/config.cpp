@@ -123,6 +123,11 @@ bool Config::loadConfig(const std::string& filename)
         target_deadzone_px = 0.0f;
         target_stream_enabled = true;
         target_stream_debug_enabled = false;
+        target_signal_diagnostics_enabled = false;
+        target_signal_logging_enabled = false;
+        target_signal_window_samples = 512;
+        target_signal_log_interval_ms = 10.0f;
+        target_signal_log_file_path = "logs/target_signal_diagnostics.csv";
         target_stream_interval_ms = 1.0f;
         target_stream_sharpness = 18.0f;
         target_max_pixel_speed = 1800.0f;
@@ -407,6 +412,12 @@ bool Config::loadConfig(const std::string& filename)
     target_deadzone_px = (float)get_double("target_deadzone_px", 0.0);
     target_stream_enabled = get_bool("target_stream_enabled", true);
     target_stream_debug_enabled = get_bool("target_stream_debug_enabled", false);
+    target_signal_diagnostics_enabled = get_bool("target_signal_diagnostics_enabled", false);
+    target_signal_logging_enabled = get_bool("target_signal_logging_enabled", false);
+    target_signal_window_samples = get_long("target_signal_window_samples", 512);
+    target_signal_log_interval_ms = (float)get_double("target_signal_log_interval_ms", 10.0);
+    target_signal_log_file_path = get_string("target_signal_log_file_path", "logs/target_signal_diagnostics.csv");
+    if (target_signal_log_file_path.empty()) target_signal_log_file_path = "logs/target_signal_diagnostics.csv";
     target_stream_interval_ms = (float)get_double("target_stream_interval_ms", 1.0);
     target_stream_sharpness = (float)get_double("target_stream_sharpness", 18.0);
     target_max_pixel_speed = (float)get_double("target_max_pixel_speed", 1800.0);
@@ -623,6 +634,10 @@ bool Config::loadConfig(const std::string& filename)
 
     if (target_deadzone_px < 0.0f) target_deadzone_px = 0.0f;
     if (target_deadzone_px > 20.0f) target_deadzone_px = 20.0f;
+    if (target_signal_window_samples < 64) target_signal_window_samples = 64;
+    if (target_signal_window_samples > 2048) target_signal_window_samples = 2048;
+    if (target_signal_log_interval_ms < 1.0f) target_signal_log_interval_ms = 1.0f;
+    if (target_signal_log_interval_ms > 1000.0f) target_signal_log_interval_ms = 1000.0f;
     if (target_stream_interval_ms < 0.5f) target_stream_interval_ms = 0.5f;
     if (target_stream_interval_ms > 8.0f) target_stream_interval_ms = 8.0f;
     if (target_stream_sharpness < 1.0f) target_stream_sharpness = 1.0f;
@@ -767,6 +782,11 @@ bool Config::loadConfigMerged(const std::string& filename)
     MERGE_FIELD("target_deadzone_px", target_deadzone_px);
     MERGE_FIELD("target_stream_enabled", target_stream_enabled);
     MERGE_FIELD("target_stream_debug_enabled", target_stream_debug_enabled);
+    MERGE_FIELD("target_signal_diagnostics_enabled", target_signal_diagnostics_enabled);
+    MERGE_FIELD("target_signal_logging_enabled", target_signal_logging_enabled);
+    MERGE_FIELD("target_signal_window_samples", target_signal_window_samples);
+    MERGE_FIELD("target_signal_log_interval_ms", target_signal_log_interval_ms);
+    MERGE_FIELD("target_signal_log_file_path", target_signal_log_file_path);
     MERGE_FIELD("target_stream_interval_ms", target_stream_interval_ms);
     MERGE_FIELD("target_stream_sharpness", target_stream_sharpness);
     MERGE_FIELD("target_max_pixel_speed", target_max_pixel_speed);
@@ -1028,6 +1048,11 @@ bool Config::saveConfig(const std::string& filename)
         << "target_deadzone_px = " << target_deadzone_px << "\n"
         << "target_stream_enabled = " << (target_stream_enabled ? "true" : "false") << "\n"
         << "target_stream_debug_enabled = " << (target_stream_debug_enabled ? "true" : "false") << "\n"
+        << "target_signal_diagnostics_enabled = " << (target_signal_diagnostics_enabled ? "true" : "false") << "\n"
+        << "target_signal_logging_enabled = " << (target_signal_logging_enabled ? "true" : "false") << "\n"
+        << "target_signal_window_samples = " << target_signal_window_samples << "\n"
+        << "target_signal_log_interval_ms = " << target_signal_log_interval_ms << "\n"
+        << "target_signal_log_file_path = " << target_signal_log_file_path << "\n"
         << "target_stream_interval_ms = " << target_stream_interval_ms << "\n"
         << "target_stream_sharpness = " << target_stream_sharpness << "\n"
         << "target_max_pixel_speed = " << target_max_pixel_speed << "\n"

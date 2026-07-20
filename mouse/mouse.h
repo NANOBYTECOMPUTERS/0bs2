@@ -19,7 +19,9 @@
 #include <condition_variable>
 #include <cstdint>
 #include <deque>
+#include <fstream>
 #include <random>
+#include <string>
 
 #include "BoxTarget.h"
 #include "MouseInput.h"
@@ -70,6 +72,38 @@ public:
         double alpha = 0.0;
         double maxStepPx = 0.0;
         double maxSpeedPxPerSec = 0.0;
+        std::chrono::steady_clock::time_point updatedAt{};
+    };
+
+    struct TargetSignalDiagnosticsSnapshot
+    {
+        bool enabled = false;
+        bool loggingEnabled = false;
+        int sampleCount = 0;
+        int windowSamples = 0;
+        double windowSeconds = 0.0;
+        double sampleRateHz = 0.0;
+        double avgDtMs = 0.0;
+        double dtJitterMs = 0.0;
+        double avgErrorPx = 0.0;
+        double rmsErrorPx = 0.0;
+        double peakErrorPx = 0.0;
+        double avgEmitPx = 0.0;
+        double rmsEmitPx = 0.0;
+        double avgQueuedCounts = 0.0;
+        double queuedCountsPerSec = 0.0;
+        double carryOnlyRatio = 0.0;
+        double zeroOutputRatio = 0.0;
+        double staleOrBlockedRatio = 0.0;
+        double dominantErrorFrequencyHz = 0.0;
+        double dominantErrorMagnitude = 0.0;
+        double errorToOutputLagMs = 0.0;
+        double errorToOutputCorrelation = 0.0;
+        double phaseLagDegrees = 0.0;
+        double cadenceHealth = 0.0;
+        double stabilityScore = 0.0;
+        std::string recommendation = "Diagnostics disabled";
+        std::string logFilePath;
         std::chrono::steady_clock::time_point updatedAt{};
     };
 
@@ -125,6 +159,46 @@ private:
     mutable std::mutex            targetStreamDebugMutex;
     TargetStreamDebugSnapshot     targetStreamDebug;
 
+    struct TargetSignalSample
+    {
+        double timeSec = 0.0;
+        int trackId = -1;
+        bool hasState = false;
+        bool streaming = false;
+        bool emittedMovement = false;
+        bool blocked = false;
+        double confidence = 0.0;
+        double stateAgeMs = 0.0;
+        double tickDtMs = 0.0;
+        double aimX = 0.0;
+        double aimY = 0.0;
+        double predictedX = 0.0;
+        double predictedY = 0.0;
+        double errorX = 0.0;
+        double errorY = 0.0;
+        double distancePx = 0.0;
+        double emittedPixelX = 0.0;
+        double emittedPixelY = 0.0;
+        double emittedCountRawX = 0.0;
+        double emittedCountRawY = 0.0;
+        int emittedCountX = 0;
+        int emittedCountY = 0;
+        double carryX = 0.0;
+        double carryY = 0.0;
+        double alpha = 0.0;
+        double maxStepPx = 0.0;
+        const char* status = "";
+    };
+
+    mutable std::mutex            targetSignalDiagnosticsMutex;
+    std::deque<TargetSignalSample> targetSignalSamples;
+    TargetSignalDiagnosticsSnapshot targetSignalDiagnostics;
+    std::ofstream                 targetSignalLogFile;
+    std::string                   targetSignalLogPath;
+    bool                          targetSignalLogHeaderWritten = false;
+    std::chrono::steady_clock::time_point targetSignalStartTime{};
+    std::chrono::steady_clock::time_point targetSignalLastLogTime{};
+
     std::mutex                    movementMtx;
     double                        movementCountCarryX = 0.0;
     double                        movementCountCarryY = 0.0;
@@ -152,6 +226,14 @@ private:
         std::chrono::steady_clock::time_point now,
         double dtSec,
         const char* status);
+    bool targetSignalDiagnosticsActive() const;
+    void recordTargetSignalDiagnosticSample(
+        const TargetStreamDebugSnapshot& snapshot,
+        std::chrono::steady_clock::time_point now);
+    void appendTargetSignalLogRowLocked(const TargetSignalSample& sample);
+    TargetSignalDiagnosticsSnapshot computeTargetSignalDiagnosticsLocked(
+        std::chrono::steady_clock::time_point now) const;
+    void resetTargetSignalDiagnostics();
     Move emitPixelMovement(
         double pixelDx,
         double pixelDy,
@@ -272,7 +354,9 @@ public:
     std::vector<std::pair<double, double>> getFuturePositions();
     void clearWindDebugTrail();
     std::vector<std::pair<double, double>> getWindDebugTrail();
+    void clearTargetSignalDiagnostics();
     TargetStreamDebugSnapshot getTargetStreamDebugSnapshot() const;
+    TargetSignalDiagnosticsSnapshot getTargetSignalDiagnosticsSnapshot() const;
 
     void moveRelative(int dx, int dy);
     void setMouseInput(IMouseInput* newMouseInput);
