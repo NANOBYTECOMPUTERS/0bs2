@@ -144,7 +144,7 @@ Removal gate: remove these only after a behavior baseline proves behavior stays 
 | State Estimator | Ego-motion compensation | ego_motion_compensation_enabled | true/false | n/a | Opt-in tracker-prior compensation from emitted mouse/view motion. Raw detections and final mouse output are unchanged. |
 | Direct Targeting Movement | Target stream | target_stream_enabled | true/false | n/a | Enables the paced target-motion stream used by the live targeting path. |
 | Direct Targeting Movement | Target stream debug | target_stream_debug_enabled | true/false | n/a | Shows live target-stream status, prediction, pixel delta, count output, and block reason in the Mouse tab. |
-| Direct Targeting Movement | Target signal diagnostics | target_signal_diagnostics_enabled | true/false | n/a | Shows passive tuning diagnostics for stream cadence, error, output counts, frequency content, lag, and stability. |
+| Direct Targeting Movement | Target signal diagnostics | target_signal_diagnostics_enabled | true/false | n/a | Shows passive tuning diagnostics for stream cadence, error, output counts, trajectory quality, frequency content, lag, and stability. |
 | Direct Targeting Movement | Signal CSV logging | target_signal_logging_enabled | true/false | n/a | Writes target signal samples to CSV for offline or automatic tuning analysis. |
 | Direct Targeting Movement | Calibrated pixel counts | target_calibrated_pixel_counts_enabled | true/false | n/a | Uses measured counts-per-pixel gains for direct targeting output instead of the default 1:1 pixel-count fallback. |
 | Auto Shoot | Auto Shoot | auto_shoot | true/false | n/a | Enables automatic shooting behavior. |

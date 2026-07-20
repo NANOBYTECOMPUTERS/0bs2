@@ -450,6 +450,7 @@ MouseThread::TargetSignalDiagnosticsSnapshot MouseThread::computeTargetSignalDia
     }
 
     const double windowSec = std::max(0.0, targetSignalSamples.back().timeSec - targetSignalSamples.front().timeSec);
+    const double windowStartSec = targetSignalSamples.front().timeSec;
     out.windowSeconds = windowSec;
 
     double sumDt = 0.0;
@@ -459,18 +460,33 @@ MouseThread::TargetSignalDiagnosticsSnapshot MouseThread::computeTargetSignalDia
     double maxErr = 0.0;
     double sumEmit = 0.0;
     double sumEmit2 = 0.0;
+    double emittedNetX = 0.0;
+    double emittedNetY = 0.0;
+    double sumSpeed = 0.0;
+    double sumSpeed2 = 0.0;
+    double sumSpeedDelta2 = 0.0;
+    double lastSpeed = 0.0;
+    double firstError = 0.0;
+    bool haveLastSpeed = false;
+    std::vector<double> outputSpeeds;
+    outputSpeeds.reserve(n);
     double sumQueued = 0.0;
     int carryOnly = 0;
     int zeroOutput = 0;
     int blocked = 0;
+    int speedDeltaCount = 0;
+    int movingSpeedCount = 0;
 
-    for (const auto& sample : targetSignalSamples)
+    for (size_t sampleIndex = 0; sampleIndex < n; ++sampleIndex)
     {
+        const auto& sample = targetSignalSamples[sampleIndex];
         const double dt = std::max(0.0, sample.tickDtMs);
         sumDt += dt;
         sumDt2 += dt * dt;
 
         const double err = std::hypot(sample.errorX, sample.errorY);
+        if (sampleIndex == 0)
+            firstError = err;
         sumErr += err;
         sumErr2 += err * err;
         maxErr = std::max(maxErr, err);
@@ -478,6 +494,32 @@ MouseThread::TargetSignalDiagnosticsSnapshot MouseThread::computeTargetSignalDia
         const double emit = std::hypot(sample.emittedPixelX, sample.emittedPixelY);
         sumEmit += emit;
         sumEmit2 += emit * emit;
+        out.outputPathLengthPx += emit;
+        emittedNetX += sample.emittedPixelX;
+        emittedNetY += sample.emittedPixelY;
+
+        const double dtSec = dt * 0.001;
+        const double speed = dtSec > 1e-6 ? emit / dtSec : 0.0;
+        outputSpeeds.push_back(speed);
+        if (speed > 1e-6)
+        {
+            ++movingSpeedCount;
+            sumSpeed += speed;
+            sumSpeed2 += speed * speed;
+            if (speed > out.peakOutputSpeedPxPerSec)
+            {
+                out.peakOutputSpeedPxPerSec = speed;
+                out.timeToPeakOutputMs = std::max(0.0, sample.timeSec - windowStartSec) * 1000.0;
+            }
+        }
+        if (haveLastSpeed)
+        {
+            const double speedDelta = speed - lastSpeed;
+            sumSpeedDelta2 += speedDelta * speedDelta;
+            ++speedDeltaCount;
+        }
+        lastSpeed = speed;
+        haveLastSpeed = true;
 
         const double queued = std::hypot(
             static_cast<double>(sample.emittedCountX),
@@ -501,6 +543,47 @@ MouseThread::TargetSignalDiagnosticsSnapshot MouseThread::computeTargetSignalDia
     out.peakErrorPx = maxErr;
     out.avgEmitPx = sumEmit * invN;
     out.rmsEmitPx = std::sqrt(sumEmit2 * invN);
+    out.outputNetDisplacementPx = std::hypot(emittedNetX, emittedNetY);
+    out.outputPathEfficiency = out.outputPathLengthPx > 1e-6
+        ? std::clamp(out.outputNetDisplacementPx / out.outputPathLengthPx, 0.0, 1.0)
+        : 1.0;
+    out.endpointResidualPx = std::hypot(targetSignalSamples.back().errorX, targetSignalSamples.back().errorY);
+    if (outputSpeeds.size() >= 3 && out.peakOutputSpeedPxPerSec > 1e-6)
+    {
+        const double peakThreshold = out.peakOutputSpeedPxPerSec * 0.15;
+        for (size_t i = 1; i + 1 < outputSpeeds.size(); ++i)
+        {
+            if (outputSpeeds[i] > peakThreshold &&
+                outputSpeeds[i] > outputSpeeds[i - 1] &&
+                outputSpeeds[i] > outputSpeeds[i + 1])
+            {
+                ++out.outputSubmovementCount;
+            }
+        }
+        if (out.outputPathLengthPx > 1.0)
+            out.outputSubmovementCount = std::max(out.outputSubmovementCount, 1);
+    }
+    const double speedMean = movingSpeedCount > 0 ? sumSpeed / static_cast<double>(movingSpeedCount) : 0.0;
+    const double speedVariance = movingSpeedCount > 0
+        ? std::max(0.0, sumSpeed2 / static_cast<double>(movingSpeedCount) - speedMean * speedMean)
+        : 0.0;
+    const double speedStdDev = std::sqrt(speedVariance);
+    const double deltaRms = speedDeltaCount > 0
+        ? std::sqrt(sumSpeedDelta2 / static_cast<double>(speedDeltaCount))
+        : 0.0;
+    out.outputVelocityRoughness = out.peakOutputSpeedPxPerSec > 1e-6
+        ? std::clamp((0.65 * speedStdDev + 0.35 * deltaRms) / out.peakOutputSpeedPxPerSec, 0.0, 5.0)
+        : 0.0;
+    const double fittsTargetWidth = std::max(8.0, static_cast<double>(config.target_deadzone_px) * 2.0);
+    out.fittsIndexDifficulty = firstError > 1e-6
+        ? std::log2(firstError / fittsTargetWidth + 1.0)
+        : 0.0;
+    out.fittsExpectedTimeMs = out.fittsIndexDifficulty > 0.0
+        ? 50.0 + 150.0 * out.fittsIndexDifficulty
+        : 0.0;
+    out.fittsTimeRatio = out.fittsExpectedTimeMs > 1e-6
+        ? (out.windowSeconds * 1000.0) / out.fittsExpectedTimeMs
+        : 0.0;
     out.avgQueuedCounts = sumQueued * invN;
     out.queuedCountsPerSec = windowSec > 1e-6 ? sumQueued / windowSec : 0.0;
     out.carryOnlyRatio = static_cast<double>(carryOnly) * invN;
@@ -602,6 +685,14 @@ MouseThread::TargetSignalDiagnosticsSnapshot MouseThread::computeTargetSignalDia
         std::clamp(out.carryOnlyRatio * 15.0, 0.0, 15.0),
         0.0,
         100.0);
+    out.trajectoryQualityScore = std::clamp(
+        100.0 -
+        std::clamp((1.0 - out.outputPathEfficiency) * 45.0, 0.0, 45.0) -
+        std::clamp(static_cast<double>(std::max(0, out.outputSubmovementCount - 2)) * 8.0, 0.0, 24.0) -
+        std::clamp(out.outputVelocityRoughness * 30.0, 0.0, 30.0) -
+        std::clamp(out.endpointResidualPx * 1.5, 0.0, 30.0),
+        0.0,
+        100.0);
 
     if (n < 64)
     {
@@ -622,6 +713,22 @@ MouseThread::TargetSignalDiagnosticsSnapshot MouseThread::computeTargetSignalDia
     else if (out.carryOnlyRatio > 0.60 && out.rmsErrorPx > config.target_deadzone_px + 1.0f)
     {
         out.recommendation = "Autotune hint: most movement is fractional carry; verify counts-per-pixel calibration or use a slightly slower stream interval.";
+    }
+    else if (out.outputPathLengthPx > 8.0 && out.outputPathEfficiency < 0.70)
+    {
+        out.recommendation = "Autotune hint: output path is inefficient; verify box/ID stability before increasing stream speed.";
+    }
+    else if (out.outputSubmovementCount > 4 && out.endpointResidualPx > config.target_deadzone_px + 2.0f)
+    {
+        out.recommendation = "Autotune hint: too many corrective submovements; reduce stream sharpness or prediction blend after checking tracker jitter.";
+    }
+    else if (out.outputVelocityRoughness > 0.85 && out.outputPathLengthPx > 8.0)
+    {
+        out.recommendation = "Autotune hint: velocity profile is rough; lower high-frequency correction or increase tracker smoothing.";
+    }
+    else if (out.fittsTimeRatio > 1.8 && out.endpointResidualPx > config.target_deadzone_px + 2.0f)
+    {
+        out.recommendation = "Autotune hint: correction is slower than expected for the current error; check counts-per-pixel calibration before raising sharpness.";
     }
     else if (out.dominantErrorFrequencyHz > 10.0 && out.dominantErrorMagnitude > 0.75)
     {

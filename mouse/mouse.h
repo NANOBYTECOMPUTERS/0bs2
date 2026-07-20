@@ -90,6 +90,17 @@ public:
         double peakErrorPx = 0.0;
         double avgEmitPx = 0.0;
         double rmsEmitPx = 0.0;
+        double outputPathLengthPx = 0.0;
+        double outputNetDisplacementPx = 0.0;
+        double outputPathEfficiency = 1.0;
+        double peakOutputSpeedPxPerSec = 0.0;
+        double timeToPeakOutputMs = 0.0;
+        int outputSubmovementCount = 0;
+        double endpointResidualPx = 0.0;
+        double fittsIndexDifficulty = 0.0;
+        double fittsExpectedTimeMs = 0.0;
+        double fittsTimeRatio = 0.0;
+        double outputVelocityRoughness = 0.0;
         double avgQueuedCounts = 0.0;
         double queuedCountsPerSec = 0.0;
         double carryOnlyRatio = 0.0;
@@ -102,6 +113,7 @@ public:
         double phaseLagDegrees = 0.0;
         double cadenceHealth = 0.0;
         double stabilityScore = 0.0;
+        double trajectoryQualityScore = 0.0;
         std::string recommendation = "Diagnostics disabled";
         std::string logFilePath;
         std::chrono::steady_clock::time_point updatedAt{};

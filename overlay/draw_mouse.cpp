@@ -646,6 +646,20 @@ void draw_mouse()
                 signal.avgQueuedCounts,
                 signal.queuedCountsPerSec);
             ImGui::Text(
+                "Trajectory: path=%.2f px net=%.2f px efficiency=%.3f peak=%.1f px/s tPeak=%.1f ms",
+                signal.outputPathLengthPx,
+                signal.outputNetDisplacementPx,
+                signal.outputPathEfficiency,
+                signal.peakOutputSpeedPxPerSec,
+                signal.timeToPeakOutputMs);
+            ImGui::Text(
+                "Correction: submoves=%d residual=%.2f px roughness=%.3f fitts=%.0f ms ratio=%.2f",
+                signal.outputSubmovementCount,
+                signal.endpointResidualPx,
+                signal.outputVelocityRoughness,
+                signal.fittsExpectedTimeMs,
+                signal.fittsTimeRatio);
+            ImGui::Text(
                 "Ratios: carry-only=%.0f%% zero=%.0f%% blocked=%.0f%%",
                 signal.carryOnlyRatio * 100.0,
                 signal.zeroOutputRatio * 100.0,
@@ -659,7 +673,7 @@ void draw_mouse()
                 signal.errorToOutputLagMs,
                 signal.errorToOutputCorrelation,
                 signal.phaseLagDegrees);
-            ImGui::Text("Stability: %.0f", signal.stabilityScore);
+            ImGui::Text("Scores: stability=%.0f trajectory=%.0f", signal.stabilityScore, signal.trajectoryQualityScore);
             if (signal.loggingEnabled)
                 ImGui::Text("Log: %s", signal.logFilePath.c_str());
             ImGui::TextWrapped("Recommendation: %s", signal.recommendation.c_str());
