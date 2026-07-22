@@ -74,7 +74,8 @@ class CMakeModernizationContractTests(unittest.TestCase):
             "kKalmanMeasurementNoiseDefault = 18.0f",
             "kKalmanVelocityDampingDefault = 0.04f",
             "kKalmanAcquisitionFramesDefault = 3",
-            "kTargetStreamSharpnessDefault = 36.0f",
+            "kTargetStreamSharpnessDefault = 24.0f",
+            "kTargetMinStreamConfidenceDefault = 0.55f",
         ):
             self.assertIn(token, config_h)
 
@@ -82,6 +83,7 @@ class CMakeModernizationContractTests(unittest.TestCase):
             "runtime_latency_sweep_enabled = kRuntimeLatencySweepEnabledDefault",
             "kalman_acquisition_frames = kKalmanAcquisitionFramesDefault",
             'get_double("target_stream_sharpness", kTargetStreamSharpnessDefault)',
+            'get_double("target_min_stream_confidence", kTargetMinStreamConfidenceDefault)',
         ):
             self.assertIn(token, config_cpp)
 

@@ -474,8 +474,12 @@ MouseThread::TargetSignalDiagnosticsSnapshot MouseThread::computeTargetSignalDia
     int carryOnly = 0;
     int zeroOutput = 0;
     int blocked = 0;
+    int streamingSamples = 0;
+    int lowConfidenceStreamSamples = 0;
     int speedDeltaCount = 0;
     int movingSpeedCount = 0;
+    double sumStreamConfidence = 0.0;
+    constexpr double stableStreamConfidenceFloor = 0.55;
 
     for (size_t sampleIndex = 0; sampleIndex < n; ++sampleIndex)
     {
@@ -532,6 +536,13 @@ MouseThread::TargetSignalDiagnosticsSnapshot MouseThread::computeTargetSignalDia
             ++zeroOutput;
         if (sample.blocked)
             ++blocked;
+        if (sample.streaming)
+        {
+            ++streamingSamples;
+            sumStreamConfidence += std::clamp(sample.confidence, 0.0, 1.0);
+            if (sample.confidence < stableStreamConfidenceFloor)
+                ++lowConfidenceStreamSamples;
+        }
     }
 
     const double invN = 1.0 / static_cast<double>(n);
@@ -589,6 +600,12 @@ MouseThread::TargetSignalDiagnosticsSnapshot MouseThread::computeTargetSignalDia
     out.carryOnlyRatio = static_cast<double>(carryOnly) * invN;
     out.zeroOutputRatio = static_cast<double>(zeroOutput) * invN;
     out.staleOrBlockedRatio = static_cast<double>(blocked) * invN;
+    if (streamingSamples > 0)
+    {
+        out.avgStreamConfidence = sumStreamConfidence / static_cast<double>(streamingSamples);
+        out.lowConfidenceStreamRatio =
+            static_cast<double>(lowConfidenceStreamSamples) / static_cast<double>(streamingSamples);
+    }
 
     if (n >= 16 && out.sampleRateHz > 1.0)
     {
@@ -709,6 +726,10 @@ MouseThread::TargetSignalDiagnosticsSnapshot MouseThread::computeTargetSignalDia
     else if (jitterRatio > 0.35)
     {
         out.recommendation = "Autotune hint: stream cadence jitter is high; raise interval slightly or reduce CPU contention.";
+    }
+    else if (out.lowConfidenceStreamRatio > 0.15)
+    {
+        out.recommendation = "Autotune hint: low-confidence target states are driving movement; raise target_min_stream_confidence or improve box/ID stability before increasing speed.";
     }
     else if (out.carryOnlyRatio > 0.60 && out.rmsErrorPx > config.target_deadzone_px + 1.0f)
     {

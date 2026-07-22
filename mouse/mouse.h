@@ -106,6 +106,8 @@ public:
         double carryOnlyRatio = 0.0;
         double zeroOutputRatio = 0.0;
         double staleOrBlockedRatio = 0.0;
+        double avgStreamConfidence = 0.0;
+        double lowConfidenceStreamRatio = 0.0;
         double dominantErrorFrequencyHz = 0.0;
         double dominantErrorMagnitude = 0.0;
         double errorToOutputLagMs = 0.0;

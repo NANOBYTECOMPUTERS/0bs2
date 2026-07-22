@@ -45,7 +45,7 @@ This is still intentionally additive. It gives the project compiled C++ regressi
 
 - Keep Python contract tests. They protect architectural boundaries such as removed FOV/profile logic, direct tracker-to-mouse handoff, script invariants, and stale subsystem cleanup.
 - Add native C++ tests for runtime math and stateful logic. Current native targets cover Kalman, IMM, ego-motion compensation, convergence tuning, capture geometry, YOLO/DML postprocess decoding, class-aware NMS, and tracker lock/lost/confirmed transitions.
-- Keep convergence defaults grounded in measured behavior: the native convergence suite protects the seeded acquisition ramp, sharper target stream response, and reversal recovery checks that drove the current defaults.
+- Keep convergence defaults grounded in measured behavior: the native convergence suite protects the seeded acquisition ramp, steadier target stream response, and reversal recovery checks that drove the current defaults.
 - Add `clang-tidy` through CMake behind `OBS2_ENABLE_CLANG_TIDY=ON`. It is opt-in because not every Windows developer machine has LLVM installed.
 
 ## Migration Phases

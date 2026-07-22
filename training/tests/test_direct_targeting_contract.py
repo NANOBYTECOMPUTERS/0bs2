@@ -123,6 +123,15 @@ class DirectTargetingContractTests(unittest.TestCase):
             self.assertIn(key, draw_mouse)
             self.assertIn(key, generator)
 
+        mouse_h = self.read("mouse/mouse.h")
+        mouse_cpp = self.read("mouse/mouse.cpp")
+        for token in (
+            "lowConfidenceStreamRatio",
+            "avgStreamConfidence",
+            "low-confidence target states are driving movement",
+        ):
+            self.assertIn(token, mouse_h + mouse_cpp + draw_mouse)
+
         self.assertIn('OverlayUI::BeginSection("Direct Targeting Movement"', draw_mouse)
         self.assertIn('ImGui::Checkbox("Target stream"', draw_mouse)
         self.assertIn('ImGui::Checkbox("Target stream debug"', draw_mouse)

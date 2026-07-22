@@ -98,10 +98,11 @@ public:
     float target_signal_log_interval_ms;
     std::string target_signal_log_file_path;
     float target_stream_interval_ms;
-    static constexpr float kTargetStreamSharpnessDefault = 36.0f;
+    static constexpr float kTargetStreamSharpnessDefault = 24.0f;
     float target_stream_sharpness;
     float target_max_pixel_speed;
     int target_state_max_age_ms;
+    static constexpr float kTargetMinStreamConfidenceDefault = 0.55f;
     float target_min_stream_confidence;
     float target_max_pixel_step;
     float target_output_scale;

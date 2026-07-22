@@ -660,10 +660,12 @@ void draw_mouse()
                 signal.fittsExpectedTimeMs,
                 signal.fittsTimeRatio);
             ImGui::Text(
-                "Ratios: carry-only=%.0f%% zero=%.0f%% blocked=%.0f%%",
+                "Ratios: carry-only=%.0f%% zero=%.0f%% blocked=%.0f%% low-conf=%.0f%%",
                 signal.carryOnlyRatio * 100.0,
                 signal.zeroOutputRatio * 100.0,
-                signal.staleOrBlockedRatio * 100.0);
+                signal.staleOrBlockedRatio * 100.0,
+                signal.lowConfidenceStreamRatio * 100.0);
+            ImGui::Text("Stream confidence: avg=%.2f", signal.avgStreamConfidence);
             ImGui::Text(
                 "Frequency: dominant=%.2f Hz magnitude=%.3f",
                 signal.dominantErrorFrequencyHz,
@@ -690,10 +692,10 @@ void draw_mouse()
             config.target_signal_log_interval_ms = 10.0f;
             config.target_signal_log_file_path = "logs/target_signal_diagnostics.csv";
             config.target_stream_interval_ms = 1.0f;
-            config.target_stream_sharpness = 18.0f;
+            config.target_stream_sharpness = Config::kTargetStreamSharpnessDefault;
             config.target_max_pixel_speed = 1800.0f;
             config.target_state_max_age_ms = 120;
-            config.target_min_stream_confidence = 0.15f;
+            config.target_min_stream_confidence = Config::kTargetMinStreamConfidenceDefault;
             config.target_max_pixel_step = 28.0f;
             config.target_output_scale = 0.28f;
             config.target_calibrated_pixel_counts_enabled = false;

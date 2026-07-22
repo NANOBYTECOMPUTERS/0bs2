@@ -132,7 +132,7 @@ bool Config::loadConfig(const std::string& filename)
         target_stream_sharpness = kTargetStreamSharpnessDefault;
         target_max_pixel_speed = 1800.0f;
         target_state_max_age_ms = 120;
-        target_min_stream_confidence = 0.15f;
+        target_min_stream_confidence = kTargetMinStreamConfidenceDefault;
         target_max_pixel_step = 28.0f;
         target_output_scale = 0.28f;
         target_calibrated_pixel_counts_enabled = false;
@@ -422,7 +422,7 @@ bool Config::loadConfig(const std::string& filename)
     target_stream_sharpness = (float)get_double("target_stream_sharpness", kTargetStreamSharpnessDefault);
     target_max_pixel_speed = (float)get_double("target_max_pixel_speed", 1800.0);
     target_state_max_age_ms = get_long("target_state_max_age_ms", 120);
-    target_min_stream_confidence = (float)get_double("target_min_stream_confidence", 0.15);
+    target_min_stream_confidence = (float)get_double("target_min_stream_confidence", kTargetMinStreamConfidenceDefault);
     target_max_pixel_step = (float)get_double("target_max_pixel_step", 28.0);
     target_output_scale = (float)get_double("target_output_scale", 0.28);
     target_calibrated_pixel_counts_enabled = get_bool("target_calibrated_pixel_counts_enabled", false);
