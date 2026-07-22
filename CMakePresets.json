@@ -21,6 +21,17 @@
         "OBS2_USE_CUDA": "OFF",
         "OBS2_USE_DIRECTML": "OFF"
       }
+    },
+    {
+      "name": "vs2026-cuda-tests",
+      "inherits": "vs2026-tests",
+      "displayName": "VS 2026 CUDA Targeting Tests",
+      "description": "CUDA-flavored native targeting pipeline tests using CUDA, TensorRT, and OpenCV CUDA dependency discovery.",
+      "binaryDir": "${sourceDir}/build/cmake/vs2026-cuda-tests",
+      "cacheVariables": {
+        "OBS2_USE_CUDA": "ON",
+        "OBS2_USE_DIRECTML": "OFF"
+      }
     }
   ],
   "buildPresets": [
@@ -32,6 +43,16 @@
     {
       "name": "vs2026-tests-release",
       "configurePreset": "vs2026-tests",
+      "configuration": "Release"
+    },
+    {
+      "name": "vs2026-cuda-tests-debug",
+      "configurePreset": "vs2026-cuda-tests",
+      "configuration": "Debug"
+    },
+    {
+      "name": "vs2026-cuda-tests-release",
+      "configurePreset": "vs2026-cuda-tests",
       "configuration": "Release"
     }
   ],
@@ -47,6 +68,22 @@
     {
       "name": "vs2026-tests-release",
       "configurePreset": "vs2026-tests",
+      "configuration": "Release",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "vs2026-cuda-tests-debug",
+      "configurePreset": "vs2026-cuda-tests",
+      "configuration": "Debug",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "vs2026-cuda-tests-release",
+      "configurePreset": "vs2026-cuda-tests",
       "configuration": "Release",
       "output": {
         "outputOnFailure": true

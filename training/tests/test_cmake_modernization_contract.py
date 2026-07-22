@@ -27,6 +27,8 @@ class CMakeModernizationContractTests(unittest.TestCase):
         self.assertIn("OBS2_USE_CUDA", cmake)
         self.assertIn("OBS2_USE_DIRECTML", cmake)
         self.assertIn("vs2026-tests", presets)
+        self.assertIn("vs2026-cuda-tests", presets)
+        self.assertIn('"OBS2_USE_CUDA": "ON"', presets)
         self.assertIn("Existing MSBuild projects remain authoritative", presets)
         self.assertIn("existing MSBuild projects and scripts remain the authoritative application build", docs)
 
@@ -95,6 +97,7 @@ class CMakeModernizationContractTests(unittest.TestCase):
 
         self.assertIn("postprocess decoding", docs)
         self.assertIn("tracker lock/lost/confirmed transitions", docs)
+        self.assertIn("vs2026-cuda-tests", docs)
 
     def test_existing_build_entrypoints_remain_in_place(self):
         build_ninja = self.read("build-ninja.bat")

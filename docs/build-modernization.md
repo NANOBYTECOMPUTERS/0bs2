@@ -25,9 +25,9 @@ The CMake surface builds native regression tests for targeting math and the firs
 Configure, build, and test:
 
 ```powershell
-cmake --preset vs2026-tests
-cmake --build --preset vs2026-tests-debug
-ctest --preset vs2026-tests-debug
+cmake --preset vs2026-cuda-tests
+cmake --build --preset vs2026-cuda-tests-debug
+ctest --preset vs2026-cuda-tests-debug
 ```
 
 This is still intentionally additive. It gives the project compiled C++ regression coverage for the runtime math, capture coordinate mapping, postprocess decoding, and tracker state transitions without making CMake responsible for the DML/CUDA application binaries yet.
@@ -36,6 +36,7 @@ This is still intentionally additive. It gives the project compiled C++ regressi
 
 - Keep TensorRT as an explicit SDK/imported target. NVIDIA still distributes Windows TensorRT as a zip/SDK install, so a fully package-managed TensorRT path is not assumed.
 - Keep the current OpenCV 5 CUDA install path until package support matches the project requirement exactly. The native CMake tests discover that install so geometry, postprocess, and tracker tests compile against the same OpenCV headers/libraries as the app.
+- Use `vs2026-cuda-tests` as the primary native test preset so dependency discovery validates CUDA, TensorRT, OpenCV CUDA, CUDA runtime DLLs, and cuDNN runtime DLLs before the tests run.
 - Use vcpkg/CMake packages where they reduce friction without changing runtime behavior.
 - Keep `packages.config` for DirectML/ONNX Runtime until the DML app target is migrated and validated under CMake.
 
