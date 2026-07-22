@@ -11,6 +11,7 @@ option(OBS2_USE_CUDA "Reserve CUDA dependency discovery for future migrated targ
 option(OBS2_USE_DIRECTML "Reserve DirectML dependency discovery for future migrated targets." OFF)
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
+include(OBS2Dependencies)
 
 if(OBS2_ENABLE_CLANG_TIDY)
     find_program(OBS2_CLANG_TIDY_EXE NAMES clang-tidy REQUIRED)
@@ -37,10 +38,6 @@ else()
             -Wpedantic)
 endif()
 
-if(OBS2_USE_CUDA OR OBS2_USE_DIRECTML)
-    include(OBS2Dependencies)
-endif()
-
 if(OBS2_USE_CUDA)
     obs2_configure_cuda_dependencies()
 endif()
@@ -51,6 +48,7 @@ endif()
 
 if(OBS2_BUILD_NATIVE_TESTS)
     enable_testing()
+    obs2_configure_opencv_dependency()
 
     add_executable(obs2_targeting_tests
         tests/cpp/targeting_math_tests.cpp)
@@ -59,4 +57,55 @@ if(OBS2_BUILD_NATIVE_TESTS)
             obs2_targeting_core)
 
     add_test(NAME obs2_targeting_tests COMMAND obs2_targeting_tests)
+
+    add_executable(obs2_capture_geometry_tests
+        tests/cpp/capture_geometry_tests.cpp)
+    target_include_directories(obs2_capture_geometry_tests
+        PRIVATE
+            "${CMAKE_CURRENT_SOURCE_DIR}")
+    target_link_libraries(obs2_capture_geometry_tests
+        PRIVATE
+            obs2_targeting_core
+            OBS2::OpenCV)
+    obs2_copy_opencv_runtime(obs2_capture_geometry_tests)
+    add_test(NAME obs2_capture_geometry_tests COMMAND obs2_capture_geometry_tests)
+    obs2_apply_opencv_test_environment(obs2_capture_geometry_tests)
+
+    add_executable(obs2_postprocess_tests
+        tests/cpp/postprocess_tests.cpp
+        detector/postProcess.cpp)
+    target_compile_definitions(obs2_postprocess_tests
+        PRIVATE
+            USE_CUDA
+            YOLO_ANNOTATION_WORKER)
+    target_include_directories(obs2_postprocess_tests
+        PRIVATE
+            "${CMAKE_CURRENT_SOURCE_DIR}/detector")
+    target_link_libraries(obs2_postprocess_tests
+        PRIVATE
+            obs2_targeting_core
+            OBS2::OpenCV)
+    obs2_copy_opencv_runtime(obs2_postprocess_tests)
+    add_test(NAME obs2_postprocess_tests COMMAND obs2_postprocess_tests)
+    obs2_apply_opencv_test_environment(obs2_postprocess_tests)
+
+    add_executable(obs2_tracker_state_tests
+        tests/cpp/tracker_state_tests.cpp
+        mouse/BoxTarget.cpp)
+    target_compile_definitions(obs2_tracker_state_tests
+        PRIVATE
+            NOMINMAX)
+    target_include_directories(obs2_tracker_state_tests
+        PRIVATE
+            "${CMAKE_CURRENT_SOURCE_DIR}/tests/cpp/shims"
+            "${CMAKE_CURRENT_SOURCE_DIR}/mouse"
+            "${CMAKE_CURRENT_SOURCE_DIR}/config"
+            "${CMAKE_CURRENT_SOURCE_DIR}/include")
+    target_link_libraries(obs2_tracker_state_tests
+        PRIVATE
+            obs2_targeting_core
+            OBS2::OpenCV)
+    obs2_copy_opencv_runtime(obs2_tracker_state_tests)
+    add_test(NAME obs2_tracker_state_tests COMMAND obs2_tracker_state_tests)
+    obs2_apply_opencv_test_environment(obs2_tracker_state_tests)
 endif()

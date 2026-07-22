@@ -20,6 +20,9 @@ class CMakeModernizationContractTests(unittest.TestCase):
         self.assertIn("project(OBS2", cmake)
         self.assertIn("obs2_targeting_core", cmake)
         self.assertIn("obs2_targeting_tests", cmake)
+        self.assertIn("obs2_capture_geometry_tests", cmake)
+        self.assertIn("obs2_postprocess_tests", cmake)
+        self.assertIn("obs2_tracker_state_tests", cmake)
         self.assertIn("OBS2_ENABLE_CLANG_TIDY", cmake)
         self.assertIn("OBS2_USE_CUDA", cmake)
         self.assertIn("OBS2_USE_DIRECTML", cmake)
@@ -45,6 +48,53 @@ class CMakeModernizationContractTests(unittest.TestCase):
         self.assertNotIn("opencv2/", native_tests)
         self.assertNotIn("NvInfer", native_tests)
         self.assertIn("target_include_directories(obs2_targeting_core", cmake)
+
+    def test_extended_native_tests_cover_pipeline_state_with_opencv(self):
+        cmake = self.read("CMakeLists.txt")
+        deps = self.read("cmake/OBS2Dependencies.cmake")
+        capture_tests = self.read("tests/cpp/capture_geometry_tests.cpp")
+        postprocess_tests = self.read("tests/cpp/postprocess_tests.cpp")
+        tracker_tests = self.read("tests/cpp/tracker_state_tests.cpp")
+        docs = self.read("docs/build-modernization.md")
+
+        for token in (
+            "obs2_configure_opencv_dependency",
+            "OBS2::OpenCV",
+            "obs2_copy_opencv_runtime",
+            "obs2_apply_opencv_test_environment",
+            "CUDNN",
+        ):
+            self.assertIn(token, deps + cmake)
+
+        for token in (
+            "CaptureFrameGeometry::FromCenterCrop",
+            "modelToScreenPoint",
+            "screenToModelPoint",
+            "isInsideScreenCrop",
+        ):
+            self.assertIn(token, capture_tests)
+
+        for token in (
+            "postProcessYoloScaled",
+            "postProcessYoloDML",
+            "NMS(",
+            "YOLO_ANNOTATION_WORKER",
+            "USE_CUDA",
+        ):
+            self.assertIn(token, postprocess_tests + cmake)
+
+        for token in (
+            "MultiTargetTracker",
+            "getLockedTarget",
+            "getDebugTracks",
+            "testTrackerLocksAndMaintainsIdThroughMatchedMovement",
+            "testTrackerKeepsLockedTargetDuringShortOcclusion",
+            "testTrackerGatesLowConfidenceAndPromotesTentativeTrack",
+        ):
+            self.assertIn(token, tracker_tests)
+
+        self.assertIn("postprocess decoding", docs)
+        self.assertIn("tracker lock/lost/confirmed transitions", docs)
 
     def test_existing_build_entrypoints_remain_in_place(self):
         build_ninja = self.read("build-ninja.bat")

@@ -9,7 +9,7 @@
     {
       "name": "vs2026-tests",
       "displayName": "VS 2026 Targeting Tests",
-      "description": "Additive CMake path for native targeting-math tests. Existing MSBuild projects remain authoritative for app builds.",
+      "description": "Additive CMake path for native targeting pipeline tests. Existing MSBuild projects remain authoritative for app builds.",
       "generator": "Visual Studio 18 2026",
       "architecture": "x64",
       "binaryDir": "${sourceDir}/build/cmake/vs2026-tests",

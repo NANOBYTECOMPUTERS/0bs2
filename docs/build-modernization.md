@@ -13,11 +13,14 @@ These still route through the existing Visual Studio projects and PowerShell dep
 
 ## New Parallel CMake Path
 
-The initial CMake surface builds pure targeting logic only:
+The CMake surface builds native regression tests for targeting math and the first production pipeline seams:
 
 - `include/aim_kalman.h`
 - `include/aim_imm.h`
 - `include/ego_motion_compensator.h`
+- `capture/capture_geometry.h`
+- `detector/postProcess.cpp`
+- `mouse/BoxTarget.cpp`
 
 Configure, build, and test:
 
@@ -27,19 +30,19 @@ cmake --build --preset vs2026-tests-debug
 ctest --preset vs2026-tests-debug
 ```
 
-This is intentionally small. It gives the project compiled C++ regression coverage without pulling Win32 capture, ImGui, OpenCV, TensorRT, DirectML, serial devices, or CUDA into the first CMake milestone.
+This is still intentionally additive. It gives the project compiled C++ regression coverage for the runtime math, capture coordinate mapping, postprocess decoding, and tracker state transitions without making CMake responsible for the DML/CUDA application binaries yet.
 
 ## Dependency Strategy
 
 - Keep TensorRT as an explicit SDK/imported target. NVIDIA still distributes Windows TensorRT as a zip/SDK install, so a fully package-managed TensorRT path is not assumed.
-- Keep the current OpenCV 5 CUDA install path until package support matches the project requirement exactly.
+- Keep the current OpenCV 5 CUDA install path until package support matches the project requirement exactly. The native CMake tests discover that install so geometry, postprocess, and tracker tests compile against the same OpenCV headers/libraries as the app.
 - Use vcpkg/CMake packages where they reduce friction without changing runtime behavior.
 - Keep `packages.config` for DirectML/ONNX Runtime until the DML app target is migrated and validated under CMake.
 
 ## Test Strategy
 
 - Keep Python contract tests. They protect architectural boundaries such as removed FOV/profile logic, direct tracker-to-mouse handoff, script invariants, and stale subsystem cleanup.
-- Add native C++ tests for runtime math and stateful logic. The first native test target covers Kalman, IMM, and ego-motion compensation.
+- Add native C++ tests for runtime math and stateful logic. Current native targets cover Kalman, IMM, ego-motion compensation, capture geometry, YOLO/DML postprocess decoding, class-aware NMS, and tracker lock/lost/confirmed transitions.
 - Add `clang-tidy` through CMake behind `OBS2_ENABLE_CLANG_TIDY=ON`. It is opt-in because not every Windows developer machine has LLVM installed.
 
 ## Migration Phases
