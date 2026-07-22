@@ -804,7 +804,53 @@ void MultiTargetTracker::update(
     bool keepCurrentLock,
     const cv::Point2d& egoMotionShift)
 {
-    const auto now = std::chrono::steady_clock::now();
+    updateAt(
+        boxes,
+        classes,
+        confidences,
+        screenWidth,
+        screenHeight,
+        disableHeadshot,
+        keepCurrentLock,
+        std::chrono::steady_clock::now(),
+        egoMotionShift);
+}
+
+void MultiTargetTracker::updateAt(
+    const std::vector<cv::Rect>& boxes,
+    const std::vector<int>& classes,
+    int screenWidth,
+    int screenHeight,
+    bool disableHeadshot,
+    bool keepCurrentLock,
+    std::chrono::steady_clock::time_point timestamp,
+    const cv::Point2d& egoMotionShift)
+{
+    static const std::vector<float> defaultConfidences;
+    updateAt(
+        boxes,
+        classes,
+        defaultConfidences,
+        screenWidth,
+        screenHeight,
+        disableHeadshot,
+        keepCurrentLock,
+        timestamp,
+        egoMotionShift);
+}
+
+void MultiTargetTracker::updateAt(
+    const std::vector<cv::Rect>& boxes,
+    const std::vector<int>& classes,
+    const std::vector<float>& confidences,
+    int screenWidth,
+    int screenHeight,
+    bool disableHeadshot,
+    bool keepCurrentLock,
+    std::chrono::steady_clock::time_point timestamp,
+    const cv::Point2d& egoMotionShift)
+{
+    const auto now = timestamp;
     ++updateFrameCounter_;
     const cv::Point2d compensatedEgoMotion = sanitizeEgoMotionShift(egoMotionShift);
 

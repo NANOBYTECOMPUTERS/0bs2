@@ -172,13 +172,13 @@ EstimatorMetrics simulateReversal(const aim::AimKalmanSettings& settings)
 void testStreamSharpnessConvergesWithoutSpeedCapDependency()
 {
     const StepConvergenceMetrics legacy = simulateStreamStep(120.0, 18.0, 1800.0);
-    const StepConvergenceMetrics tuned = simulateStreamStep(120.0, 24.0, 1800.0);
+    const StepConvergenceMetrics tuned = simulateStreamStep(120.0, 56.0, 1800.0);
 
     REQUIRE(legacy.timeToTwoPxMs > 210.0);
     REQUIRE(tuned.timeToTwoPxMs > 0.0);
-    REQUIRE(tuned.timeToTwoPxMs <= 180.0);
-    REQUIRE(tuned.timeToOnePxMs <= 210.0);
-    REQUIRE(tuned.timeToTwoPxMs < legacy.timeToTwoPxMs * 0.80);
+    REQUIRE(tuned.timeToTwoPxMs <= 115.0);
+    REQUIRE(tuned.timeToOnePxMs <= 130.0);
+    REQUIRE(tuned.timeToTwoPxMs < legacy.timeToTwoPxMs * 0.55);
     REQUIRE(tuned.pathLengthPx <= 120.05);
     REQUIRE(tuned.finalErrorPx < 0.001);
 }

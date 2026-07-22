@@ -3,6 +3,7 @@
 #include "test_harness.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <iostream>
 #include <vector>
@@ -16,6 +17,9 @@ constexpr int kScreenHeight = 720;
 constexpr double kPi = 3.14159265358979323846;
 constexpr double kAverageAimErrorBudgetPx = 32.0;
 constexpr double kMaxAimErrorBudgetPx = 46.0;
+constexpr double kCenterConvergenceAverageBudgetPx = 9.0;
+constexpr double kCenterConvergenceFinalBudgetPx = 7.0;
+constexpr double kCenterConvergenceMaxBudgetPx = 22.0;
 
 struct SyntheticBox
 {
@@ -51,6 +55,20 @@ struct ScenarioMetrics
     double maxAimErrorPx = 0.0;
 };
 
+struct CenterConvergenceMetrics
+{
+    int visibleFrames = 0;
+    int lockedFrames = 0;
+    int lockSwitches = 0;
+    int framesInsideEightPx = 0;
+    int firstInsideEightFrame = -1;
+    double initialErrorPx = 0.0;
+    double finalErrorPx = 0.0;
+    double averageErrorAfterWarmupPx = 0.0;
+    double maxErrorAfterWarmupPx = 0.0;
+    double totalPhysicalMovementPx = 0.0;
+};
+
 void configureSyntheticTracker()
 {
     config.class_player = 0;
@@ -78,6 +96,15 @@ void configureSyntheticTracker()
     config.tracker_v2_detector_max_candidates = 160;
     config.tracker_v2_box_smoothing_alpha = 0.34f;
     config.tracker_v2_box_prediction_alpha = 0.18f;
+    config.target_deadzone_px = 0.0f;
+    config.target_stream_sharpness = Config::kTargetStreamSharpnessDefault;
+    config.target_max_pixel_speed = 1800.0f;
+    config.target_min_stream_confidence = Config::kTargetMinStreamConfidenceDefault;
+    config.target_prediction_blend = 0.18f;
+    config.target_prediction_max_lead_px = 8.0f;
+    config.target_calibrated_pixel_counts_enabled = true;
+    config.target_counts_per_pixel_x = 1.0f;
+    config.target_counts_per_pixel_y = 1.0f;
 }
 
 double deterministicNoise(int frame, double phase, double amplitude)
@@ -115,6 +142,13 @@ UnrealActorState makeCrossingActor(int frame)
     actor.verticalPixels = -4.0 + 8.0 * std::sin(static_cast<double>(frame) * 0.04);
     actor.heightMeters = 1.74;
     return actor;
+}
+
+std::chrono::steady_clock::time_point syntheticFrameTimestamp(int frame)
+{
+    using clock = std::chrono::steady_clock;
+    const auto elapsed = std::chrono::duration<double>(static_cast<double>(frame) / 120.0);
+    return clock::time_point{} + std::chrono::duration_cast<clock::duration>(elapsed);
 }
 
 SyntheticBox projectActor(
@@ -159,6 +193,128 @@ SyntheticBox projectActor(
     out.confidence = confidence;
     out.visible = true;
     return out;
+}
+
+SyntheticBox applyVirtualCameraOffset(const SyntheticBox& box, double offsetX, double offsetY)
+{
+    if (!box.visible)
+        return {};
+
+    SyntheticBox out = box;
+    out.box.x = static_cast<int>(std::lround(static_cast<double>(box.box.x) - offsetX));
+    out.box.y = static_cast<int>(std::lround(static_cast<double>(box.box.y) - offsetY));
+    out.truthAim.x -= offsetX;
+    out.truthAim.y -= offsetY;
+
+    if (out.box.x + out.box.width <= 0 || out.box.x >= kScreenWidth ||
+        out.box.y + out.box.height <= 0 || out.box.y >= kScreenHeight)
+    {
+        return {};
+    }
+
+    return out;
+}
+
+std::pair<double, double> predictSyntheticStreamAim(
+    const LockedTargetInfo& locked,
+    double ageSec)
+{
+    ageSec = std::clamp(ageSec, 0.0, 0.250);
+    double predictedX = locked.target.smoothX + locked.targetVelocityX * ageSec;
+    double predictedY = locked.target.smoothY + locked.targetVelocityY * ageSec;
+
+    if (!std::isfinite(predictedX) || !std::isfinite(predictedY))
+        return { locked.target.smoothX, locked.target.smoothY };
+
+    double leadX = predictedX - locked.target.smoothX;
+    double leadY = predictedY - locked.target.smoothY;
+    const double maxLead = std::clamp(static_cast<double>(config.target_prediction_max_lead_px), 0.0, 40.0);
+    if (maxLead <= 1e-6)
+        return { locked.target.smoothX, locked.target.smoothY };
+
+    const double leadMagnitude = std::hypot(leadX, leadY);
+    if (leadMagnitude > maxLead && leadMagnitude > 1e-9)
+    {
+        const double scale = maxLead / leadMagnitude;
+        leadX *= scale;
+        leadY *= scale;
+    }
+
+    const double minConfidence = std::clamp(static_cast<double>(config.target_min_stream_confidence), 0.0, 0.95);
+    const double confidenceRange = std::max(0.05, 1.0 - minConfidence);
+    const double confidenceGate = std::clamp(
+        (locked.target.confidence - minConfidence) / confidenceRange,
+        0.0,
+        1.0);
+    const double blend = std::clamp(static_cast<double>(config.target_prediction_blend), 0.0, 0.65);
+
+    return {
+        locked.target.smoothX + leadX * blend * confidenceGate,
+        locked.target.smoothY + leadY * blend * confidenceGate
+    };
+}
+
+double applySyntheticStreamTicks(
+    const LockedTargetInfo& locked,
+    double& cameraOffsetX,
+    double& cameraOffsetY,
+    double& countCarryX,
+    double& countCarryY)
+{
+    constexpr int streamTicksPerFrame = 8;
+    constexpr double streamDtSec = 0.001;
+    double appliedSinceObservationX = 0.0;
+    double appliedSinceObservationY = 0.0;
+    double physicalMovementPx = 0.0;
+
+    for (int tick = 0; tick < streamTicksPerFrame; ++tick)
+    {
+        const auto aim = predictSyntheticStreamAim(
+            locked,
+            static_cast<double>(tick + 1) * streamDtSec);
+        double pixelDx = aim.first - static_cast<double>(kScreenWidth) * 0.5 - appliedSinceObservationX;
+        double pixelDy = aim.second - static_cast<double>(kScreenHeight) * 0.5 - appliedSinceObservationY;
+        if (!std::isfinite(pixelDx) || !std::isfinite(pixelDy))
+            continue;
+
+        const double distance = std::hypot(pixelDx, pixelDy);
+        const double deadzone = std::clamp(static_cast<double>(config.target_deadzone_px), 0.0, 20.0);
+        if (distance <= deadzone)
+            continue;
+
+        const double sharpness = std::clamp(static_cast<double>(config.target_stream_sharpness), 1.0, 80.0);
+        const double alpha = std::clamp(1.0 - std::exp(-sharpness * streamDtSec), 0.0, 1.0);
+        pixelDx *= alpha;
+        pixelDy *= alpha;
+
+        const double maxSpeed = std::clamp(static_cast<double>(config.target_max_pixel_speed), 50.0, 20000.0);
+        const double maxStep = std::max(0.01, maxSpeed * streamDtSec);
+        const double stepLength = std::hypot(pixelDx, pixelDy);
+        if (stepLength > maxStep && stepLength > 1e-9)
+        {
+            const double scale = maxStep / stepLength;
+            pixelDx *= scale;
+            pixelDy *= scale;
+        }
+
+        appliedSinceObservationX += pixelDx;
+        appliedSinceObservationY += pixelDy;
+
+        countCarryX += pixelDx * static_cast<double>(config.target_counts_per_pixel_x);
+        countCarryY += pixelDy * static_cast<double>(config.target_counts_per_pixel_y);
+        const int emittedCountsX = static_cast<int>(std::round(countCarryX));
+        const int emittedCountsY = static_cast<int>(std::round(countCarryY));
+        countCarryX -= static_cast<double>(emittedCountsX);
+        countCarryY -= static_cast<double>(emittedCountsY);
+
+        const double physicalDx = emittedCountsX / static_cast<double>(config.target_counts_per_pixel_x);
+        const double physicalDy = emittedCountsY / static_cast<double>(config.target_counts_per_pixel_y);
+        cameraOffsetX += physicalDx;
+        cameraOffsetY += physicalDy;
+        physicalMovementPx += std::hypot(physicalDx, physicalDy);
+    }
+
+    return physicalMovementPx;
 }
 
 ScenarioMetrics runUnrealStyleScenario()
@@ -211,7 +367,7 @@ ScenarioMetrics runUnrealStyleScenario()
         const cv::Point2d egoShift(
             deterministicNoise(frame, 4.8, 1.8),
             deterministicNoise(frame, 6.2, 1.2));
-        tracker.update(
+        tracker.updateAt(
             boxes,
             classes,
             confidences,
@@ -219,6 +375,7 @@ ScenarioMetrics runUnrealStyleScenario()
             kScreenHeight,
             true,
             frame > 0,
+            syntheticFrameTimestamp(frame),
             egoShift);
 
         LockedTargetInfo locked;
@@ -249,6 +406,129 @@ ScenarioMetrics runUnrealStyleScenario()
     return metrics;
 }
 
+CenterConvergenceMetrics runUnrealClosedLoopConvergenceScenario()
+{
+    configureSyntheticTracker();
+    MultiTargetTracker tracker;
+    CenterConvergenceMetrics metrics;
+    int lockedTrackId = -1;
+    double cameraOffsetX = 0.0;
+    double cameraOffsetY = 0.0;
+    double lastObservationCameraOffsetX = 0.0;
+    double lastObservationCameraOffsetY = 0.0;
+    double countCarryX = 0.0;
+    double countCarryY = 0.0;
+    double sumErrorAfterWarmup = 0.0;
+    int warmupSamples = 0;
+
+    for (int frame = 0; frame < 170; ++frame)
+    {
+        const UnrealCameraState camera = makeCamera(frame);
+        const bool primaryOccluded = frame >= 58 && frame <= 64;
+        const bool crossingActive = frame >= 72 && frame <= 130;
+
+        std::vector<cv::Rect> boxes;
+        std::vector<int> classes;
+        std::vector<float> confidences;
+        SyntheticBox primaryWorld;
+
+        if (!primaryOccluded)
+        {
+            const float confidence = static_cast<float>(std::clamp(
+                0.88 + 0.04 * std::sin(static_cast<double>(frame) * 0.07) -
+                    ((frame > 105 && frame < 118) ? 0.16 : 0.0),
+                0.60,
+                0.95));
+            primaryWorld = projectActor(makePrimaryActor(frame), camera, frame, confidence, 0.3);
+            const SyntheticBox primaryObserved = applyVirtualCameraOffset(primaryWorld, cameraOffsetX, cameraOffsetY);
+            if (primaryObserved.visible)
+            {
+                boxes.push_back(primaryObserved.box);
+                classes.push_back(config.class_player);
+                confidences.push_back(primaryObserved.confidence);
+                ++metrics.visibleFrames;
+            }
+        }
+
+        if (crossingActive)
+        {
+            const float confidence = static_cast<float>(0.67 + 0.08 * std::sin(static_cast<double>(frame) * 0.11));
+            const SyntheticBox decoyWorld = projectActor(makeCrossingActor(frame), camera, frame, confidence, 2.4);
+            const SyntheticBox decoyObserved = applyVirtualCameraOffset(decoyWorld, cameraOffsetX, cameraOffsetY);
+            if (decoyObserved.visible)
+            {
+                boxes.push_back(decoyObserved.box);
+                classes.push_back(config.class_player);
+                confidences.push_back(decoyObserved.confidence);
+            }
+        }
+
+        const cv::Point2d egoShift(
+            cameraOffsetX - lastObservationCameraOffsetX,
+            cameraOffsetY - lastObservationCameraOffsetY);
+        tracker.updateAt(
+            boxes,
+            classes,
+            confidences,
+            kScreenWidth,
+            kScreenHeight,
+            true,
+            frame > 0,
+            syntheticFrameTimestamp(frame),
+            egoShift);
+        lastObservationCameraOffsetX = cameraOffsetX;
+        lastObservationCameraOffsetY = cameraOffsetY;
+
+        LockedTargetInfo locked;
+        if (!tracker.getLockedTarget(locked))
+            continue;
+
+        if (lockedTrackId == -1)
+            lockedTrackId = locked.trackId;
+        else if (locked.trackId != lockedTrackId)
+            ++metrics.lockSwitches;
+
+        if (!primaryWorld.visible || locked.trackId != lockedTrackId)
+            continue;
+
+        ++metrics.lockedFrames;
+        const double preError = std::hypot(
+            primaryWorld.truthAim.x - cameraOffsetX - static_cast<double>(kScreenWidth) * 0.5,
+            primaryWorld.truthAim.y - cameraOffsetY - static_cast<double>(kScreenHeight) * 0.5);
+        if (metrics.lockedFrames == 1)
+            metrics.initialErrorPx = preError;
+
+        metrics.totalPhysicalMovementPx += applySyntheticStreamTicks(
+            locked,
+            cameraOffsetX,
+            cameraOffsetY,
+            countCarryX,
+            countCarryY);
+
+        const double postError = std::hypot(
+            primaryWorld.truthAim.x - cameraOffsetX - static_cast<double>(kScreenWidth) * 0.5,
+            primaryWorld.truthAim.y - cameraOffsetY - static_cast<double>(kScreenHeight) * 0.5);
+        metrics.finalErrorPx = postError;
+        if (postError <= 8.0)
+        {
+            ++metrics.framesInsideEightPx;
+            if (metrics.firstInsideEightFrame < 0)
+                metrics.firstInsideEightFrame = frame;
+        }
+
+        if (frame >= 34)
+        {
+            sumErrorAfterWarmup += postError;
+            metrics.maxErrorAfterWarmupPx = std::max(metrics.maxErrorAfterWarmupPx, postError);
+            ++warmupSamples;
+        }
+    }
+
+    metrics.averageErrorAfterWarmupPx = sumErrorAfterWarmup /
+        static_cast<double>(std::max(1, warmupSamples));
+    return metrics;
+}
+
 void testUnrealStyleScenarioMaintainsTargetLock()
 {
     const ScenarioMetrics metrics = runUnrealStyleScenario();
@@ -276,6 +556,29 @@ void testUnrealStyleScenarioKeepsAimErrorBounded()
     REQUIRE(averageAimError < kAverageAimErrorBudgetPx);
     REQUIRE(metrics.maxAimErrorPx < kMaxAimErrorBudgetPx);
 }
+
+void testUnrealStyleClosedLoopConvergesToCenter()
+{
+    const CenterConvergenceMetrics metrics = runUnrealClosedLoopConvergenceScenario();
+    std::cout << "Synthetic center convergence metrics: initial_error=" << metrics.initialErrorPx
+        << " final_error=" << metrics.finalErrorPx
+        << " avg_after_warmup=" << metrics.averageErrorAfterWarmupPx
+        << " max_after_warmup=" << metrics.maxErrorAfterWarmupPx
+        << " visible=" << metrics.visibleFrames
+        << " locked=" << metrics.lockedFrames
+        << " inside_8px=" << metrics.framesInsideEightPx
+        << " first_inside_8_frame=" << metrics.firstInsideEightFrame
+        << " movement_px=" << metrics.totalPhysicalMovementPx
+        << " switches=" << metrics.lockSwitches << "\n";
+
+    REQUIRE(metrics.visibleFrames >= 145);
+    REQUIRE(metrics.lockedFrames >= 140);
+    REQUIRE(metrics.lockSwitches == 0);
+    REQUIRE(metrics.firstInsideEightFrame >= 0);
+    REQUIRE(metrics.averageErrorAfterWarmupPx < kCenterConvergenceAverageBudgetPx);
+    REQUIRE(metrics.finalErrorPx < kCenterConvergenceFinalBudgetPx);
+    REQUIRE(metrics.maxErrorAfterWarmupPx < kCenterConvergenceMaxBudgetPx);
+}
 }
 
 int main()
@@ -284,6 +587,7 @@ int main()
         {
             { "Unreal-style scenario maintains target lock", testUnrealStyleScenarioMaintainsTargetLock },
             { "Unreal-style scenario keeps aim error bounded", testUnrealStyleScenarioKeepsAimErrorBounded },
+            { "Unreal-style closed loop converges to center", testUnrealStyleClosedLoopConvergesToCenter },
         },
         "Unreal-style synthetic targeting");
 }

@@ -56,16 +56,27 @@ class CMakeModernizationContractTests(unittest.TestCase):
     def test_native_tests_cover_unreal_style_synthetic_targeting(self):
         cmake = self.read("CMakeLists.txt")
         synthetic_tests = self.read("tests/cpp/unreal_synthetic_targeting_tests.cpp")
+        tracker_h = self.read("mouse/BoxTarget.h")
+        tracker_cpp = self.read("mouse/BoxTarget.cpp")
 
         self.assertIn("obs2_unreal_synthetic_targeting_tests", cmake)
         self.assertIn("mouse/BoxTarget.cpp", cmake)
+        self.assertIn("updateAt", tracker_h)
+        self.assertIn("std::chrono::steady_clock::time_point timestamp", tracker_h)
+        self.assertIn("std::chrono::steady_clock::now()", tracker_cpp)
         for token in (
             "UnrealCameraState",
             "UnrealActorState",
+            "syntheticFrameTimestamp",
             "projectActor",
+            "applyVirtualCameraOffset",
+            "predictSyntheticStreamAim",
+            "applySyntheticStreamTicks",
             "runUnrealStyleScenario",
+            "runUnrealClosedLoopConvergenceScenario",
             "testUnrealStyleScenarioMaintainsTargetLock",
             "testUnrealStyleScenarioKeepsAimErrorBounded",
+            "testUnrealStyleClosedLoopConvergesToCenter",
             "lockSwitches == 0",
         ):
             self.assertIn(token, synthetic_tests)
@@ -92,7 +103,7 @@ class CMakeModernizationContractTests(unittest.TestCase):
             "kKalmanMeasurementNoiseDefault = 18.0f",
             "kKalmanVelocityDampingDefault = 0.04f",
             "kKalmanAcquisitionFramesDefault = 3",
-            "kTargetStreamSharpnessDefault = 24.0f",
+            "kTargetStreamSharpnessDefault = 56.0f",
             "kTargetMinStreamConfidenceDefault = 0.55f",
         ):
             self.assertIn(token, config_h)

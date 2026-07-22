@@ -119,6 +119,27 @@ public:
         bool keepCurrentLock,
         const cv::Point2d& egoMotionShift = cv::Point2d()
     );
+    void updateAt(
+        const std::vector<cv::Rect>& boxes,
+        const std::vector<int>& classes,
+        const std::vector<float>& confidences,
+        int screenWidth,
+        int screenHeight,
+        bool disableHeadshot,
+        bool keepCurrentLock,
+        std::chrono::steady_clock::time_point timestamp,
+        const cv::Point2d& egoMotionShift = cv::Point2d()
+    );
+    void updateAt(
+        const std::vector<cv::Rect>& boxes,
+        const std::vector<int>& classes,
+        int screenWidth,
+        int screenHeight,
+        bool disableHeadshot,
+        bool keepCurrentLock,
+        std::chrono::steady_clock::time_point timestamp,
+        const cv::Point2d& egoMotionShift = cv::Point2d()
+    );
     void update(
         const std::vector<cv::Rect>& boxes,
         const std::vector<int>& classes,

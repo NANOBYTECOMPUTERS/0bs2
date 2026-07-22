@@ -32,7 +32,7 @@ cmake --build --preset vs2026-cuda-tests-debug
 ctest --preset vs2026-cuda-tests-debug
 ```
 
-This is still intentionally additive. It gives the project compiled C++ regression coverage for the runtime math, capture coordinate mapping, postprocess decoding, and tracker state transitions without making CMake responsible for the DML/CUDA application binaries yet.
+This is still intentionally additive. It gives the project compiled C++ regression coverage for the runtime math, capture coordinate mapping, postprocess decoding, deterministic tracker replay, synthetic closed-loop targeting convergence, and tracker state transitions without making CMake responsible for the DML/CUDA application binaries yet.
 
 ## Dependency Strategy
 
@@ -45,7 +45,7 @@ This is still intentionally additive. It gives the project compiled C++ regressi
 ## Test Strategy
 
 - Keep Python contract tests. They protect architectural boundaries such as removed FOV/profile logic, direct tracker-to-mouse handoff, script invariants, and stale subsystem cleanup.
-- Add native C++ tests for runtime math and stateful logic. Current native targets cover Kalman, IMM, ego-motion compensation, convergence tuning, Unreal-style synthetic targeting scenarios, capture geometry, YOLO/DML postprocess decoding, class-aware NMS, and tracker lock/lost/confirmed transitions.
+- Add native C++ tests for runtime math and stateful logic. Current native targets cover Kalman, IMM, ego-motion compensation, convergence tuning, Unreal-style synthetic targeting and closed-loop center convergence scenarios, capture geometry, YOLO/DML postprocess decoding, class-aware NMS, and tracker lock/lost/confirmed transitions.
 - Keep convergence defaults grounded in measured behavior: the native convergence suite protects the seeded acquisition ramp, steadier target stream response, and reversal recovery checks that drove the current defaults.
 - Add `clang-tidy` through CMake behind `OBS2_ENABLE_CLANG_TIDY=ON`. It is opt-in because not every Windows developer machine has LLVM installed.
 
