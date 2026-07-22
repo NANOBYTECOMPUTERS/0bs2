@@ -1,0 +1,56 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 28,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "vs2026-tests",
+      "displayName": "VS 2026 Targeting Tests",
+      "description": "Additive CMake path for native targeting-math tests. Existing MSBuild projects remain authoritative for app builds.",
+      "generator": "Visual Studio 18 2026",
+      "architecture": "x64",
+      "binaryDir": "${sourceDir}/build/cmake/vs2026-tests",
+      "cacheVariables": {
+        "CMAKE_CXX_STANDARD": "20",
+        "CMAKE_CXX_STANDARD_REQUIRED": "ON",
+        "CMAKE_CXX_EXTENSIONS": "OFF",
+        "OBS2_BUILD_NATIVE_TESTS": "ON",
+        "OBS2_USE_CUDA": "OFF",
+        "OBS2_USE_DIRECTML": "OFF"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "vs2026-tests-debug",
+      "configurePreset": "vs2026-tests",
+      "configuration": "Debug"
+    },
+    {
+      "name": "vs2026-tests-release",
+      "configurePreset": "vs2026-tests",
+      "configuration": "Release"
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "vs2026-tests-debug",
+      "configurePreset": "vs2026-tests",
+      "configuration": "Debug",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "vs2026-tests-release",
+      "configurePreset": "vs2026-tests",
+      "configuration": "Release",
+      "output": {
+        "outputOnFailure": true
+      }
+    }
+  ]
+}
