@@ -20,6 +20,7 @@ class CMakeModernizationContractTests(unittest.TestCase):
         self.assertIn("project(OBS2", cmake)
         self.assertIn("obs2_targeting_core", cmake)
         self.assertIn("obs2_targeting_tests", cmake)
+        self.assertIn("obs2_targeting_convergence_tests", cmake)
         self.assertIn("obs2_capture_geometry_tests", cmake)
         self.assertIn("obs2_postprocess_tests", cmake)
         self.assertIn("obs2_tracker_state_tests", cmake)
@@ -50,6 +51,39 @@ class CMakeModernizationContractTests(unittest.TestCase):
         self.assertNotIn("opencv2/", native_tests)
         self.assertNotIn("NvInfer", native_tests)
         self.assertIn("target_include_directories(obs2_targeting_core", cmake)
+
+    def test_native_tests_cover_targeting_convergence_tuning(self):
+        cmake = self.read("CMakeLists.txt")
+        convergence_tests = self.read("tests/cpp/targeting_convergence_tests.cpp")
+        config_h = self.read("config/config.h")
+        config_cpp = self.read("config/config.cpp")
+
+        self.assertIn("obs2_targeting_convergence_tests", cmake)
+        for token in (
+            "simulateStreamStep",
+            "testStreamSharpnessConvergesWithoutSpeedCapDependency",
+            "testSeededLatencySweepImprovesPredictionConvergence",
+            "testTunedKalmanDoesNotWorsenReversalRecovery",
+            "tunedConvergenceSettings",
+        ):
+            self.assertIn(token, convergence_tests)
+
+        for token in (
+            "kRuntimeLatencySweepEnabledDefault = true",
+            "kKalmanProcessNoiseVelocityDefault = 3200.0f",
+            "kKalmanMeasurementNoiseDefault = 18.0f",
+            "kKalmanVelocityDampingDefault = 0.04f",
+            "kKalmanAcquisitionFramesDefault = 3",
+            "kTargetStreamSharpnessDefault = 36.0f",
+        ):
+            self.assertIn(token, config_h)
+
+        for token in (
+            "runtime_latency_sweep_enabled = kRuntimeLatencySweepEnabledDefault",
+            "kalman_acquisition_frames = kKalmanAcquisitionFramesDefault",
+            'get_double("target_stream_sharpness", kTargetStreamSharpnessDefault)',
+        ):
+            self.assertIn(token, config_cpp)
 
     def test_extended_native_tests_cover_pipeline_state_with_opencv(self):
         cmake = self.read("CMakeLists.txt")

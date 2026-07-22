@@ -46,6 +46,11 @@ public:
     float predictionInterval;
     int prediction_futurePositions;
     bool draw_futurePositions;
+    static constexpr bool kRuntimeLatencySweepEnabledDefault = true;
+    static constexpr float kKalmanProcessNoiseVelocityDefault = 3200.0f;
+    static constexpr float kKalmanMeasurementNoiseDefault = 18.0f;
+    static constexpr float kKalmanVelocityDampingDefault = 0.04f;
+    static constexpr int kKalmanAcquisitionFramesDefault = 3;
     bool runtime_latency_sweep_enabled;
     std::string estimator_mode; // "kalman" or "imm"; IMM is opt-in and tracker-only in v1.
     bool kalman_enabled;
@@ -93,6 +98,7 @@ public:
     float target_signal_log_interval_ms;
     std::string target_signal_log_file_path;
     float target_stream_interval_ms;
+    static constexpr float kTargetStreamSharpnessDefault = 36.0f;
     float target_stream_sharpness;
     float target_max_pixel_speed;
     int target_state_max_age_ms;

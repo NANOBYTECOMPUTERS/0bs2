@@ -58,6 +58,16 @@ if(OBS2_BUILD_NATIVE_TESTS)
 
     add_test(NAME obs2_targeting_tests COMMAND obs2_targeting_tests)
 
+    add_executable(obs2_targeting_convergence_tests
+        tests/cpp/targeting_convergence_tests.cpp)
+    target_include_directories(obs2_targeting_convergence_tests
+        PRIVATE
+            "${CMAKE_CURRENT_SOURCE_DIR}/tests/cpp")
+    target_link_libraries(obs2_targeting_convergence_tests
+        PRIVATE
+            obs2_targeting_core)
+    add_test(NAME obs2_targeting_convergence_tests COMMAND obs2_targeting_convergence_tests)
+
     add_executable(obs2_capture_geometry_tests
         tests/cpp/capture_geometry_tests.cpp)
     target_include_directories(obs2_capture_geometry_tests
