@@ -24,6 +24,7 @@ class CMakeModernizationContractTests(unittest.TestCase):
         self.assertIn("obs2_capture_geometry_tests", cmake)
         self.assertIn("obs2_postprocess_tests", cmake)
         self.assertIn("obs2_tracker_state_tests", cmake)
+        self.assertIn("obs2_unreal_synthetic_targeting_tests", cmake)
         self.assertIn("OBS2_ENABLE_CLANG_TIDY", cmake)
         self.assertIn("OBS2_USE_CUDA", cmake)
         self.assertIn("OBS2_USE_DIRECTML", cmake)
@@ -51,6 +52,23 @@ class CMakeModernizationContractTests(unittest.TestCase):
         self.assertNotIn("opencv2/", native_tests)
         self.assertNotIn("NvInfer", native_tests)
         self.assertIn("target_include_directories(obs2_targeting_core", cmake)
+
+    def test_native_tests_cover_unreal_style_synthetic_targeting(self):
+        cmake = self.read("CMakeLists.txt")
+        synthetic_tests = self.read("tests/cpp/unreal_synthetic_targeting_tests.cpp")
+
+        self.assertIn("obs2_unreal_synthetic_targeting_tests", cmake)
+        self.assertIn("mouse/BoxTarget.cpp", cmake)
+        for token in (
+            "UnrealCameraState",
+            "UnrealActorState",
+            "projectActor",
+            "runUnrealStyleScenario",
+            "testUnrealStyleScenarioMaintainsTargetLock",
+            "testUnrealStyleScenarioKeepsAimErrorBounded",
+            "lockSwitches == 0",
+        ):
+            self.assertIn(token, synthetic_tests)
 
     def test_native_tests_cover_targeting_convergence_tuning(self):
         cmake = self.read("CMakeLists.txt")

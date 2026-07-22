@@ -118,4 +118,25 @@ if(OBS2_BUILD_NATIVE_TESTS)
     obs2_copy_opencv_runtime(obs2_tracker_state_tests)
     add_test(NAME obs2_tracker_state_tests COMMAND obs2_tracker_state_tests)
     obs2_apply_opencv_test_environment(obs2_tracker_state_tests)
+
+    add_executable(obs2_unreal_synthetic_targeting_tests
+        tests/cpp/unreal_synthetic_targeting_tests.cpp
+        mouse/BoxTarget.cpp)
+    target_compile_definitions(obs2_unreal_synthetic_targeting_tests
+        PRIVATE
+            NOMINMAX)
+    target_include_directories(obs2_unreal_synthetic_targeting_tests
+        PRIVATE
+            "${CMAKE_CURRENT_SOURCE_DIR}/tests/cpp/shims"
+            "${CMAKE_CURRENT_SOURCE_DIR}/mouse"
+            "${CMAKE_CURRENT_SOURCE_DIR}/config"
+            "${CMAKE_CURRENT_SOURCE_DIR}/include"
+            "${CMAKE_CURRENT_SOURCE_DIR}/tests/cpp")
+    target_link_libraries(obs2_unreal_synthetic_targeting_tests
+        PRIVATE
+            obs2_targeting_core
+            OBS2::OpenCV)
+    obs2_copy_opencv_runtime(obs2_unreal_synthetic_targeting_tests)
+    add_test(NAME obs2_unreal_synthetic_targeting_tests COMMAND obs2_unreal_synthetic_targeting_tests)
+    obs2_apply_opencv_test_environment(obs2_unreal_synthetic_targeting_tests)
 endif()
