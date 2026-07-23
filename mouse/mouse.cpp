@@ -51,6 +51,16 @@ aim::EgoMotionSettings buildEgoMotionSettingsFromConfig()
     return settings;
 }
 
+aim::ConvergenceGovernorSettings buildConvergenceGovernorSettingsFromConfig()
+{
+    aim::ConvergenceGovernorSettings settings;
+    settings.enabled = config.target_convergence_governor_enabled;
+    settings.strength = static_cast<double>(config.target_convergence_governor_strength);
+    settings.minGain = static_cast<double>(config.target_convergence_governor_min_gain);
+    settings.maxGain = static_cast<double>(config.target_convergence_governor_max_gain);
+    return settings;
+}
+
 }
 
 MouseThread::MouseThread(
@@ -82,6 +92,10 @@ MouseThread::MouseThread(
     lastPredictionLookaheadSec = 0.0;
     directMovementTrackId = -1;
     egoMotionCompensator.setSettings(buildEgoMotionSettingsFromConfig());
+    {
+        std::lock_guard<std::mutex> lock(convergenceGovernorMutex);
+        convergenceGovernor.reset();
+    }
 
     moveWorker = std::thread(&MouseThread::moveWorkerLoop, this);
     targetStreamWorker = std::thread(&MouseThread::targetStreamWorkerLoop, this);
@@ -107,6 +121,10 @@ void MouseThread::updateConfig(
     lastPredictionLookaheadSec = 0.0;
     directMovementTrackId = -1;
     resetEgoMotionCompensation();
+    {
+        std::lock_guard<std::mutex> lock(convergenceGovernorMutex);
+        convergenceGovernor.reset();
+    }
 
     resetDirectMovement();
     clearTargetMotionState();
@@ -138,6 +156,10 @@ void MouseThread::updateDetectionGeometry(int width, int height)
     lastPredictionLookaheadSec = 0.0;
     directMovementTrackId = -1;
     resetEgoMotionCompensation();
+    {
+        std::lock_guard<std::mutex> lock(convergenceGovernorMutex);
+        convergenceGovernor.reset();
+    }
 
     resetDirectMovement();
     clearTargetMotionState();
@@ -229,6 +251,7 @@ MouseThread::TargetStreamDebugSnapshot MouseThread::makeTargetStreamDebugSnapsho
     snapshot.maxSpeedPxPerSec = std::clamp(static_cast<double>(config.target_max_pixel_speed), 50.0, 20000.0);
     snapshot.maxStepPx = std::max(0.01, snapshot.maxSpeedPxPerSec * std::clamp(dtSec, 0.0005, 0.050));
     snapshot.calibratedCounts = config.target_calibrated_pixel_counts_enabled;
+    snapshot.convergenceGovernorEnabled = config.target_convergence_governor_enabled;
     snapshot.updatedAt = now;
 
     {
@@ -244,6 +267,7 @@ MouseThread::TargetStreamDebugSnapshot MouseThread::makeTargetStreamDebugSnapsho
         snapshot.trackId = state->trackId;
         snapshot.observedThisFrame = state->observedThisFrame;
         snapshot.missedFrames = state->missedFrames;
+        snapshot.activeTrackCount = state->activeTrackCount;
         snapshot.confidence = state->confidence;
         snapshot.aimX = state->aimX;
         snapshot.aimY = state->aimY;
@@ -324,6 +348,11 @@ void MouseThread::recordTargetSignalDiagnosticSample(
     sample.carryY = snapshot.carryY;
     sample.alpha = snapshot.alpha;
     sample.maxStepPx = snapshot.maxStepPx;
+    sample.convergenceGovernorEnabled = snapshot.convergenceGovernorEnabled;
+    sample.convergenceGovernorGainScale = snapshot.convergenceGovernorGainScale;
+    sample.convergenceGovernorMaxStepScale = snapshot.convergenceGovernorMaxStepScale;
+    sample.convergenceGovernorBrake = snapshot.convergenceGovernorBrake;
+    sample.convergenceGovernorRelease = snapshot.convergenceGovernorRelease;
     sample.status = snapshot.status ? snapshot.status : "";
 
     targetSignalSamples.push_back(sample);
@@ -391,7 +420,8 @@ void MouseThread::appendTargetSignalLogRowLocked(const TargetSignalSample& sampl
             << "time_sec,track_id,status,has_state,streaming,emitted,blocked,confidence,state_age_ms,tick_dt_ms,"
             << "aim_x,aim_y,predicted_x,predicted_y,error_x,error_y,distance_px,"
             << "emitted_pixel_x,emitted_pixel_y,raw_count_x,raw_count_y,queued_count_x,queued_count_y,"
-            << "carry_x,carry_y,alpha,max_step_px\n";
+            << "carry_x,carry_y,alpha,max_step_px,governor_enabled,governor_gain_scale,"
+            << "governor_max_step_scale,governor_brake,governor_release\n";
         targetSignalLogHeaderWritten = true;
     }
 
@@ -423,7 +453,12 @@ void MouseThread::appendTargetSignalLogRowLocked(const TargetSignalSample& sampl
         << sample.carryX << ","
         << sample.carryY << ","
         << sample.alpha << ","
-        << sample.maxStepPx << "\n";
+        << sample.maxStepPx << ","
+        << (sample.convergenceGovernorEnabled ? 1 : 0) << ","
+        << sample.convergenceGovernorGainScale << ","
+        << sample.convergenceGovernorMaxStepScale << ","
+        << sample.convergenceGovernorBrake << ","
+        << sample.convergenceGovernorRelease << "\n";
 }
 
 MouseThread::TargetSignalDiagnosticsSnapshot MouseThread::computeTargetSignalDiagnosticsLocked(
@@ -479,6 +514,11 @@ MouseThread::TargetSignalDiagnosticsSnapshot MouseThread::computeTargetSignalDia
     int speedDeltaCount = 0;
     int movingSpeedCount = 0;
     double sumStreamConfidence = 0.0;
+    double sumGovernorGainScale = 0.0;
+    double sumGovernorMaxStepScale = 0.0;
+    double sumGovernorBrake = 0.0;
+    double sumGovernorRelease = 0.0;
+    int governorSamples = 0;
     constexpr double stableStreamConfidenceFloor = 0.55;
 
     for (size_t sampleIndex = 0; sampleIndex < n; ++sampleIndex)
@@ -543,6 +583,14 @@ MouseThread::TargetSignalDiagnosticsSnapshot MouseThread::computeTargetSignalDia
             if (sample.confidence < stableStreamConfidenceFloor)
                 ++lowConfidenceStreamSamples;
         }
+        if (sample.convergenceGovernorEnabled)
+        {
+            ++governorSamples;
+            sumGovernorGainScale += sample.convergenceGovernorGainScale;
+            sumGovernorMaxStepScale += sample.convergenceGovernorMaxStepScale;
+            sumGovernorBrake += sample.convergenceGovernorBrake;
+            sumGovernorRelease += sample.convergenceGovernorRelease;
+        }
     }
 
     const double invN = 1.0 / static_cast<double>(n);
@@ -605,6 +653,14 @@ MouseThread::TargetSignalDiagnosticsSnapshot MouseThread::computeTargetSignalDia
         out.avgStreamConfidence = sumStreamConfidence / static_cast<double>(streamingSamples);
         out.lowConfidenceStreamRatio =
             static_cast<double>(lowConfidenceStreamSamples) / static_cast<double>(streamingSamples);
+    }
+    if (governorSamples > 0)
+    {
+        const double invGovernorSamples = 1.0 / static_cast<double>(governorSamples);
+        out.avgConvergenceGovernorGainScale = sumGovernorGainScale * invGovernorSamples;
+        out.avgConvergenceGovernorMaxStepScale = sumGovernorMaxStepScale * invGovernorSamples;
+        out.avgConvergenceGovernorBrake = sumGovernorBrake * invGovernorSamples;
+        out.avgConvergenceGovernorRelease = sumGovernorRelease * invGovernorSamples;
     }
 
     if (n >= 16 && out.sampleRateHz > 1.0)
@@ -808,6 +864,10 @@ void MouseThread::targetStreamWorkerLoop()
                 if (state.trackId != activeTrackId)
                 {
                     resetDirectMovement();
+                    {
+                        std::lock_guard<std::mutex> lock(convergenceGovernorMutex);
+                        convergenceGovernor.reset();
+                    }
                     activeTrackId = state.trackId;
                 }
 
@@ -829,6 +889,10 @@ void MouseThread::targetStreamWorkerLoop()
                 {
                     appliedSinceObservationX = 0.0;
                     appliedSinceObservationY = 0.0;
+                    {
+                        std::lock_guard<std::mutex> lock(convergenceGovernorMutex);
+                        convergenceGovernor.reset();
+                    }
                     if (wasStreaming)
                     {
                         resetDirectMovement();
@@ -861,6 +925,10 @@ void MouseThread::targetStreamWorkerLoop()
                     updateLastAppliedMouseDelta(0.0, 0.0);
                 }
                 wasStreaming = false;
+                {
+                    std::lock_guard<std::mutex> lock(convergenceGovernorMutex);
+                    convergenceGovernor.reset();
+                }
                 appliedSinceObservationX = 0.0;
                 appliedSinceObservationY = 0.0;
                 activeSequence = haveState ? state.sequence : 0;
@@ -1282,22 +1350,64 @@ bool MouseThread::dispatchTargetStreamMovement(
     debug.distancePx = distance;
     const double deadzone = std::clamp(static_cast<double>(config.target_deadzone_px), 0.0, 20.0);
     debug.deadzonePx = deadzone;
+    const aim::ConvergenceGovernorSettings governorSettings =
+        buildConvergenceGovernorSettingsFromConfig();
+    aim::ConvergenceGovernorOutput governorOutput;
+    if (governorSettings.enabled)
+    {
+        aim::ConvergenceGovernorContext governorContext;
+        governorContext.trackId = state.trackId;
+        governorContext.observedThisFrame = state.observedThisFrame;
+        governorContext.missedFrames = state.missedFrames;
+        governorContext.activeTrackCount = state.activeTrackCount;
+        governorContext.kalmanEnabled = config.kalman_enabled;
+        governorContext.kalmanMeasurementNoise = static_cast<double>(config.kalman_measurement_noise);
+        governorContext.kalmanVelocityDamping = static_cast<double>(config.kalman_velocity_damping);
+        governorContext.dtSec = dtSec;
+        governorContext.stateAgeMs = ageSec * 1000.0;
+        governorContext.distancePx = distance;
+        governorContext.errorX = pixelDx;
+        governorContext.errorY = pixelDy;
+        governorContext.targetVelocityX = state.velocityX;
+        governorContext.targetVelocityY = state.velocityY;
+        governorContext.confidence = state.confidence;
+        {
+            std::lock_guard<std::mutex> lock(convergenceGovernorMutex);
+            governorOutput = convergenceGovernor.evaluate(governorSettings, governorContext);
+        }
+    }
+
+    debug.convergenceGovernorEnabled = governorOutput.enabled;
+    debug.convergenceGovernorGainScale = governorOutput.gainScale;
+    debug.convergenceGovernorMaxStepScale = governorOutput.maxStepScale;
+    debug.convergenceGovernorOvershootRisk = governorOutput.overshootRisk;
+    debug.convergenceGovernorUndershootRisk = governorOutput.undershootRisk;
+    debug.convergenceGovernorJitterRisk = governorOutput.jitterRisk;
+    debug.convergenceGovernorLockRisk = governorOutput.lockRisk;
+    debug.convergenceGovernorBrake = governorOutput.brake;
+    debug.convergenceGovernorRelease = governorOutput.release;
     if (distance <= deadzone)
     {
         debug.status = "Inside deadzone";
+        if (governorOutput.enabled)
+        {
+            std::lock_guard<std::mutex> lock(convergenceGovernorMutex);
+            convergenceGovernor.observeMovement(0.0, 0.0);
+        }
         updateLastAppliedMouseDelta(0.0, 0.0);
         updateTargetStreamDebug(debug);
         return true;
     }
 
     const double sharpness = std::clamp(static_cast<double>(config.target_stream_sharpness), 1.0, 80.0);
-    const double alpha = std::clamp(1.0 - std::exp(-sharpness * dtSec), 0.0, 1.0);
+    const double governedSharpness = sharpness * governorOutput.gainScale;
+    const double alpha = std::clamp(1.0 - std::exp(-governedSharpness * dtSec), 0.0, 1.0);
     debug.alpha = alpha;
     pixelDx *= alpha;
     pixelDy *= alpha;
 
     const double maxSpeed = std::clamp(static_cast<double>(config.target_max_pixel_speed), 50.0, 20000.0);
-    const double maxStep = std::max(0.01, maxSpeed * dtSec);
+    const double maxStep = std::max(0.01, maxSpeed * dtSec * governorOutput.maxStepScale);
     debug.maxSpeedPxPerSec = maxSpeed;
     debug.maxStepPx = maxStep;
     const double stepLength = std::hypot(pixelDx, pixelDy);
@@ -1311,6 +1421,11 @@ bool MouseThread::dispatchTargetStreamMovement(
     if (std::abs(pixelDx) < 1e-9 && std::abs(pixelDy) < 1e-9)
     {
         debug.status = "No movement";
+        if (governorOutput.enabled)
+        {
+            std::lock_guard<std::mutex> lock(convergenceGovernorMutex);
+            convergenceGovernor.observeMovement(0.0, 0.0);
+        }
         updateTargetStreamDebug(debug);
         return true;
     }
@@ -1321,6 +1436,11 @@ bool MouseThread::dispatchTargetStreamMovement(
     debug.appliedSinceObservationY = appliedSinceObservationY;
     debug.emittedPixelX = pixelDx;
     debug.emittedPixelY = pixelDy;
+    if (governorOutput.enabled)
+    {
+        std::lock_guard<std::mutex> lock(convergenceGovernorMutex);
+        convergenceGovernor.observeMovement(pixelDx, pixelDy);
+    }
     const auto rawCounts = pixelDeltaToCounts(pixelDx, pixelDy);
     debug.emittedCountRawX = rawCounts.first;
     debug.emittedCountRawY = rawCounts.second;
@@ -1524,7 +1644,8 @@ void MouseThread::publishTargetMotionState(const LockedTargetInfo& lockInfo)
         lockInfo.targetVelocityX,
         lockInfo.targetVelocityY,
         lockInfo.observedThisFrame,
-        lockInfo.missedFrames);
+        lockInfo.missedFrames,
+        lockInfo.activeTrackCount);
 }
 
 void MouseThread::publishTargetMotionState(
@@ -1532,7 +1653,8 @@ void MouseThread::publishTargetMotionState(
     double velocityX,
     double velocityY,
     bool observedThisFrame,
-    int missedFrames)
+    int missedFrames,
+    int activeTrackCount)
 {
     if (!std::isfinite(target.smoothX) || !std::isfinite(target.smoothY))
     {
@@ -1558,6 +1680,7 @@ void MouseThread::publishTargetMotionState(
     next.trackId = target.trackId;
     next.observedThisFrame = observedThisFrame;
     next.missedFrames = std::max(0, missedFrames);
+    next.activeTrackCount = std::max(1, activeTrackCount);
     next.aimX = target.smoothX;
     next.aimY = target.smoothY;
     next.velocityX = streamVelocityX;
@@ -1588,7 +1711,13 @@ void MouseThread::clearTargetMotionState()
     }
 
     if (changed)
+    {
+        {
+            std::lock_guard<std::mutex> lock(convergenceGovernorMutex);
+            convergenceGovernor.reset();
+        }
         targetStreamCv.notify_all();
+    }
 }
 
 void MouseThread::updateLastAppliedMouseDelta(double dx, double dy)
@@ -1615,6 +1744,10 @@ void MouseThread::clearQueuedMoves()
     resetWindState();
     resetEgoMotionCompensation();
     resetDirectMovement();
+    {
+        std::lock_guard<std::mutex> lock(convergenceGovernorMutex);
+        convergenceGovernor.reset();
+    }
     updateLastAppliedMouseDelta(0.0, 0.0);
 }
 
@@ -1776,6 +1909,7 @@ MouseThread::TargetStreamDebugSnapshot MouseThread::getTargetStreamDebugSnapshot
     snapshot.deadzonePx = std::clamp(static_cast<double>(config.target_deadzone_px), 0.0, 20.0);
     snapshot.maxSpeedPxPerSec = std::clamp(static_cast<double>(config.target_max_pixel_speed), 50.0, 20000.0);
     snapshot.calibratedCounts = config.target_calibrated_pixel_counts_enabled;
+    snapshot.convergenceGovernorEnabled = config.target_convergence_governor_enabled;
 
     if (!snapshot.enabled)
         return snapshot;
@@ -1796,6 +1930,7 @@ MouseThread::TargetStreamDebugSnapshot MouseThread::getTargetStreamDebugSnapshot
         snapshot.deadzonePx = std::clamp(static_cast<double>(config.target_deadzone_px), 0.0, 20.0);
         snapshot.maxSpeedPxPerSec = std::clamp(static_cast<double>(config.target_max_pixel_speed), 50.0, 20000.0);
         snapshot.calibratedCounts = config.target_calibrated_pixel_counts_enabled;
+        snapshot.convergenceGovernorEnabled = config.target_convergence_governor_enabled;
         return snapshot;
     }
 

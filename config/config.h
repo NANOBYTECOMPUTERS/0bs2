@@ -111,6 +111,10 @@ public:
     float target_counts_per_pixel_y;
     float target_prediction_blend;
     float target_prediction_max_lead_px;
+    bool target_convergence_governor_enabled;
+    float target_convergence_governor_strength;
+    float target_convergence_governor_min_gain;
+    float target_convergence_governor_max_gain;
 
     // Tracker identity pipeline
     bool tracker_v2_enabled;

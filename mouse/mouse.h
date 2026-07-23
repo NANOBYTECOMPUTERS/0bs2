@@ -27,6 +27,7 @@
 #include "MouseInput.h"
 #include "aim_kalman.h"
 #include "ego_motion_compensator.h"
+#include "convergence_governor.h"
 
 class MouseThread
 {
@@ -45,6 +46,7 @@ public:
         int trackId = -1;
         bool observedThisFrame = false;
         int missedFrames = 0;
+        int activeTrackCount = 1;
         double confidence = 0.0;
         double stateAgeMs = 0.0;
         double snapshotAgeMs = 0.0;
@@ -72,6 +74,15 @@ public:
         double alpha = 0.0;
         double maxStepPx = 0.0;
         double maxSpeedPxPerSec = 0.0;
+        bool convergenceGovernorEnabled = false;
+        double convergenceGovernorGainScale = 1.0;
+        double convergenceGovernorMaxStepScale = 1.0;
+        double convergenceGovernorOvershootRisk = 0.0;
+        double convergenceGovernorUndershootRisk = 0.0;
+        double convergenceGovernorJitterRisk = 0.0;
+        double convergenceGovernorLockRisk = 0.0;
+        double convergenceGovernorBrake = 0.0;
+        double convergenceGovernorRelease = 0.0;
         std::chrono::steady_clock::time_point updatedAt{};
     };
 
@@ -108,6 +119,10 @@ public:
         double staleOrBlockedRatio = 0.0;
         double avgStreamConfidence = 0.0;
         double lowConfidenceStreamRatio = 0.0;
+        double avgConvergenceGovernorGainScale = 1.0;
+        double avgConvergenceGovernorMaxStepScale = 1.0;
+        double avgConvergenceGovernorBrake = 0.0;
+        double avgConvergenceGovernorRelease = 0.0;
         double dominantErrorFrequencyHz = 0.0;
         double dominantErrorMagnitude = 0.0;
         double errorToOutputLagMs = 0.0;
@@ -148,6 +163,7 @@ private:
         int trackId = -1;
         bool observedThisFrame = false;
         int missedFrames = 0;
+        int activeTrackCount = 1;
         double aimX = 0.0;
         double aimY = 0.0;
         double velocityX = 0.0;
@@ -201,6 +217,11 @@ private:
         double carryY = 0.0;
         double alpha = 0.0;
         double maxStepPx = 0.0;
+        bool convergenceGovernorEnabled = false;
+        double convergenceGovernorGainScale = 1.0;
+        double convergenceGovernorMaxStepScale = 1.0;
+        double convergenceGovernorBrake = 0.0;
+        double convergenceGovernorRelease = 0.0;
         const char* status = "";
     };
 
@@ -226,6 +247,8 @@ private:
     double                        lastPredictionLookaheadSec = 0.0;
     int                           directMovementTrackId = -1;
     aim::EgoMotionCompensator     egoMotionCompensator;
+    mutable std::mutex            convergenceGovernorMutex;
+    aim::ConvergenceGovernor convergenceGovernor;
     mutable std::mutex            egoMotionVelocityMutex;
     std::chrono::steady_clock::time_point egoMotionVelocityLastTimestamp{};
     double                        egoMotionCameraVelocityPxPerSec = 0.0;
@@ -345,7 +368,8 @@ public:
         double velocityX = 0.0,
         double velocityY = 0.0,
         bool observedThisFrame = true,
-        int missedFrames = 0);
+        int missedFrames = 0,
+        int activeTrackCount = 1);
     void clearTargetMotionState();
     void clearQueuedMoves();
     std::pair<double, double> consumeEgoMotionCompensation(

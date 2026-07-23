@@ -73,6 +73,7 @@ struct LockedTargetInfo
     int trackId = -1;
     bool observedThisFrame = false;
     int missedFrames = 0;
+    int activeTrackCount = 1;
     BoxTarget target;
     std::vector<std::pair<double, double>> predictedFuture;
     int predictedFutureAgeFrames = 9999;

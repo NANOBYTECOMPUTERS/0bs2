@@ -140,6 +140,10 @@ bool Config::loadConfig(const std::string& filename)
         target_counts_per_pixel_y = 0.0f;
         target_prediction_blend = 0.18f;
         target_prediction_max_lead_px = 8.0f;
+        target_convergence_governor_enabled = false;
+        target_convergence_governor_strength = 0.65f;
+        target_convergence_governor_min_gain = 0.20f;
+        target_convergence_governor_max_gain = 1.10f;
 
         // Tracker identity pipeline
         tracker_v2_enabled = true;
@@ -430,6 +434,10 @@ bool Config::loadConfig(const std::string& filename)
     target_counts_per_pixel_y = (float)get_double("target_counts_per_pixel_y", 0.0);
     target_prediction_blend = (float)get_double("target_prediction_blend", 0.18);
     target_prediction_max_lead_px = (float)get_double("target_prediction_max_lead_px", 8.0);
+    target_convergence_governor_enabled = get_bool("target_convergence_governor_enabled", false);
+    target_convergence_governor_strength = (float)get_double("target_convergence_governor_strength", 0.65);
+    target_convergence_governor_min_gain = (float)get_double("target_convergence_governor_min_gain", 0.20);
+    target_convergence_governor_max_gain = (float)get_double("target_convergence_governor_max_gain", 1.10);
 
     // Tracker identity pipeline
     tracker_v2_enabled = get_bool("tracker_v2_enabled", true);
@@ -660,6 +668,14 @@ bool Config::loadConfig(const std::string& filename)
     if (target_prediction_blend > 0.65f) target_prediction_blend = 0.65f;
     if (target_prediction_max_lead_px < 0.0f) target_prediction_max_lead_px = 0.0f;
     if (target_prediction_max_lead_px > 40.0f) target_prediction_max_lead_px = 40.0f;
+    if (target_convergence_governor_strength < 0.0f) target_convergence_governor_strength = 0.0f;
+    if (target_convergence_governor_strength > 1.0f) target_convergence_governor_strength = 1.0f;
+    if (target_convergence_governor_min_gain < 0.05f) target_convergence_governor_min_gain = 0.05f;
+    if (target_convergence_governor_min_gain > 1.0f) target_convergence_governor_min_gain = 1.0f;
+    if (target_convergence_governor_max_gain < 1.0f) target_convergence_governor_max_gain = 1.0f;
+    if (target_convergence_governor_max_gain > 2.0f) target_convergence_governor_max_gain = 2.0f;
+    if (target_convergence_governor_min_gain > target_convergence_governor_max_gain)
+        target_convergence_governor_min_gain = target_convergence_governor_max_gain;
     if (tracker_v2_high_confidence < 0.0f) tracker_v2_high_confidence = 0.0f;
     if (tracker_v2_high_confidence > 1.0f) tracker_v2_high_confidence = 1.0f;
     if (tracker_v2_new_track_confidence < 0.0f) tracker_v2_new_track_confidence = 0.0f;
@@ -799,6 +815,10 @@ bool Config::loadConfigMerged(const std::string& filename)
     MERGE_FIELD("target_counts_per_pixel_y", target_counts_per_pixel_y);
     MERGE_FIELD("target_prediction_blend", target_prediction_blend);
     MERGE_FIELD("target_prediction_max_lead_px", target_prediction_max_lead_px);
+    MERGE_FIELD("target_convergence_governor_enabled", target_convergence_governor_enabled);
+    MERGE_FIELD("target_convergence_governor_strength", target_convergence_governor_strength);
+    MERGE_FIELD("target_convergence_governor_min_gain", target_convergence_governor_min_gain);
+    MERGE_FIELD("target_convergence_governor_max_gain", target_convergence_governor_max_gain);
 
     MERGE_FIELD("tracker_v2_enabled", tracker_v2_enabled);
     MERGE_FIELD("tracker_v2_high_confidence", tracker_v2_high_confidence);
@@ -1066,7 +1086,11 @@ bool Config::saveConfig(const std::string& filename)
         << "target_counts_per_pixel_y = " << target_counts_per_pixel_y << "\n"
         << std::fixed << std::setprecision(3)
         << "target_prediction_blend = " << target_prediction_blend << "\n"
-        << "target_prediction_max_lead_px = " << target_prediction_max_lead_px << "\n\n";
+        << "target_prediction_max_lead_px = " << target_prediction_max_lead_px << "\n"
+        << "target_convergence_governor_enabled = " << (target_convergence_governor_enabled ? "true" : "false") << "\n"
+        << "target_convergence_governor_strength = " << target_convergence_governor_strength << "\n"
+        << "target_convergence_governor_min_gain = " << target_convergence_governor_min_gain << "\n"
+        << "target_convergence_governor_max_gain = " << target_convergence_governor_max_gain << "\n\n";
 
     file << "# Tracker identity pipeline\n"
         << "tracker_v2_enabled = " << (tracker_v2_enabled ? "true" : "false") << "\n"

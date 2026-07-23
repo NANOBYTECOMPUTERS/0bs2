@@ -82,6 +82,10 @@ class ConfigGuiControlContractTests(unittest.TestCase):
             "target_counts_per_pixel_y",
             "target_prediction_blend",
             "target_prediction_max_lead_px",
+            "target_convergence_governor_enabled",
+            "target_convergence_governor_strength",
+            "target_convergence_governor_min_gain",
+            "target_convergence_governor_max_gain",
         ):
             self.assertIn(key, config_h)
             self.assertIn(key, config_cpp)
@@ -102,8 +106,13 @@ class ConfigGuiControlContractTests(unittest.TestCase):
         self.assertIn('ImGui::SliderFloat("Fallback max step (px/call)"', draw_mouse)
         self.assertIn('ImGui::SliderFloat("Prediction blend"', draw_mouse)
         self.assertIn('ImGui::SliderFloat("Max prediction lead (px)"', draw_mouse)
+        self.assertIn('ImGui::Checkbox("Convergence governor"', draw_mouse)
+        self.assertIn('ImGui::SliderFloat("Governor strength"', draw_mouse)
+        self.assertIn('ImGui::SliderFloat("Governor min gain"', draw_mouse)
+        self.assertIn('ImGui::SliderFloat("Governor max gain"', draw_mouse)
         self.assertIn('ImGui::Checkbox("Calibrated pixel counts"', draw_mouse)
         self.assertIn("dispatchTargetStreamMovement(", mouse_cpp)
+        self.assertIn("buildConvergenceGovernorSettingsFromConfig", mouse_cpp)
         self.assertIn("getTargetStreamDebugSnapshot()", mouse_cpp)
         self.assertIn("targetStreamCv.wait_for(", mouse_cpp)
         self.assertIn("getTargetSignalDiagnosticsSnapshot()", mouse_cpp)

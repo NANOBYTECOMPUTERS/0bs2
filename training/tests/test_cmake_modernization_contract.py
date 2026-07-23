@@ -21,6 +21,7 @@ class CMakeModernizationContractTests(unittest.TestCase):
         self.assertIn("obs2_targeting_core", cmake)
         self.assertIn("obs2_targeting_tests", cmake)
         self.assertIn("obs2_targeting_convergence_tests", cmake)
+        self.assertIn("obs2_convergence_governor_tests", cmake)
         self.assertIn("obs2_capture_geometry_tests", cmake)
         self.assertIn("obs2_postprocess_tests", cmake)
         self.assertIn("obs2_tracker_state_tests", cmake)
@@ -85,10 +86,12 @@ class CMakeModernizationContractTests(unittest.TestCase):
     def test_native_tests_cover_targeting_convergence_tuning(self):
         cmake = self.read("CMakeLists.txt")
         convergence_tests = self.read("tests/cpp/targeting_convergence_tests.cpp")
+        governor_tests = self.read("tests/cpp/convergence_governor_tests.cpp")
         config_h = self.read("config/config.h")
         config_cpp = self.read("config/config.cpp")
 
         self.assertIn("obs2_targeting_convergence_tests", cmake)
+        self.assertIn("obs2_convergence_governor_tests", cmake)
         for token in (
             "simulateStreamStep",
             "testStreamSharpnessConvergesWithoutSpeedCapDependency",
@@ -97,6 +100,15 @@ class CMakeModernizationContractTests(unittest.TestCase):
             "tunedConvergenceSettings",
         ):
             self.assertIn(token, convergence_tests)
+
+        for token in (
+            "convergence_governor.h",
+            "testDisabledGovernorIsIdentity",
+            "testOvershootBrakesConvergenceGain",
+            "testOcclusionAndMultiTargetRiskDampenOutput",
+            "testGovernorOutputStaysPositiveAndClamped",
+        ):
+            self.assertIn(token, governor_tests)
 
         for token in (
             "kRuntimeLatencySweepEnabledDefault = true",
@@ -114,6 +126,7 @@ class CMakeModernizationContractTests(unittest.TestCase):
             "kalman_acquisition_frames = kKalmanAcquisitionFramesDefault",
             'get_double("target_stream_sharpness", kTargetStreamSharpnessDefault)',
             'get_double("target_min_stream_confidence", kTargetMinStreamConfidenceDefault)',
+            'get_double("target_convergence_governor_strength", 0.65)',
         ):
             self.assertIn(token, config_cpp)
 

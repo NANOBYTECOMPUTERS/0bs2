@@ -1,6 +1,6 @@
 # 0BS GUI and Config Setting Reference
 
-Generated on 2026-07-20 from `dist\0BS\config.ini` and the ImGui source files under `overlay/`.
+Generated on 2026-07-23 from `dist\0BS\config.ini` and the ImGui source files under `overlay/`.
 
 This reference is ordered by the GUI sidebar tabs in `overlay/overlay.cpp`. It lists every GUI slider and every activate/deactivate checkbox, then documents config.ini settings that are not editable in the current DML GUI or are hidden/loadable config keys.
 
@@ -125,6 +125,9 @@ Removal gate: remove these only after a behavior baseline proves behavior stays 
 | Direct Targeting Movement | Min stream confidence | target_min_stream_confidence | 0.00-0.95 | n/a | Minimum confidence required for the target stream to emit movement. |
 | Direct Targeting Movement | Prediction blend | target_prediction_blend | 0.000-0.650 | n/a | Fraction of bounded short-horizon predicted aim mixed into the observed tracker aim point. |
 | Direct Targeting Movement | Max prediction lead (px) | target_prediction_max_lead_px | 0.00-40.00 | n/a | Maximum pixel distance the mouse path may lead the current tracker aim point. |
+| Direct Targeting Movement | Governor strength | target_convergence_governor_strength | 0.000-1.000 | n/a | How strongly the convergence governor can damp or release stream gain from live overshoot, jitter, lock, and ambiguity signals. |
+| Direct Targeting Movement | Governor min gain | target_convergence_governor_min_gain | 0.050-1.000 | n/a | Lower clamp for governor-scaled stream sharpness and max-step output. |
+| Direct Targeting Movement | Governor max gain | target_convergence_governor_max_gain | 1.000-2.000 | n/a | Upper clamp for governor-scaled stream sharpness and max-step output. |
 | Direct Targeting Movement | Fallback max step (px/call) | target_max_pixel_step | 0.25-120.00 | n/a | Legacy per-call clamp for non-stream direct movement helpers and aim-simulation parity. |
 | Direct Targeting Movement | Fallback output scale | target_output_scale | 0.010-3.000 | n/a | Legacy per-call scale for non-stream direct movement helpers and aim-simulation parity. |
 | Direct Targeting Movement | Signal window samples | target_signal_window_samples | 64-2048 | n/a | Rolling sample window used for live diagnostic averages and frequency/lag estimates. |
@@ -143,6 +146,7 @@ Removal gate: remove these only after a behavior baseline proves behavior stays 
 | State Estimator | Compensate detection delay | kalman_compensate_detection_delay | true/false | n/a | Accounts for detector latency in prediction. |
 | State Estimator | Ego-motion compensation | ego_motion_compensation_enabled | true/false | n/a | Opt-in tracker-prior compensation from emitted mouse/view motion. Raw detections and final mouse output are unchanged. |
 | Direct Targeting Movement | Target stream | target_stream_enabled | true/false | n/a | Enables the paced target-motion stream used by the live targeting path. |
+| Direct Targeting Movement | Convergence governor | target_convergence_governor_enabled | true/false | n/a | Enables the optional convergence governor that scales stream gain from live target-lock quality and movement feedback. |
 | Direct Targeting Movement | Target stream debug | target_stream_debug_enabled | true/false | n/a | Shows live target-stream status, prediction, pixel delta, count output, and block reason in the Mouse tab. |
 | Direct Targeting Movement | Target signal diagnostics | target_signal_diagnostics_enabled | true/false | n/a | Shows passive tuning diagnostics for stream cadence, error, output counts, trajectory quality, frequency content, lag, and stability. |
 | Direct Targeting Movement | Signal CSV logging | target_signal_logging_enabled | true/false | n/a | Writes target signal samples to CSV for offline or automatic tuning analysis. |

@@ -59,6 +59,10 @@ float prev_target_counts_per_pixel_x = config.target_counts_per_pixel_x;
 float prev_target_counts_per_pixel_y = config.target_counts_per_pixel_y;
 float prev_target_prediction_blend = config.target_prediction_blend;
 float prev_target_prediction_max_lead_px = config.target_prediction_max_lead_px;
+bool prev_target_convergence_governor_enabled = config.target_convergence_governor_enabled;
+float prev_target_convergence_governor_strength = config.target_convergence_governor_strength;
+float prev_target_convergence_governor_min_gain = config.target_convergence_governor_min_gain;
+float prev_target_convergence_governor_max_gain = config.target_convergence_governor_max_gain;
 bool prev_auto_shoot = config.auto_shoot;
 float prev_bScope_multiplier = config.bScope_multiplier;
 
@@ -501,6 +505,16 @@ void draw_mouse()
         ImGui::SliderFloat("Min stream confidence", &config.target_min_stream_confidence, 0.0f, 0.95f, "%.2f");
         ImGui::SliderFloat("Prediction blend", &config.target_prediction_blend, 0.0f, 0.65f, "%.3f");
         ImGui::SliderFloat("Max prediction lead (px)", &config.target_prediction_max_lead_px, 0.0f, 40.0f, "%.2f");
+        ImGui::Checkbox("Convergence governor", &config.target_convergence_governor_enabled);
+        if (!config.target_convergence_governor_enabled)
+            ImGui::BeginDisabled();
+
+        ImGui::SliderFloat("Governor strength", &config.target_convergence_governor_strength, 0.0f, 1.0f, "%.3f");
+        ImGui::SliderFloat("Governor min gain", &config.target_convergence_governor_min_gain, 0.05f, 1.0f, "%.3f");
+        ImGui::SliderFloat("Governor max gain", &config.target_convergence_governor_max_gain, 1.0f, 2.0f, "%.3f");
+
+        if (!config.target_convergence_governor_enabled)
+            ImGui::EndDisabled();
 
         if (!config.target_stream_enabled)
             ImGui::EndDisabled();
@@ -535,9 +549,10 @@ void draw_mouse()
                 debug.hasState ? "yes" : "no",
                 debug.observedThisFrame ? "yes" : "no");
             ImGui::Text(
-                "Track: id=%d seq=%llu missed=%d conf=%.2f age=%.1f ms snap=%.1f ms",
+                "Track: id=%d seq=%llu active=%d missed=%d conf=%.2f age=%.1f ms snap=%.1f ms",
                 debug.trackId,
                 static_cast<unsigned long long>(debug.sequence),
+                debug.activeTrackCount,
                 debug.missedFrames,
                 debug.confidence,
                 debug.stateAgeMs,
@@ -578,6 +593,19 @@ void draw_mouse()
                 debug.tickDtMs,
                 debug.alpha,
                 debug.maxStepPx);
+            ImGui::Text(
+                "Governor: %s gain=%.3f step=%.3f brake=%.3f release=%.3f",
+                debug.convergenceGovernorEnabled ? "on" : "off",
+                debug.convergenceGovernorGainScale,
+                debug.convergenceGovernorMaxStepScale,
+                debug.convergenceGovernorBrake,
+                debug.convergenceGovernorRelease);
+            ImGui::Text(
+                "Governor risk: over=%.3f under=%.3f jitter=%.3f lock=%.3f",
+                debug.convergenceGovernorOvershootRisk,
+                debug.convergenceGovernorUndershootRisk,
+                debug.convergenceGovernorJitterRisk,
+                debug.convergenceGovernorLockRisk);
             ImGui::Text(
                 "Limits: deadzone=%.2f maxSpeed=%.0f calibrated=%s",
                 debug.deadzonePx,
@@ -667,6 +695,12 @@ void draw_mouse()
                 signal.lowConfidenceStreamRatio * 100.0);
             ImGui::Text("Stream confidence: avg=%.2f", signal.avgStreamConfidence);
             ImGui::Text(
+                "Governor avg: gain=%.3f step=%.3f brake=%.3f release=%.3f",
+                signal.avgConvergenceGovernorGainScale,
+                signal.avgConvergenceGovernorMaxStepScale,
+                signal.avgConvergenceGovernorBrake,
+                signal.avgConvergenceGovernorRelease);
+            ImGui::Text(
                 "Frequency: dominant=%.2f Hz magnitude=%.3f",
                 signal.dominantErrorFrequencyHz,
                 signal.dominantErrorMagnitude);
@@ -703,6 +737,10 @@ void draw_mouse()
             config.target_counts_per_pixel_y = 0.0f;
             config.target_prediction_blend = 0.18f;
             config.target_prediction_max_lead_px = 8.0f;
+            config.target_convergence_governor_enabled = false;
+            config.target_convergence_governor_strength = 0.65f;
+            config.target_convergence_governor_min_gain = 0.20f;
+            config.target_convergence_governor_max_gain = 1.10f;
             OverlayConfig_MarkDirty();
             refreshMouseThread();
         }
@@ -774,6 +812,10 @@ void draw_mouse()
         prev_target_counts_per_pixel_y != config.target_counts_per_pixel_y ||
         prev_target_prediction_blend != config.target_prediction_blend ||
         prev_target_prediction_max_lead_px != config.target_prediction_max_lead_px ||
+        prev_target_convergence_governor_enabled != config.target_convergence_governor_enabled ||
+        prev_target_convergence_governor_strength != config.target_convergence_governor_strength ||
+        prev_target_convergence_governor_min_gain != config.target_convergence_governor_min_gain ||
+        prev_target_convergence_governor_max_gain != config.target_convergence_governor_max_gain ||
         prev_auto_shoot != config.auto_shoot ||
         prev_bScope_multiplier != config.bScope_multiplier)
     {
@@ -815,6 +857,10 @@ void draw_mouse()
         prev_target_counts_per_pixel_y = config.target_counts_per_pixel_y;
         prev_target_prediction_blend = config.target_prediction_blend;
         prev_target_prediction_max_lead_px = config.target_prediction_max_lead_px;
+        prev_target_convergence_governor_enabled = config.target_convergence_governor_enabled;
+        prev_target_convergence_governor_strength = config.target_convergence_governor_strength;
+        prev_target_convergence_governor_min_gain = config.target_convergence_governor_min_gain;
+        prev_target_convergence_governor_max_gain = config.target_convergence_governor_max_gain;
         prev_auto_shoot = config.auto_shoot;
         prev_bScope_multiplier = config.bScope_multiplier;
 

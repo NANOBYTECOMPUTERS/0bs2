@@ -56,7 +56,8 @@ flowchart TD
     STREAMGATE -->|Yes| PREDICTNOW["Predict current aim<br/>short horizon from latest state"]
 
     PREDICTNOW --> ERROR["Pixel error<br/>predicted aim - frame center<br/>minus emitted local motion"]
-    ERROR --> SHAPE["Stream shaping<br/>deadzone<br/>alpha = 1 - exp(-sharpness * dt)<br/>max speed px/sec"]
+    ERROR --> GOV["Optional neural convergence governor<br/>overshoot / undershoot / jitter<br/>lock quality + active track count"]
+    GOV --> SHAPE["Stream shaping<br/>deadzone<br/>governor-scaled alpha<br/>governor-scaled max speed step"]
     SHAPE --> COUNTS["Pixel-to-count conversion"]
     COUNTS --> CAL{"Calibrated counts enabled?"}
     CAL -->|Yes| CALCOUNTS["counts = pixels * counts_per_pixel_x/y"]
@@ -78,7 +79,7 @@ flowchart TD
 
     TRACKER --> TRACKDBG["Tracker debug tracks<br/>locked ID + association metrics"]
     AIMKF --> FUTURE["Future position debug"]
-    STREAMLOOP --> STREAMDBG["Target stream debug snapshot<br/>status + target age + predicted aim<br/>pixel delta + raw/queued counts + carry"]
+    STREAMLOOP --> STREAMDBG["Target stream debug snapshot<br/>status + target age + predicted aim<br/>pixel delta + governor risk<br/>raw/queued counts + carry"]
 
     TRACKDBG --> GAMEOVERLAY["Optional visual game overlay<br/>debug visualization only"]
     FUTURE --> GAMEOVERLAY

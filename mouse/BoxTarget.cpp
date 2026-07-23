@@ -1652,6 +1652,13 @@ bool MultiTargetTracker::getLockedTarget(LockedTargetInfo& out) const
     out.trackId = t.id;
     out.observedThisFrame = t.observedThisFrame;
     out.missedFrames = t.missed;
+    int activeTrackCount = 0;
+    for (const auto& candidate : tracks_)
+    {
+        if (candidate.missed <= allowedMissedFrames(candidate))
+            ++activeTrackCount;
+    }
+    out.activeTrackCount = std::max(1, activeTrackCount);
     const cv::Rect2f outputBox = outputBoxForTrack(t);
     out.target = BoxTarget(
         static_cast<int>(std::lround(outputBox.x)),

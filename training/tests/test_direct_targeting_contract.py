@@ -58,7 +58,11 @@ class DirectTargetingContractTests(unittest.TestCase):
             "movementCountCarryY",
             "queueMove(dx, dy)",
             "recordEgoMotionDelta(pixelDx, pixelDy, now)",
-            "1.0 - std::exp(-sharpness * dtSec)",
+            "ConvergenceGovernor",
+            "buildConvergenceGovernorSettingsFromConfig",
+            "convergenceGovernor.evaluate",
+            "convergenceGovernor.observeMovement",
+            "1.0 - std::exp(-governedSharpness * dtSec)",
             "moveMouseTarget(",
             "directMovementTrackId",
         ):
@@ -129,6 +133,10 @@ class DirectTargetingContractTests(unittest.TestCase):
             "target_counts_per_pixel_y",
             "target_prediction_blend",
             "target_prediction_max_lead_px",
+            "target_convergence_governor_enabled",
+            "target_convergence_governor_strength",
+            "target_convergence_governor_min_gain",
+            "target_convergence_governor_max_gain",
         ):
             self.assertIn(key, config_h)
             self.assertIn(key, config_cpp)
@@ -153,6 +161,10 @@ class DirectTargetingContractTests(unittest.TestCase):
         self.assertIn('ImGui::InputText("Signal log file"', draw_mouse)
         self.assertIn('ImGui::SliderFloat("Stream interval (ms)"', draw_mouse)
         self.assertIn('ImGui::SliderFloat("Max speed (px/s)"', draw_mouse)
+        self.assertIn('ImGui::Checkbox("Convergence governor"', draw_mouse)
+        self.assertIn('ImGui::SliderFloat("Governor strength"', draw_mouse)
+        self.assertIn('ImGui::SliderFloat("Governor min gain"', draw_mouse)
+        self.assertIn('ImGui::SliderFloat("Governor max gain"', draw_mouse)
         self.assertIn('ImGui::Checkbox("Calibrated pixel counts"', draw_mouse)
         self.assertIn('ImGui::SliderFloat("Counts / px X", &config.target_counts_per_pixel_x, 0.0f, 50.0f', draw_mouse)
         self.assertIn('ImGui::SliderFloat("Counts / px Y", &config.target_counts_per_pixel_y, 0.0f, 50.0f', draw_mouse)
@@ -161,6 +173,7 @@ class DirectTargetingContractTests(unittest.TestCase):
         self.assertIn('MERGE_FIELD("target_signal_diagnostics_enabled"', config_cpp)
         self.assertIn('MERGE_FIELD("target_signal_log_file_path"', config_cpp)
         self.assertIn('MERGE_FIELD("target_calibrated_pixel_counts_enabled"', config_cpp)
+        self.assertIn('MERGE_FIELD("target_convergence_governor_enabled"', config_cpp)
         self.assertIn("target_counts_per_pixel_x < 0.0f", config_cpp)
         self.assertIn("target_counts_per_pixel_y < 0.0f", config_cpp)
         self.assertIn("0.0000-50.0000", generator)
@@ -183,6 +196,8 @@ class DirectTargetingContractTests(unittest.TestCase):
             "status = \"Debug disabled\"",
             "Target stream debug",
             "Status: %s",
+            "Governor:",
+            "Governor risk:",
             "Raw counts:",
             "Carry:",
             "Limits:",
@@ -209,6 +224,8 @@ class DirectTargetingContractTests(unittest.TestCase):
             "errorToOutputLagMs",
             "stabilityScore",
             "trajectoryQualityScore",
+            "avgConvergenceGovernorGainScale",
+            "governor_gain_scale",
             "outputPathEfficiency",
             "peakOutputSpeedPxPerSec",
             "outputSubmovementCount",
@@ -222,6 +239,7 @@ class DirectTargetingContractTests(unittest.TestCase):
             "Trajectory: path=",
             "Correction: submoves=",
             "Scores: stability=",
+            "Governor avg:",
             "Recommendation: %s",
         ):
             self.assertIn(token, mouse_h + mouse_cpp + draw_mouse)

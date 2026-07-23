@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import csv
 import datetime as dt
@@ -119,9 +119,13 @@ GUI_CONTROLS: list[dict[str, str]] = [
     row("Mouse", "Direct Targeting Movement", "Min stream confidence", "target_min_stream_confidence", "Slider", "0.00-0.95", "Minimum confidence required for the target stream to emit movement.", "overlay/draw_mouse.cpp"),
     row("Mouse", "Direct Targeting Movement", "Prediction blend", "target_prediction_blend", "Slider", "0.000-0.650", "Fraction of bounded short-horizon predicted aim mixed into the observed tracker aim point.", "overlay/draw_mouse.cpp"),
     row("Mouse", "Direct Targeting Movement", "Max prediction lead (px)", "target_prediction_max_lead_px", "Slider", "0.00-40.00", "Maximum pixel distance the mouse path may lead the current tracker aim point.", "overlay/draw_mouse.cpp"),
+    row("Mouse", "Direct Targeting Movement", "Governor strength", "target_convergence_governor_strength", "Slider", "0.000-1.000", "How strongly the convergence governor can damp or release stream gain from live overshoot, jitter, lock, and ambiguity signals.", "overlay/draw_mouse.cpp"),
+    row("Mouse", "Direct Targeting Movement", "Governor min gain", "target_convergence_governor_min_gain", "Slider", "0.050-1.000", "Lower clamp for governor-scaled stream sharpness and max-step output.", "overlay/draw_mouse.cpp"),
+    row("Mouse", "Direct Targeting Movement", "Governor max gain", "target_convergence_governor_max_gain", "Slider", "1.000-2.000", "Upper clamp for governor-scaled stream sharpness and max-step output.", "overlay/draw_mouse.cpp"),
     row("Mouse", "Direct Targeting Movement", "Fallback max step (px/call)", "target_max_pixel_step", "Slider", "0.25-120.00", "Legacy per-call clamp for non-stream direct movement helpers and aim-simulation parity.", "overlay/draw_mouse.cpp"),
     row("Mouse", "Direct Targeting Movement", "Fallback output scale", "target_output_scale", "Slider", "0.010-3.000", "Legacy per-call scale for non-stream direct movement helpers and aim-simulation parity.", "overlay/draw_mouse.cpp"),
     row("Mouse", "Direct Targeting Movement", "Target stream", "target_stream_enabled", "Activate/deactivate", "true/false", "Enables the paced target-motion stream used by the live targeting path.", "overlay/draw_mouse.cpp"),
+    row("Mouse", "Direct Targeting Movement", "Convergence governor", "target_convergence_governor_enabled", "Activate/deactivate", "true/false", "Enables the optional convergence governor that scales stream gain from live target-lock quality and movement feedback.", "overlay/draw_mouse.cpp"),
     row("Mouse", "Direct Targeting Movement", "Target stream debug", "target_stream_debug_enabled", "Activate/deactivate", "true/false", "Shows live target-stream status, prediction, pixel delta, count output, and block reason in the Mouse tab.", "overlay/draw_mouse.cpp"),
     row("Mouse", "Direct Targeting Movement", "Target signal diagnostics", "target_signal_diagnostics_enabled", "Activate/deactivate", "true/false", "Shows passive tuning diagnostics for stream cadence, error, output counts, trajectory quality, frequency content, lag, and stability.", "overlay/draw_mouse.cpp"),
     row("Mouse", "Direct Targeting Movement", "Signal CSV logging", "target_signal_logging_enabled", "Activate/deactivate", "true/false", "Writes target signal samples to CSV for offline or automatic tuning analysis.", "overlay/draw_mouse.cpp"),
