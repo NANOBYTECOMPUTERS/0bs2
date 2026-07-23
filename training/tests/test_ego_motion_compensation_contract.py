@@ -171,7 +171,8 @@ class EgoMotionCompensationContractTest(unittest.TestCase):
 
         self.assertIn("consumeEgoMotionCompensation", loop)
         self.assertIn("egoMotionShift", loop)
-        self.assertIn("targetTracker.update(", loop)
+        self.assertIn("targetTracker.updateAt(", loop)
+        self.assertIn("trackerFrameTimestamp", loop)
         self.assertIn("const cv::Point2d& egoMotionShift", target_h + target_cpp)
         self.assertIn("compensatedEgoMotion", target_cpp)
         self.assertIn("applyInnerAimEgoMotion", target_cpp)

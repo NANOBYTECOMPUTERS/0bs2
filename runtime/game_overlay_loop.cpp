@@ -603,8 +603,8 @@ static void aim_sim_enqueue_relative_path(AimSimulationState& s, double executeA
 
 static std::pair<double, double> aim_sim_pixel_delta_to_counts(double pixelDx, double pixelDy)
 {
-    const double countsPerPixelX = static_cast<double>(config.target_counts_per_pixel_x);
-    const double countsPerPixelY = static_cast<double>(config.target_counts_per_pixel_y);
+    const double countsPerPixelX = std::abs(static_cast<double>(config.target_counts_per_pixel_x));
+    const double countsPerPixelY = std::abs(static_cast<double>(config.target_counts_per_pixel_y));
     if (config.target_calibrated_pixel_counts_enabled &&
         std::isfinite(pixelDx) &&
         std::isfinite(pixelDy) &&
@@ -626,8 +626,8 @@ static AimSimVec2 aim_sim_counts_to_world_delta(int mx, int my, double scaleToCt
 
     double controlPxX = static_cast<double>(mx);
     double controlPxY = static_cast<double>(my);
-    const double countsPerPixelX = static_cast<double>(config.target_counts_per_pixel_x);
-    const double countsPerPixelY = static_cast<double>(config.target_counts_per_pixel_y);
+    const double countsPerPixelX = std::abs(static_cast<double>(config.target_counts_per_pixel_x));
+    const double countsPerPixelY = std::abs(static_cast<double>(config.target_counts_per_pixel_y));
     if (config.target_calibrated_pixel_counts_enabled &&
         std::isfinite(countsPerPixelX) &&
         std::isfinite(countsPerPixelY) &&

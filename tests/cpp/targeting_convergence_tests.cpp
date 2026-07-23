@@ -20,7 +20,7 @@ struct StepConvergenceMetrics
 StepConvergenceMetrics simulateStreamStep(double initialErrorPx, double sharpness, double maxSpeedPxPerSec)
 {
     constexpr double dtSec = 0.001;
-    constexpr int steps = 500;
+    constexpr int steps = 1400;
     double applied = 0.0;
     StepConvergenceMetrics metrics;
 
@@ -171,16 +171,13 @@ EstimatorMetrics simulateReversal(const aim::AimKalmanSettings& settings)
 
 void testStreamSharpnessConvergesWithoutSpeedCapDependency()
 {
-    const StepConvergenceMetrics legacy = simulateStreamStep(120.0, 18.0, 1800.0);
-    const StepConvergenceMetrics tuned = simulateStreamStep(120.0, 56.0, 1800.0);
+    const StepConvergenceMetrics stable = simulateStreamStep(120.0, 4.5, 1800.0);
 
-    REQUIRE(legacy.timeToTwoPxMs > 210.0);
-    REQUIRE(tuned.timeToTwoPxMs > 0.0);
-    REQUIRE(tuned.timeToTwoPxMs <= 115.0);
-    REQUIRE(tuned.timeToOnePxMs <= 130.0);
-    REQUIRE(tuned.timeToTwoPxMs < legacy.timeToTwoPxMs * 0.55);
-    REQUIRE(tuned.pathLengthPx <= 120.05);
-    REQUIRE(tuned.finalErrorPx < 0.001);
+    REQUIRE(stable.timeToTwoPxMs > 850.0);
+    REQUIRE(stable.timeToTwoPxMs <= 920.0);
+    REQUIRE(stable.timeToOnePxMs <= 1080.0);
+    REQUIRE(stable.pathLengthPx <= 120.05);
+    REQUIRE(stable.finalErrorPx < 0.25);
 }
 
 void testSeededLatencySweepImprovesPredictionConvergence()

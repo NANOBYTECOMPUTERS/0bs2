@@ -26,7 +26,8 @@ class DetectionTrackingContractTest(unittest.TestCase):
 
         loop = self.read("runtime/mouse_thread_loop.cpp")
         self.assertIn("confidences = detectionBuffer.confidences", loop)
-        self.assertIn("targetTracker.update(", loop)
+        self.assertIn("targetTracker.updateAt(", loop)
+        self.assertIn("trackerFrameTimestamp", loop)
         self.assertIn("mouseThread.publishTargetMotionState(lockInfo)", loop)
         self.assertNotIn("mouseThread.moveMouseTarget(*activeTarget)", loop)
         self.assertIn("target.confidence", self.read("mouse/mouse.cpp"))

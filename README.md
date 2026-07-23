@@ -129,8 +129,8 @@ Removal gate: remove these only after a behavior baseline proves behavior stays 
 | Direct Targeting Movement | Fallback output scale | target_output_scale | 0.010-3.000 | n/a | Legacy per-call scale for non-stream direct movement helpers and aim-simulation parity. |
 | Direct Targeting Movement | Signal window samples | target_signal_window_samples | 64-2048 | n/a | Rolling sample window used for live diagnostic averages and frequency/lag estimates. |
 | Direct Targeting Movement | Signal log interval (ms) | target_signal_log_interval_ms | 1.0-1000.0 | n/a | Minimum interval between CSV diagnostic rows. |
-| Direct Targeting Movement | Counts / px X | target_counts_per_pixel_x | -50.0000-50.0000 | n/a | Horizontal calibrated mouse counts per screen-space pixel. |
-| Direct Targeting Movement | Counts / px Y | target_counts_per_pixel_y | -50.0000-50.0000 | n/a | Vertical calibrated mouse counts per screen-space pixel. |
+| Direct Targeting Movement | Counts / px X | target_counts_per_pixel_x | 0.0000-50.0000 | n/a | Horizontal calibrated mouse counts per screen-space pixel magnitude. |
+| Direct Targeting Movement | Counts / px Y | target_counts_per_pixel_y | 0.0000-50.0000 | n/a | Vertical calibrated mouse counts per screen-space pixel magnitude. |
 | Auto Shoot | bScope Multiplier | bScope_multiplier | 0.5-2.0 | n/a | Multiplier used by auto-shoot scope timing/behavior. Disabled in UI until Auto Shoot is on. |
 
 ### Activate/Deactivate

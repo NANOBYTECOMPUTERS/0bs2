@@ -236,7 +236,7 @@ void mouseThreadFunction(MouseThread& mouseThread)
 
             mouseThread.updateDetectionGeometry(trackerFrameWidth, trackerFrameHeight);
 
-            targetTracker.update(
+            targetTracker.updateAt(
                 boxes,
                 classes,
                 confidences,
@@ -244,6 +244,7 @@ void mouseThreadFunction(MouseThread& mouseThread)
                 trackerFrameHeight,
                 config.disable_headshot,
                 aiming.load(),
+                trackerFrameTimestamp,
                 cv::Point2d(egoMotionShift.first, egoMotionShift.second)
             );
             lastTrackerUpdate = trackerFrameTimestamp;

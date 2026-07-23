@@ -924,8 +924,8 @@ void MouseThread::appendWindDebugStep(int dx, int dy)
 
     {
         std::lock_guard<std::recursive_mutex> cfgLock(configMutex);
-        const double countsPerPixelX = static_cast<double>(config.target_counts_per_pixel_x);
-        const double countsPerPixelY = static_cast<double>(config.target_counts_per_pixel_y);
+        const double countsPerPixelX = std::abs(static_cast<double>(config.target_counts_per_pixel_x));
+        const double countsPerPixelY = std::abs(static_cast<double>(config.target_counts_per_pixel_y));
         if (config.target_calibrated_pixel_counts_enabled &&
             std::isfinite(countsPerPixelX) &&
             std::isfinite(countsPerPixelY) &&
@@ -1111,8 +1111,8 @@ void MouseThread::pressMouse(const BoxTarget& target)
 
 std::pair<double, double> MouseThread::pixelDeltaToCounts(double pixelDx, double pixelDy) const
 {
-    const double countsPerPixelX = static_cast<double>(config.target_counts_per_pixel_x);
-    const double countsPerPixelY = static_cast<double>(config.target_counts_per_pixel_y);
+    const double countsPerPixelX = std::abs(static_cast<double>(config.target_counts_per_pixel_x));
+    const double countsPerPixelY = std::abs(static_cast<double>(config.target_counts_per_pixel_y));
     if (config.target_calibrated_pixel_counts_enabled &&
         std::isfinite(pixelDx) &&
         std::isfinite(pixelDy) &&
@@ -1550,24 +1550,16 @@ void MouseThread::publishTargetMotionState(
     target_detected.store(true);
     last_target_time = now;
 
-    const auto blendedAim = blendPredictedAimPoint(target.smoothX, target.smoothY, target.confidence);
-    const double baseAimX = std::isfinite(blendedAim.first) ? blendedAim.first : target.smoothX;
-    const double baseAimY = std::isfinite(blendedAim.second) ? blendedAim.second : target.smoothY;
-
     double streamVelocityX = std::isfinite(velocityX) ? velocityX : 0.0;
     double streamVelocityY = std::isfinite(velocityY) ? velocityY : 0.0;
-    if (std::abs(streamVelocityX) < 1e-6 && std::isfinite(lastKalmanTelemetry.velocity_x))
-        streamVelocityX = lastKalmanTelemetry.velocity_x;
-    if (std::abs(streamVelocityY) < 1e-6 && std::isfinite(lastKalmanTelemetry.velocity_y))
-        streamVelocityY = lastKalmanTelemetry.velocity_y;
 
     TargetMotionState next;
     next.valid = true;
     next.trackId = target.trackId;
     next.observedThisFrame = observedThisFrame;
     next.missedFrames = std::max(0, missedFrames);
-    next.aimX = baseAimX;
-    next.aimY = baseAimY;
+    next.aimX = target.smoothX;
+    next.aimY = target.smoothY;
     next.velocityX = streamVelocityX;
     next.velocityY = streamVelocityY;
     next.confidence = std::clamp(target.confidence, 0.0, 1.0);

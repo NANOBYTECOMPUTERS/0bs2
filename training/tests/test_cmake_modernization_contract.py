@@ -77,6 +77,7 @@ class CMakeModernizationContractTests(unittest.TestCase):
             "testUnrealStyleScenarioMaintainsTargetLock",
             "testUnrealStyleScenarioKeepsAimErrorBounded",
             "testUnrealStyleClosedLoopConvergesToCenter",
+            "testNegativeCalibratedCountGainsDoNotInvertFeedback",
             "lockSwitches == 0",
         ):
             self.assertIn(token, synthetic_tests)
@@ -103,7 +104,7 @@ class CMakeModernizationContractTests(unittest.TestCase):
             "kKalmanMeasurementNoiseDefault = 18.0f",
             "kKalmanVelocityDampingDefault = 0.04f",
             "kKalmanAcquisitionFramesDefault = 3",
-            "kTargetStreamSharpnessDefault = 56.0f",
+            "kTargetStreamSharpnessDefault = 4.5f",
             "kTargetMinStreamConfidenceDefault = 0.55f",
         ):
             self.assertIn(token, config_h)

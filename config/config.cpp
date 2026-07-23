@@ -652,9 +652,9 @@ bool Config::loadConfig(const std::string& filename)
     if (target_max_pixel_step > 240.0f) target_max_pixel_step = 240.0f;
     if (target_output_scale < 0.01f) target_output_scale = 0.01f;
     if (target_output_scale > 3.0f) target_output_scale = 3.0f;
-    if (target_counts_per_pixel_x < -50.0f) target_counts_per_pixel_x = -50.0f;
+    if (target_counts_per_pixel_x < 0.0f) target_counts_per_pixel_x = -target_counts_per_pixel_x;
     if (target_counts_per_pixel_x > 50.0f) target_counts_per_pixel_x = 50.0f;
-    if (target_counts_per_pixel_y < -50.0f) target_counts_per_pixel_y = -50.0f;
+    if (target_counts_per_pixel_y < 0.0f) target_counts_per_pixel_y = -target_counts_per_pixel_y;
     if (target_counts_per_pixel_y > 50.0f) target_counts_per_pixel_y = 50.0f;
     if (target_prediction_blend < 0.0f) target_prediction_blend = 0.0f;
     if (target_prediction_blend > 0.65f) target_prediction_blend = 0.65f;

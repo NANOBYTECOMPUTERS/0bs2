@@ -512,8 +512,8 @@ void draw_mouse()
         if (!config.target_calibrated_pixel_counts_enabled)
             ImGui::BeginDisabled();
 
-        ImGui::SliderFloat("Counts / px X", &config.target_counts_per_pixel_x, -50.0f, 50.0f, "%.4f");
-        ImGui::SliderFloat("Counts / px Y", &config.target_counts_per_pixel_y, -50.0f, 50.0f, "%.4f");
+        ImGui::SliderFloat("Counts / px X", &config.target_counts_per_pixel_x, 0.0f, 50.0f, "%.4f");
+        ImGui::SliderFloat("Counts / px Y", &config.target_counts_per_pixel_y, 0.0f, 50.0f, "%.4f");
 
         if (!config.target_calibrated_pixel_counts_enabled)
             ImGui::EndDisabled();

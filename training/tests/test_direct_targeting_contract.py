@@ -66,12 +66,24 @@ class DirectTargetingContractTests(unittest.TestCase):
 
         self.assertIn("activeTarget->smoothX", loop_cpp)
         self.assertIn("activeTarget->smoothY", loop_cpp)
+        self.assertIn("targetTracker.updateAt(", loop_cpp)
+        self.assertIn("trackerFrameTimestamp", loop_cpp)
         self.assertIn("mouseThread.publishTargetMotionState(lockInfo)", loop_cpp)
         self.assertIn("mouseThread.publishTargetMotionState(*directTarget)", loop_cpp)
         self.assertIn("mouseThread.clearTargetMotionState()", loop_cpp)
         self.assertNotIn("mouseThread.moveMouseTarget(*activeTarget)", loop_cpp)
         self.assertNotIn("std::this_thread::yield()", mouse_cpp)
         self.assertIn("return { pixelDx, pixelDy };", mouse_cpp)
+        self.assertIn("std::abs(static_cast<double>(config.target_counts_per_pixel_x))", mouse_cpp)
+        self.assertIn("std::abs(static_cast<double>(config.target_counts_per_pixel_y))", mouse_cpp)
+
+        publish_start = mouse_cpp.index("void MouseThread::publishTargetMotionState(\n    const BoxTarget& target")
+        publish_end = mouse_cpp.index("void MouseThread::clearTargetMotionState()", publish_start)
+        publish_body = mouse_cpp[publish_start:publish_end]
+        self.assertIn("next.aimX = target.smoothX", publish_body)
+        self.assertIn("next.aimY = target.smoothY", publish_body)
+        self.assertNotIn("blendPredictedAimPoint", publish_body)
+        self.assertNotIn("lastKalmanTelemetry.velocity", publish_body)
 
         for token in (
             join("Pid", "Mouse", "Controller"),
@@ -142,11 +154,16 @@ class DirectTargetingContractTests(unittest.TestCase):
         self.assertIn('ImGui::SliderFloat("Stream interval (ms)"', draw_mouse)
         self.assertIn('ImGui::SliderFloat("Max speed (px/s)"', draw_mouse)
         self.assertIn('ImGui::Checkbox("Calibrated pixel counts"', draw_mouse)
+        self.assertIn('ImGui::SliderFloat("Counts / px X", &config.target_counts_per_pixel_x, 0.0f, 50.0f', draw_mouse)
+        self.assertIn('ImGui::SliderFloat("Counts / px Y", &config.target_counts_per_pixel_y, 0.0f, 50.0f', draw_mouse)
         self.assertIn('MERGE_FIELD("target_stream_enabled"', config_cpp)
         self.assertIn('MERGE_FIELD("target_stream_debug_enabled"', config_cpp)
         self.assertIn('MERGE_FIELD("target_signal_diagnostics_enabled"', config_cpp)
         self.assertIn('MERGE_FIELD("target_signal_log_file_path"', config_cpp)
         self.assertIn('MERGE_FIELD("target_calibrated_pixel_counts_enabled"', config_cpp)
+        self.assertIn("target_counts_per_pixel_x < 0.0f", config_cpp)
+        self.assertIn("target_counts_per_pixel_y < 0.0f", config_cpp)
+        self.assertIn("0.0000-50.0000", generator)
         self.assertIn('"target_counts_per_pixel_x = "', config_cpp)
         self.assertIn("config.target_calibrated_pixel_counts_enabled", self.read("mouse/mouse.cpp"))
 

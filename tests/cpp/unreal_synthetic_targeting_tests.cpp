@@ -17,6 +17,7 @@ constexpr int kScreenHeight = 720;
 constexpr double kPi = 3.14159265358979323846;
 constexpr double kAverageAimErrorBudgetPx = 32.0;
 constexpr double kMaxAimErrorBudgetPx = 46.0;
+constexpr float kSyntheticClosedLoopSharpness = 56.0f;
 constexpr double kCenterConvergenceAverageBudgetPx = 9.0;
 constexpr double kCenterConvergenceFinalBudgetPx = 7.0;
 constexpr double kCenterConvergenceMaxBudgetPx = 22.0;
@@ -266,6 +267,8 @@ double applySyntheticStreamTicks(
     double appliedSinceObservationX = 0.0;
     double appliedSinceObservationY = 0.0;
     double physicalMovementPx = 0.0;
+    const double countsPerPixelX = std::abs(static_cast<double>(config.target_counts_per_pixel_x));
+    const double countsPerPixelY = std::abs(static_cast<double>(config.target_counts_per_pixel_y));
 
     for (int tick = 0; tick < streamTicksPerFrame; ++tick)
     {
@@ -300,15 +303,15 @@ double applySyntheticStreamTicks(
         appliedSinceObservationX += pixelDx;
         appliedSinceObservationY += pixelDy;
 
-        countCarryX += pixelDx * static_cast<double>(config.target_counts_per_pixel_x);
-        countCarryY += pixelDy * static_cast<double>(config.target_counts_per_pixel_y);
+        countCarryX += pixelDx * countsPerPixelX;
+        countCarryY += pixelDy * countsPerPixelY;
         const int emittedCountsX = static_cast<int>(std::round(countCarryX));
         const int emittedCountsY = static_cast<int>(std::round(countCarryY));
         countCarryX -= static_cast<double>(emittedCountsX);
         countCarryY -= static_cast<double>(emittedCountsY);
 
-        const double physicalDx = emittedCountsX / static_cast<double>(config.target_counts_per_pixel_x);
-        const double physicalDy = emittedCountsY / static_cast<double>(config.target_counts_per_pixel_y);
+        const double physicalDx = countsPerPixelX > 1e-9 ? emittedCountsX / countsPerPixelX : emittedCountsX;
+        const double physicalDy = countsPerPixelY > 1e-9 ? emittedCountsY / countsPerPixelY : emittedCountsY;
         cameraOffsetX += physicalDx;
         cameraOffsetY += physicalDy;
         physicalMovementPx += std::hypot(physicalDx, physicalDy);
@@ -409,6 +412,7 @@ ScenarioMetrics runUnrealStyleScenario()
 CenterConvergenceMetrics runUnrealClosedLoopConvergenceScenario()
 {
     configureSyntheticTracker();
+    config.target_stream_sharpness = kSyntheticClosedLoopSharpness;
     MultiTargetTracker tracker;
     CenterConvergenceMetrics metrics;
     int lockedTrackId = -1;
@@ -579,6 +583,46 @@ void testUnrealStyleClosedLoopConvergesToCenter()
     REQUIRE(metrics.finalErrorPx < kCenterConvergenceFinalBudgetPx);
     REQUIRE(metrics.maxErrorAfterWarmupPx < kCenterConvergenceMaxBudgetPx);
 }
+
+void testNegativeCalibratedCountGainsDoNotInvertFeedback()
+{
+    configureSyntheticTracker();
+    config.target_stream_sharpness = Config::kTargetStreamSharpnessDefault;
+    config.target_max_pixel_speed = 20000.0f;
+    config.target_calibrated_pixel_counts_enabled = true;
+    config.target_counts_per_pixel_x = -1.0f;
+    config.target_counts_per_pixel_y = -1.0f;
+
+    LockedTargetInfo locked;
+    locked.trackId = 1;
+    locked.observedThisFrame = true;
+    locked.target.trackId = 1;
+    locked.target.smoothX = static_cast<double>(kScreenWidth) * 0.5 + 42.0;
+    locked.target.smoothY = static_cast<double>(kScreenHeight) * 0.5;
+    locked.target.confidence = 1.0;
+
+    double cameraOffsetX = 0.0;
+    double cameraOffsetY = 0.0;
+    double countCarryX = 0.0;
+    double countCarryY = 0.0;
+    const double initialError = locked.target.smoothX - static_cast<double>(kScreenWidth) * 0.5;
+    const double moved = applySyntheticStreamTicks(
+        locked,
+        cameraOffsetX,
+        cameraOffsetY,
+        countCarryX,
+        countCarryY);
+    const double finalError = locked.target.smoothX - cameraOffsetX - static_cast<double>(kScreenWidth) * 0.5;
+
+    std::cout << "Synthetic count-sign metrics: initial_error=" << initialError
+        << " final_error=" << finalError
+        << " camera_offset_x=" << cameraOffsetX
+        << " movement_px=" << moved << "\n";
+
+    REQUIRE(moved > 0.0);
+    REQUIRE(cameraOffsetX > 0.0);
+    REQUIRE(std::abs(finalError) < std::abs(initialError));
+}
 }
 
 int main()
@@ -588,6 +632,7 @@ int main()
             { "Unreal-style scenario maintains target lock", testUnrealStyleScenarioMaintainsTargetLock },
             { "Unreal-style scenario keeps aim error bounded", testUnrealStyleScenarioKeepsAimErrorBounded },
             { "Unreal-style closed loop converges to center", testUnrealStyleClosedLoopConvergesToCenter },
+            { "negative calibrated count gains do not invert feedback", testNegativeCalibratedCountGainsDoNotInvertFeedback },
         },
         "Unreal-style synthetic targeting");
 }

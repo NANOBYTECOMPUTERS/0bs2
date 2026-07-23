@@ -47,8 +47,8 @@ Slider,Mouse,Direct Targeting Movement,Signal window samples,target_signal_windo
 Slider,Mouse,Direct Targeting Movement,Signal log interval (ms),target_signal_log_interval_ms,1.0-1000.0,n/a,GUI,Minimum interval between CSV diagnostic rows.,overlay/draw_mouse.cpp
 Input text,Mouse,Direct Targeting Movement,Signal log file,target_signal_log_file_path,path,n/a,GUI,CSV output path for target signal diagnostics.,overlay/draw_mouse.cpp
 Activate/deactivate,Mouse,Direct Targeting Movement,Calibrated pixel counts,target_calibrated_pixel_counts_enabled,true/false,n/a,GUI,Uses measured counts-per-pixel gains for direct targeting output instead of the default 1:1 pixel-count fallback.,overlay/draw_mouse.cpp
-Slider,Mouse,Direct Targeting Movement,Counts / px X,target_counts_per_pixel_x,-50.0000-50.0000,n/a,GUI,Horizontal calibrated mouse counts per screen-space pixel.,overlay/draw_mouse.cpp
-Slider,Mouse,Direct Targeting Movement,Counts / px Y,target_counts_per_pixel_y,-50.0000-50.0000,n/a,GUI,Vertical calibrated mouse counts per screen-space pixel.,overlay/draw_mouse.cpp
+Slider,Mouse,Direct Targeting Movement,Counts / px X,target_counts_per_pixel_x,0.0000-50.0000,n/a,GUI,Horizontal calibrated mouse counts per screen-space pixel magnitude.,overlay/draw_mouse.cpp
+Slider,Mouse,Direct Targeting Movement,Counts / px Y,target_counts_per_pixel_y,0.0000-50.0000,n/a,GUI,Vertical calibrated mouse counts per screen-space pixel magnitude.,overlay/draw_mouse.cpp
 Activate/deactivate,Mouse,Auto Shoot,Auto Shoot,auto_shoot,true/false,n/a,GUI,Enables automatic shooting behavior.,overlay/draw_mouse.cpp
 Slider,Mouse,Auto Shoot,bScope Multiplier,bScope_multiplier,0.5-2.0,n/a,GUI,Multiplier used by auto-shoot scope timing/behavior. Disabled in UI until Auto Shoot is on.,overlay/draw_mouse.cpp
 Activate/deactivate,Mouse,Input Method,Arduino 16-bit Mouse,arduino_16_bit_mouse,true/false,n/a,GUI,Arduino input only. Sends wider mouse movement values.,overlay/draw_mouse.cpp
