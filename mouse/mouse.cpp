@@ -1160,7 +1160,19 @@ void MouseThread::pressMouse(const BoxTarget& target)
 {
     std::lock_guard<std::mutex> lock(input_method_mutex);
 
-    bool bScope = check_target_in_scope(target.x, target.y, target.w, target.h, bScope_multiplier);
+    // Center the autoshoot (bScope) box on the aim point so body/head offsets
+    // match aim. Tracker targets keep the original detection box in x/y/w/h while
+    // smooth/pivot carry the offset aim point used by moveMouseTarget.
+    const double aimX = std::isfinite(target.smoothX) ? target.smoothX
+        : (std::isfinite(target.pivotX) ? target.pivotX
+            : (static_cast<double>(target.x) + static_cast<double>(target.w) * 0.5));
+    const double aimY = std::isfinite(target.smoothY) ? target.smoothY
+        : (std::isfinite(target.pivotY) ? target.pivotY
+            : (static_cast<double>(target.y) + static_cast<double>(target.h) * 0.5));
+    const double scopeX = aimX - static_cast<double>(target.w) * 0.5;
+    const double scopeY = aimY - static_cast<double>(target.h) * 0.5;
+
+    bool bScope = check_target_in_scope(scopeX, scopeY, target.w, target.h, bScope_multiplier);
     if (bScope && !mouse_pressed)
     {
         if (mouseInput && mouseInput->leftDown())
